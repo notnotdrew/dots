@@ -46,5 +46,5 @@ cask "ngrok"
 cask "postico"
 cask "zoom"
 
-mas "magnet"
-mas "slack"
+mas "magnet", id: 441258766
+mas "slack", id: 803453959
