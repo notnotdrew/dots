@@ -2,17 +2,47 @@
 
 cd ~
 
+# Brew
+# #####################################
+
 # Install homebrew; https://brew.sh/
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Fetch Brewfile
 curl -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/main/Brewfile
 
-# Install from Brewfile
-brew bundle
+# Install from Brewfile & cleanup
+brew bundle && rm Brewfile
 
-# Remove Brewfile
-rm Brewfile
+# Keyboard
+# #####################################
 
 # Map caps lock to control
 hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x7000000E0}]'
+
+# Dock
+# #####################################
+
+# Automatically hide & show dock
+defaults write com.apple.dock autohide -bool true
+
+# Only show open apps in dock
+defaults write com.apple.dock static-only -bool true
+
+# Set tile size to minimum
+defaults write com.apple.dock tilesize -int 16
+
+# Restart dock
+killall Dock
+
+# Finder
+# #####################################
+
+# Show hidden files
+defaults write com.apple.finder "AppleShowAllFiles" -bool "true" && killall Finder
+
+# Music
+# #####################################
+
+# Don't show notifications for songs
+defaults write com.apple.Music "userWantsPlaybackNotifications" -bool "false" && killall Music
