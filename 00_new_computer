@@ -7,18 +7,15 @@ cd ~
 
 # Install homebrew; https://brew.sh/
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+echo >> ~/.zshenv
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv
+source ~/.zshenv
 
 # Fetch Brewfile
-curl -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/main/Brewfile
+curl -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/refs/heads/main/Brewfile
 
 # Install from Brewfile & cleanup
 brew bundle && rm Brewfile
-
-# Keyboard
-# #####################################
-
-# Map caps lock to control
-hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x7000000E0}]'
 
 # Dock
 # #####################################
@@ -46,3 +43,13 @@ defaults write com.apple.finder "AppleShowAllFiles" -bool "true" && killall Find
 
 # Don't show notifications for songs
 defaults write com.apple.Music "userWantsPlaybackNotifications" -bool "false" && killall Music
+
+# Todos
+#
+cat <<EOF
+Opening preferences. The following should manually be updated:
+  - Use caps lock as control: Keyboard > Keyboard Shortcuts > Modifier Keys
+  - Use tap as click: Trackpad > Tap to click
+EOF
+
+open "x-apple.systempreferences:com.apple.preference.keyboard"
