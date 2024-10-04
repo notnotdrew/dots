@@ -12,7 +12,7 @@ echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv
 source ~/.zshenv
 
 # Fetch Brewfile
-curl -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/refs/heads/main/Brewfile
+curl -H "Cache-Control: no-cache" -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/refs/heads/main/Brewfile
 
 # Install from Brewfile & cleanup
 brew bundle && rm Brewfile
