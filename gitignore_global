@@ -1,0 +1,6 @@
+# ignore vim swp files
+*.sw*
+
+# ignore vim tags
+tags
+

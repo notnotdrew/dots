@@ -2,7 +2,7 @@
 
 cd ~
 
-# Brew
+# Brew & dotfiles
 # #####################################
 
 # Install homebrew; https://brew.sh/
@@ -11,30 +11,20 @@ cd ~
     echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv &&
     source ~/.zshenv
 
-# Fetch Brewfile
-curl -H "Cache-Control: no-cache" -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/refs/heads/main/Brewfile && \
-    brew bundle && \
-    rm Brewfile
+git clone git@github.com:notnotdrew/dots.git && \
+    cd dots/ && \
+    ./update_symlinks && \
+    source ~/.zshenv && \
+    brew bundle
 
-# Clone
-# #####################################
-
-git clone git@github.com:notnotdrew/dots.git
-
-# Finder
+# General config
 # #####################################
 
 # Show hidden files
 defaults write com.apple.finder "AppleShowAllFiles" -bool "true" && killall Finder
 
-# Music
-# #####################################
-
 # Don't show notifications for songs
 defaults write com.apple.Music "userWantsPlaybackNotifications" -bool "false" && killall Music
-
-# Dock
-# #####################################
 
 # Automatically hide & show dock
 defaults write com.apple.dock autohide -bool true
@@ -45,16 +35,15 @@ defaults write com.apple.dock static-only -bool true
 # Set tile size to minimum
 defaults write com.apple.dock tilesize -int 16
 
-# Set wallpaper
-defaults write com.apple.desktop Background '{default = {ImageFilePath = "~/dots/wallpaper.gif"; };}'
-
 # Restart dock
 killall Dock
 
-# Todos
-#
+# Manual todos
+# #####################################
+
 cat <<EOF
 TODO: The following should be updated manually in Preferences:
-  - Use caps lock as control: Keyboard > Keyboard Shortcuts > Modifier Keys
+  - Change wallpaper: Wallpaper > Add Photo > ~/dots/wallpaper.gif
+  - Use caps lock as control (for all keyboards): Keyboard > Keyboard Shortcuts > Modifier Keys
   - Use tap as click: Trackpad > Tap to click
 EOF
