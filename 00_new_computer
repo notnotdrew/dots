@@ -22,6 +22,10 @@ cd dots/ && \
     source ~/.zshenv && \
     brew bundle
 
+sudo sh -c 'echo /opt/homebrew/bin/bash >> /etc/shells'
+sudo sh -c 'echo /opt/homebrew/bin/zsh >> /etc/shells'
+chsh -s /opt/homebrew/bin/zsh
+
 # General config
 # #####################################
 
