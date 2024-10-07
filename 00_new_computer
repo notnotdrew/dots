@@ -47,9 +47,9 @@ defaults write com.apple.Music "userWantsPlaybackNotifications" -bool "false" &&
 # Todos
 #
 cat <<EOF
-Opening preferences. The following should manually be updated:
+Open preferences. The following should be updated manually:
   - Use caps lock as control: Keyboard > Keyboard Shortcuts > Modifier Keys
   - Use tap as click: Trackpad > Tap to click
 EOF
 
-open "x-apple.systempreferences:com.apple.preference.keyboard"
+git clone git@github.com:notnotdrew/dots.git
