@@ -6,31 +6,20 @@ cd ~
 # #####################################
 
 # Install homebrew; https://brew.sh/
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo >> ~/.zshenv
-echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv
-source ~/.zshenv
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && \
+    echo >> ~/.zshenv && \
+    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv &&
+    source ~/.zshenv
 
 # Fetch Brewfile
-curl -H "Cache-Control: no-cache" -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/refs/heads/main/Brewfile
+curl -H "Cache-Control: no-cache" -o Brewfile https://raw.githubusercontent.com/notnotdrew/dots/refs/heads/main/Brewfile && \
+    brew bundle && \
+    rm Brewfile
 
-# Install from Brewfile & cleanup
-brew bundle && rm Brewfile
-
-# Dock
+# Clone
 # #####################################
 
-# Automatically hide & show dock
-defaults write com.apple.dock autohide -bool true
-
-# Only show open apps in dock
-defaults write com.apple.dock static-only -bool true
-
-# Set tile size to minimum
-defaults write com.apple.dock tilesize -int 16
-
-# Restart dock
-killall Dock
+git clone git@github.com:notnotdrew/dots.git
 
 # Finder
 # #####################################
@@ -44,12 +33,28 @@ defaults write com.apple.finder "AppleShowAllFiles" -bool "true" && killall Find
 # Don't show notifications for songs
 defaults write com.apple.Music "userWantsPlaybackNotifications" -bool "false" && killall Music
 
+# Dock
+# #####################################
+
+# Automatically hide & show dock
+defaults write com.apple.dock autohide -bool true
+
+# Only show open apps in dock
+defaults write com.apple.dock static-only -bool true
+
+# Set tile size to minimum
+defaults write com.apple.dock tilesize -int 16
+
+# Set wallpaper
+defaults write com.apple.desktop Background '{default = {ImageFilePath = "~/dots/wallpaper.gif"; };}'
+
+# Restart dock
+killall Dock
+
 # Todos
 #
 cat <<EOF
-Open preferences. The following should be updated manually:
+TODO: The following should be updated manually in Preferences:
   - Use caps lock as control: Keyboard > Keyboard Shortcuts > Modifier Keys
   - Use tap as click: Trackpad > Tap to click
 EOF
-
-git clone git@github.com:notnotdrew/dots.git
