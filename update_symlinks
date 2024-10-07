@@ -4,7 +4,7 @@
 # are in the same directory as this file.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-DOTFILES=( gitconfig gitignore_global zshenv )
+DOTFILES=( gitconfig gitignore_global zshenv zshrc )
 
 for dotfile in "${DOTFILES[@]}"
 do
