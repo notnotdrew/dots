@@ -11,8 +11,13 @@ cd ~
     echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv &&
     source ~/.zshenv
 
-git clone git@github.com:notnotdrew/dots.git && \
-    cd dots/ && \
+if [ ! -d "dots" ]; then
+    git clone git@github.com:notnotdrew/dots.git
+else
+    echo "~/dots already exists, using as-is..."
+fi
+
+cd dots/ && \
     ./update_symlinks && \
     source ~/.zshenv && \
     brew bundle
