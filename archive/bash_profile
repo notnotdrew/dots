@@ -1,0 +1,596 @@
+# 	CONTENTS:
+#		1 -- Enviroment
+#		2 -- Terminal commands
+#		3 -- Development commands
+#		...
+
+function shell_check() {
+  ssh -T -oStrictHostKeyChecking=no git@github.com -q
+}
+
+# alias aws-profile-qa="export AWS_DEFAULT_PROFILE=qa; export AWS_PROFILE=qa"
+# alias aws-profile-prod="export AWS_DEFAULT_PROFILE=prod; export AWS_PROFILE=prod"
+# alias aws-profile-dev="export AWS_DEFAULT_PROFILE=dev; export AWS_PROFILE=dev"
+
+
+#	-----------------------
+# 1 CONFIGURE ENVIRONMENT
+#	-----------------------
+
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+
+	#	Change prompt
+	# 	----------------------
+
+      function colorprint() {
+        for c; do
+          printf '\e[48;5;%dm%03d' $c $c
+        done
+        printf '\e[0m \n'
+      }
+
+      function colors() {
+        colorprint {0..15}
+        for ((i=0;i<6;i++)); do
+          colorprint $(seq $((i*36+16)) $((i*36+51)))
+        done
+        colorprint {232..255}
+      }
+
+      export black=$(tput setaf 0)
+      export red=$(tput setaf 1)
+      export green=$(tput setaf 2)
+      export yellow=$(tput setaf 3)
+      export blue=$(tput setaf 4)
+      export magenta=$(tput setaf 5)
+      export cyan=$(tput setaf 6)
+      export white=$(tput setaf 7)
+      export lightblack=$(tput setaf 8)
+      export lightred=$(tput setaf 9)
+      export lightgreen=$(tput setaf 10)
+      export lightyellow=$(tput setaf 11)
+      export lightblue=$(tput setaf 12)
+      export lightmagenta=$(tput setaf 13)
+      export lightcyan=$(tput setaf 14)
+      export lightwhite=$(tput setaf 15)
+      export reset=$(tput sgr0)
+      faces=(
+        "._."
+        "( ‾́ ◡ ‾́ )"
+        "(o˘◡˘o)"
+        "( ˙꒳​˙ )"
+        "(•_•)"
+        "ヾ(⁍̴̆◡⁍̴̆。)ノ"
+        "✖‿✖"
+        "(/°(ｴ)°)/"
+        "ʕ ᵔᴥᵔ ʔ"
+        "(~˘▽˘)~"
+        "(｢• ω •)｢"
+        "(•́ _ʖ •̀)"
+        "(⌐■_■)"
+        "∠( ᐛ 」∠)_"
+        "ʘ‿ʘ)╯"
+        "･д･)ﾉ"
+        "･ω･)"
+        "(^_−)☆ "
+        "(⊃｡•́‿•̀｡)⊃"
+        "(・_・)ノ"
+        "( ° ∀ ° )ﾉﾞ"
+        "(*°ｰ°)ﾉ"
+        "(¬_¬ )"
+        "┐( ˘_˘ )┌"
+        "ᕕ( ᐛ )ᕗ"
+        "(;;;*_*)"
+        "▓▒░(°◡°)░▒▓"
+        "(／。＼)"
+        "(×_×)"
+        "(｡•́︿•̀｡)"
+        "ヽ(‵﹏´)ノ"
+        "(︶︹︺)"
+        "( ◡‿◡ *)"
+        "(*/_＼)"
+        "♡ ( ◡‿◡ )"
+        "(◕‿◕)♡ "
+        "( °◡°)"
+        "ヽ(♡‿♡)ノ"
+        "(„• ֊ •„)"
+        "٩(｡•́‿•̀｡)۶"
+        "( ‾́ ◡ ‾́ )"
+        "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"
+        "( ᐛ )و"
+        "(^._.^)ﾉ"
+        "~(=^–^)"
+        "◕ᴥ◕"
+        "乁(•_•)ㄏ"
+        "| ･ 〰 ･|"
+      )
+      facesize=${#faces[@]}
+      faceindex=$((RANDOM % facesize))
+      export PS1="${faces[$faceindex]} \[$reset\]\W\[$green\]\$(__git_ps1 ":%s")\[$reset\] $ "
+
+      # ls coloring for gruvbox
+      export CLICOLOR=1
+
+	# Configure path
+	# 	----------------------
+      export BREWSKIS=$HOME/Dropbox/development/brewskis
+      export DOWNLOADEMS=$HOME/Dropbox/development/downloadems
+      export DEVELOPMENT=$HOME/Documents/development
+			export NOTES=$HOME/Documents/development/notes
+      export GOPATH=$DEVELOPMENT/go-work
+			export CDPATH=$DEVELOPMENT
+			export PATH=$PATH:~/bin
+			export PATH=$PATH:/Applications/Postgres.app/Contents/Versions/9.4/bin
+			export PATH=$PATH:/usr/local/sbin
+      export PATH=$PATH:$GOPATH/bin
+      export PATH="$PATH:$(yarn global bin)"
+
+      function golinux {
+        GOOS=linux GOARCH=amd64 go build
+      }
+
+#	-------------------
+# 2 A BETTER TERMINAL
+#	-------------------
+
+	# 	Concise navigation & creation
+	# 	-----------------------------------------
+			# the bin directory should be moved into the developing .config folder
+			if command -v brew >/dev/null 2>&1; then
+				# Load rupa's z if installed
+				[ -f $(brew --prefix)/etc/profile.d/z.sh ] && source $(brew --prefix)/etc/profile.d/z.sh
+			fi
+
+			alias ..='cd ..'
+			alias ...='cd ../..'
+			alias ....='cd ../../..'
+			alias t='touch'
+      alias prettyjson='python -m json.tool'
+      alias cssh='i2cssh -c'
+
+      alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
+      # for this error:
+
+      #   Library not loaded: /usr/local/opt/postgresql/lib/libpq.5.dylib
+      alias brewfuckeduppostgres='sudo ln -s /usr/local/opt/postgresql/lib/postgresql@14/* /usr/local/opt/postgresql/lib/'
+      alias direnvfucked='eval "$(direnv hook bash)"'
+
+      # useful when gems don't wanna install with native extensions (i.e. make failures, etc)
+      fuckgeminstall() {
+        gem install "$1" -v "$2" -- --with-cflags="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types"
+      }
+
+      # find and replace `s <pattern> <target>`
+      function s() {
+        find $2 -type f -print0 | xargs -0 sed -i '' "s$1"
+      }
+
+      # find and remove lines that match the pattern `d <pattern> <target>`
+      function d() {
+        find $2 -type f -print0 | xargs -0 sed -i '' "$1d"
+      }
+
+      # find all files by name with modern regex
+      function ff() {
+        find -E $2 -regex $1
+      }
+
+      function bigfiles() {
+        sudo du -ahx / | grep -E '\d+G\s+' | sort -hr
+      }
+
+      alias ip='curl ipecho.net/plain'
+
+      function count_lines_of_code() {
+        git clone --depth 1 "$1" temp-linecount-repo &&
+          printf "('temp-linecount-repo' will be deleted automatically)\n\n\n" &&
+          cloc temp-linecount-repo &&
+          rm -rf temp-linecount-repo
+      }
+
+      function faster() {
+        defaults write -g InitialKeyRepeat -int 10
+        defaults write -g KeyRepeat -int 1
+      }
+
+      function slower() {
+        defaults write -g InitialKeyRepeat -int 15
+        defaults write -g KeyRepeat -int 2
+      }
+
+      function hbd() {
+        say "$@" -v fred
+        say "$@" -v fred -o hbd.aiff
+        lame -m m hbd.aiff hbd.mp3
+        rm hbd.aiff
+      }
+
+      alias happy_birthday='hbd'
+
+			function notes() {
+				vim $NOTES/$1
+			}
+
+      function vrc() {
+        vim ~/.vimrc
+      }
+
+      function vp() {
+        vim $(fzf)
+      }
+
+      export FZF_DEFAULT_COMMAND="ag --nocolor -g '' -l --ignore-dir={spec/vcr}"
+
+      function git_show_email() {
+        git show -s --format='%ae' $1
+      }
+
+      function update_vim_bundles() {
+        STARTING_LOCATION=$(pwd)
+
+        cd ~/.vim/bundle
+
+        for i in `\ls -p -d */`; do
+          cd "$i"
+          echo "Updating $i..."
+          git pull --recurse-submodules | grep -v 'Already up-to-date' | sed 's/^/  /'
+          [ -f .git/.gitmodules ] && git submodule update | sed 's/^/  /'
+          cd ..
+        done
+
+        cd "$STARTING_LOCATION"
+      }
+
+      function search_kick_fucked() {
+        curl -XPUT -H "Content-Type: application/json" http://localhost:9200/_all/_settings -d '{"index.blocks.read_only_allow_delete": null}'
+      }
+
+      function du_in_order() {
+        du -sch .[!.]* * | sort -h
+      }
+
+			function prof() {
+				vim ~/.bash_profile
+			}
+
+      function roamingclientshit() {
+        sudo launchctl unload /Library/LaunchDaemons/com.opendns.osx.RoamingClientConfigUpdater.plist
+      }
+
+      function bm() {
+        cat ~/Dropbox/development/misc/benchmark/bm.rb
+      }
+
+      function to_sql_array() {
+        cat ~/Dropbox/development/misc/to_sql_array/sql_array.rb
+      }
+
+      function to_protobuf() {
+        cat ~/Dropbox/development/misc/to_protobuf/to_protobuf.rb
+      }
+
+      function snippets() {
+        bm
+        to_protobuf
+        to_sql_array
+      }
+
+      function dnd() {
+        killall NotificationCenter
+      }
+
+      function downloadems-add() {
+        echo "open $1" >> ~/Dropbox/development/downloadems
+      }
+
+      function brewskis-add() {
+        echo "brew install $1" >> ~/Dropbox/development/brewskis
+      }
+
+			function md() {
+				mkdir -p "$@" && cd "$@"
+			}
+
+      alias starwars="telnet towel.blinkenlights.nl"
+
+      function coolthing() {
+        figlet -f banner "$1" | sed -e"s/#/:$2:/g" | sed -e"s/ /:$3:/g" | pbcopy
+      }
+
+      function 👟() {
+        case "$1" in
+          ""|jt ) bin/rake ironboard:run_all_workers ;;
+          *) WORKERS="$1" bin/rake sneakers:run ;;
+        esac
+      }
+
+      function neat() {
+        yes | ruby -ne h,w=$LINES,$COLUMNS'/2
+                        cy=rand h
+                        cx=rand w
+                        (h+w).times{|r|
+                         print"\e[4#{rand 8}m"
+                         0.step(6.28, 0.001)
+                          .map{|ø|[cy+r*Math.sin(ø),cx+r*Math.cos(ø)]}
+                          .map{|y,x|[y.round,x.round]}
+                          .reject{|y,x|y<0||x<0||y>h-1||x>w-1}
+                          .map{|y,x|print"\e[#{y+1};#{2*x+1}H  "}
+                        }'
+      }
+
+      function exer_all() {
+        lang="$1"
+        curl -LS "https://exercism.io/tracks/$lang/exercises" | grep "/tracks/$lang/exercises/" | awk '{print $3}' | cut -d/ -f5 | cut -d\" -f1 > exercises.txt
+        while read in; do exercism download --exercise="$in" --track="$lang"; done < exercises.txt
+      }
+
+      function current_branch() {
+        printf $(__git_ps1 "%s")
+      }
+
+      alias cb=current_branch
+
+      alias studenthome="docker compose -f docker-compose.yml -f docker-compose.local.yml up db redis"
+
+      function qa_deploy() {
+        case "$1" in
+          "") echo "Ambiguous QA server dummy." && return 1 ;;
+          1) STAGE="qa" ;;
+          *) STAGE="qa$1" ;;
+        esac
+
+        case "$2" in
+          "") BRANCH="`current_branch`" ;;
+          *)  BRANCH="$2" ;;
+        esac
+
+        set -o xtrace
+        bundle exec cap $STAGE deploy BRANCH=$BRANCH
+        set +o xtrace
+      }
+
+      function f_zoom() {
+        (kill -9 $(lsof -i :19421|awk '/ZoomOpene/{print $2}') && echo "killed the webserver" || echo "webserver wasn't running" ); (if test -d ~/.zoomus;then rm -rf ~/.zoomus && touch ~/.zoomus && echo "protected from server restart";else echo "already safe from server restart";fi)
+      }
+
+
+      function yarn_global_add() {
+        set -o xtrace
+        yarn global add $1
+        asdf reshim nodejs
+        set -o xtrace
+      }
+
+
+	# 	Better lists
+	# 	-------------------------------------------------------------------------------------
+			alias ls='ls -lahGp'	# (one entry/line, all files, color allowed, directory indicator)
+			alias l='ls -lah'
+
+	# 	Text editors
+	# 	-------------------------------------------------------------------------
+      export VISUAL=nvim
+      export EDITOR="$VISUAL"
+
+#	-------------
+# 3 DEVELOPMENT
+#	-------------
+
+  # Learn
+  # -------------------------
+      # Assuming you have the aws env already set AND we only have one console cluster running
+      # AND you have downloaded and setup the PEM keys in ~/.ssh/ folder
+      # AND you're on VPN
+      # you can run `aws_open_session_console qa` and it'll open an ssh session to the console cluster
+      function aws_open_session_console() {
+        local profile=${1:-qa}  # Use 'qa' as default if profile variable is not passed
+        ec2_instance_ip=$(aws --profile $profile ec2 describe-instances --filters "Name=instance-state-name,Values=running" --query 'Reservations[].Instances[].PublicIpAddress' --output json | jq -r '.[0]')
+        echo "found console instance $ec2_instance_ip in $profile"
+        ec2_instance_ip_name=$(echo "$ec2_instance_ip" | tr '.' '-')
+
+
+        if [[ $profile == 'qa' ]]; then
+          ssh_key="$HOME/.ssh/ssh-console-qa"
+        else
+          ssh_key="$HOME/.ssh/ssh-console-prod"
+        fi
+        echo "sshing to ec2-$ec2_instance_ip_name.compute-1.amazonaws.com"
+        ssh -i $ssh_key ec2-user@ec2-$ec2_instance_ip_name.compute-1.amazonaws.com
+      }
+
+      # assuming you have the aws env already set
+      # you can run `update_service_on_console service-documents prod 1` and it'll setup the service to run
+      # the last two variables (desired_count and profile) are optional the defaults are set to qa and 1
+      function aws_update_service_on_console() {
+        local service_name=$1
+        local profile=${2:-qa}  # Use 'qa' as default if profile variable is not passed
+        local desired_count=${3:-1}  # Use 0 as default if desired_count variable is not passed
+        echo "Updating service $service_name on $profile with desired count $desired_count"
+        aws ecs update-service --cluster console --service "$service_name-console" --desired-count "$desired_count" --profile "$profile" | jq -r '.service | "Service Name: \(.serviceName)\nStatus: \(.status)\nDesired Count: \(.desiredCount)\nRunning Count: \(.runningCount)\nLaunch Type: \(.launchType)"'
+      }
+
+	#	Elixir
+	#	-------------------------
+      export ERL_AFLAGS="-kernel shell_history enabled" # history in iex
+
+	#	Ruby
+	#	-------------------------
+			alias rb='ruby'
+			alias ruby_serve='ruby -run -e httpd . -p 8080'
+      alias be="bundle exec"
+      alias buns='bundle exec'
+      alias bunsies='bundle exec'
+      alias te='terraform'
+      alias tf='terraform'
+			alias lint='bundle exec rubocop -A'
+			alias rbc='bundle exec rubocop -A'
+      alias linterb='bundle exec erblint --lint-all'
+
+	#	Docker
+	#	-------------------------
+			alias dcdb='docker compose up db'
+			alias dup='docker compose up'
+      alias dkc='docker compose'
+
+	#	RSpec
+	#	-------------------------
+			alias rff='bundle exec rspec --fail-fast'
+      function spec() {
+        if [ -z "$1" ]; then
+          CLEANUP=true CLEANUP_VCR=true bundle exec rspec spec/
+        else
+          bundle exec rspec $1
+        fi
+      }
+
+      function rspec_run() {
+        bundle exec rspec $( [[ "$1" == *"feature"* ]] && echo "--tag feature" ) "$1";
+      }
+
+      function wspec() {
+        local path1=${1:-spec/}
+        local path2=${2:-app/}
+
+        fswatch -r "$path1" "$path2" | while read; do
+          spec "$path"
+        done
+      }
+
+      function feature() {
+        if [ -z "$1" ]; then
+          bundle exec rspec --tag feature
+        else
+          HEADLESS=false bundle exec rspec --tag feature
+        fi
+      }
+
+	#	Rake
+	#	-------------------------
+			function rkdbm() {
+				bin/rake db:migrate RAILS_ENV=development
+				bin/rake db:migrate RAILS_ENV=test
+			}
+
+			function rkdbr() {
+				bin/rake db:rollback RAILS_ENV=development
+				bin/rake db:rollback RAILS_ENV=test
+			}
+
+			function rkdb() {
+				bin/rake db:$1 RAILS_ENV=development
+				bin/rake db:$1 RAILS_ENV=test
+			}
+
+  #	Javascript or whatever
+  #	-------------------------
+			function e2e() {
+        if [ -z "$2" ]; then
+          yarn e2e "$1-e2e"
+        else
+          yarn e2e "$1-e2e" --spec $2
+        fi
+			}
+
+  #	Coffeescript
+  #	-------------------------
+      alias coffcomp='coffee --output lib --compile src'
+      alias rba='rubocop -a'
+
+	#	Rubocop
+	#	-------------------------
+			alias rba='rubocop -a'
+
+	#	Git concise
+	#	-------------------------
+			# hub alias
+			eval "$(hub alias -s)"
+
+      alias gti='git'
+			alias st='git status'
+			alias df='git diff'
+			alias br='git branch'
+			alias co='git checkout'
+
+			# Git tab completion
+			if [ -f $(brew --prefix)/etc/bash_completion ]; then
+	    		. $(brew --prefix)/etc/bash_completion
+	  		fi
+
+      function pull() {
+        if [ "$1" = "-d" ]; then
+          gh pr create -da notnotdrew
+        else
+          gh pr create -a notnotdrew --reviewer flatiron-labs/engineering
+        fi
+			}
+
+	#	Vim
+	#	-------------------------
+      alias ivm='vim'
+      alias miv='vim'
+
+. $(brew --prefix asdf)/libexec/asdf.sh
+. $(brew --prefix asdf)/etc/bash_completion.d/asdf.bash
+
+  # Fancy Replace
+  # -------------------------
+  # Function to convert PascalCase to snake_case
+  convert_to_snake_case() {
+    echo "$1" | sed -r 's/([A-Z])/_\1/g' | tr '[:upper:]' '[:lower:]' | sed 's/^_//'
+  }
+
+  # Function to convert a string to uppercase
+  convert_to_upper() {
+    echo "$1" | tr '[:lower:]' '[:upper:]'
+  }
+
+  # Function to replace occurrences of a string with another string in file contents
+  replace() {
+    find "$3" -type f -print0 | xargs -0 sed -i '' "s/$1/$2/g"
+  }
+
+  # Function to rename files and directories
+  rename_files_and_directories() {
+    find "$3" -name "*$1*" | while IFS= read -r file; do
+      new_file=$(echo "$file" | sed "s/$1/$2/g")
+      echo "Renaming $file to $new_file"
+      mv "$file" "$new_file"
+    done
+  }
+
+  rename_constant() {
+    if [ "$#" -ne 3 ]; then
+      echo "Usage: gsub [PascalSource] [PascalTarget] [path]"
+      return 1
+    fi
+
+    SOURCE_PASCAL=$1
+    TARGET_PASCAL=$2
+
+    SOURCE_SNAKE=$(convert_to_snake_case "$SOURCE_PASCAL")
+    TARGET_SNAKE=$(convert_to_snake_case "$TARGET_PASCAL")
+    SOURCE_UPPER=$(convert_to_upper "$SOURCE_SNAKE")
+    TARGET_UPPER=$(convert_to_upper "$TARGET_SNAKE")
+
+    echo "Source PascalCase: $SOURCE_PASCAL"
+    echo "Target PascalCase: $TARGET_PASCAL"
+    echo
+    echo "Source snake_case: $SOURCE_SNAKE"
+    echo "Target snake_case: $TARGET_SNAKE"
+    echo
+    echo "Source UPPER_CASE: $SOURCE_UPPER"
+    echo "Target UPPER_CASE: $TARGET_UPPER"
+
+    # Find and replace in file contents
+    echo "Replacing in file contents..."
+    replace "$SOURCE_PASCAL" "$TARGET_PASCAL" "$3"
+    replace "$SOURCE_SNAKE" "$TARGET_SNAKE" "$3"
+    replace "$SOURCE_UPPER" "$TARGET_UPPER" "$3"
+
+    # Rename files and directories
+    echo "Renaming files and directories..."
+    rename_files_and_directories "$SOURCE_PASCAL" "$TARGET_PASCAL" "$3"
+    rename_files_and_directories "$SOURCE_SNAKE" "$TARGET_SNAKE" "$3"
+
+    echo "Renaming from $SOURCE_PASCAL to $TARGET_PASCAL complete."
+  }

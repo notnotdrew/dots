@@ -1,0 +1,10 @@
+export TERM=xterm-256color
+
+export PATH="$HOME/.bin:~/bin:$PATH"
+
+eval export
+
+# NOTE: this isn't working. Run it manually as needed.
+eval "$(direnv hook bash)"
+
+eval "$(thefuck --alias)"

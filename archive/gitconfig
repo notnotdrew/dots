@@ -1,0 +1,28 @@
+[core]
+  editor = nvim
+	excludesfile = ~/.gitignore_global
+[user]
+	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDFlCb0FkBQ8KqIey2atakIkUJXlDetzNB/Mnpj/oOFZ
+	name = drew
+	email = 7977907+notnotdrew@users.noreply.github.com
+[alias]
+  st = status
+  ci = commit
+  br = branch
+  co = checkout
+  df = diff
+  lg = log -p
+[commit]
+	gpgsign = true
+[gpg]
+	format = ssh
+[pull]
+	rebase = false
+[init]
+	defaultBranch = main
+[push]
+	autoSetupRemote = true
+[gpg "ssh"]
+	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
+[hub]
+	protocol = ssh

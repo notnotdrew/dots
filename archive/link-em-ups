@@ -1,0 +1,9 @@
+#!/bin/bash
+
+ln -s ~/Dropbox/development/dots/.bash_profile ~/
+ln -s ~/Dropbox/development/dots/.profile ~/
+ln -s ~/Dropbox/development/dots/.bashrc ~/
+ln -s ~/Dropbox/development/dots/.vimrc ~/
+ln -s ~/Dropbox/development/dots/.vim ~/
+ln -s ~/Dropbox/development/dots/.gitignore_global ~/
+ln -s ~/Dropbox/development/dots/.gitconfig ~/

@@ -1,0 +1,12 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhistcnt =1
+let g:netrw_dirhist_1='/Users/drew/Documents/dev/ironboard'
+let g:netrw_dirhist_0='/Users/dprice/Documents/dev/fis/ironboard'
+let g:netrw_dirhist_9='/Users/dprice/Documents/dev/fis/ironboard/app/lib/marketo'
+let g:netrw_dirhist_8='/Users/dprice/Documents/dev/fis/ironboard'
+let g:netrw_dirhist_7='/Users/dprice/Documents/dev/fis/service-documents'
+let g:netrw_dirhist_6='/Users/dprice/Documents/dev/fis/registrar'
+let g:netrw_dirhist_5='/Users/dprice/Documents/dev/fis/ironboard'
+let g:netrw_dirhist_4='/Users/dprice/Documents/dev/fis/service-documents'
+let g:netrw_dirhist_3='/Users/dprice/Documents/dev/fis/registrar'
+let g:netrw_dirhist_2='/Users/dprice/Documents/dev/fis/service-documents'

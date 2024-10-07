@@ -1,0 +1,397 @@
+export TERM=xterm-256color
+
+alias brewup='brew update; brew upgrade; brew prune; brew cleanup; brew doctor'
+
+# 	CONTENTS:
+#		1 -- Enviroment
+#		2 -- Terminal commands
+#		3 -- Development commands
+#		...
+
+function shell_check() {
+  ssh -T -oStrictHostKeyChecking=no git@github.com -q
+}
+
+
+#	-----------------------
+# 1 CONFIGURE ENVIRONMENT
+#	-----------------------
+
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+
+	#	Change prompt
+	# 	----------------------
+
+      function colorprint() {
+        for c; do
+          printf '\e[48;5;%dm%03d' $c $c
+        done
+        printf '\e[0m \n'
+      }
+
+      function colors() {
+        colorprint {0..15}
+        for ((i=0;i<6;i++)); do
+          colorprint $(seq $((i*36+16)) $((i*36+51)))
+        done
+        colorprint {232..255}
+      }
+
+      export black=$(tput setaf 0)
+      export red=$(tput setaf 1)
+      export green=$(tput setaf 2)
+      export yellow=$(tput setaf 3)
+      export blue=$(tput setaf 4)
+      export magenta=$(tput setaf 5)
+      export cyan=$(tput setaf 6)
+      export white=$(tput setaf 7)
+      export lightblack=$(tput setaf 8)
+      export lightred=$(tput setaf 9)
+      export lightgreen=$(tput setaf 10)
+      export lightyellow=$(tput setaf 11)
+      export lightblue=$(tput setaf 12)
+      export lightmagenta=$(tput setaf 13)
+      export lightcyan=$(tput setaf 14)
+      export lightwhite=$(tput setaf 15)
+      export reset=$(tput sgr0)
+      faces=(
+        "._."
+        "(•_•)"
+        "(/°(ｴ)°)/"
+        "ʕ ᵔᴥᵔ ʔ"
+        "(~˘▽˘)~"
+        "(｢• ω •)｢"
+        "(•́ _ʖ •̀)"
+        "(⌐■_■)"
+        "∠( ᐛ 」∠)_"
+        "ʘ‿ʘ)╯"
+        "･д･)ﾉ"
+        "･ω･)"
+        "(^_−)☆ "
+        "(⊃｡•́‿•̀｡)⊃"
+        "(・_・)ノ"
+        "( ° ∀ ° )ﾉﾞ"
+        "(*°ｰ°)ﾉ"
+        "(¬_¬ )"
+        "ヽ(\´ー\`)┌"
+        "┐( ˘_˘ )┌"
+        "ᕕ( ᐛ )ᕗ"
+        "(;;;*_*)"
+        "▓▒░(°◡°)░▒▓"
+        "(／。＼)"
+        "(×_×)"
+        "(｡•́︿•̀｡)"
+        "ヽ(‵﹏´)ノ"
+        "(︶︹︺)"
+        "( ◡‿◡ *)"
+        "(*/_＼)"
+        "♡ ( ◡‿◡ )"
+        "(◕‿◕)♡ "
+        "(ﾉ´ з \`\)ノ"
+        "( °◡°)"
+        "ヽ(♡‿♡)ノ"
+        "(„• ֊ •„)"
+        "٩(｡•́‿•̀｡)۶"
+        "( ‾́ ◡ ‾́ )"
+        "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"
+        "( ᐛ )و"
+        "(^._.^)ﾉ"
+        "~(=^–^)"
+        "◕ᴥ◕"
+        "乁(•_•)ㄏ"
+        "| ･ 〰 ･|"
+      )
+      facesize=${#faces[@]}
+      faceindex=$((RANDOM % facesize))
+      export PS1="${faces[$faceindex]} \[$reset\]\W\[$green\]\$(__git_ps1 ":%s")\[$reset\] $ "
+
+      # ls coloring for gruvbox
+      export CLICOLOR=1
+
+	# Configure path
+	# 	----------------------
+
+      function golinux {
+        GOOS=linux GOARCH=amd64 go build
+      }
+
+#	-------------------
+# 2 A BETTER TERMINAL
+#	-------------------
+
+	# 	Concise navigation & creation
+	# 	-----------------------------------------
+			# the bin directory should be moved into the developing .config folder
+			if command -v brew >/dev/null 2>&1; then
+				# Load rupa's z if installed
+				[ -f $(brew --prefix)/etc/profile.d/z.sh ] && source $(brew --prefix)/etc/profile.d/z.sh
+			fi
+
+			alias ..='cd ..'
+			alias ...='cd ../..'
+			alias ....='cd ../../..'
+			alias t='touch'
+      alias prettyjson='python -m json.tool'
+      alias cssh='i2cssh -c'
+
+      alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
+
+      # find and replace `s <pattern> <target>`
+      function s() {
+        find $2 -type f -print0 | xargs -0 sed -i '' "s$1"
+      }
+
+      # find and remove lines that match the pattern `d <pattern> <target>`
+      function d() {
+        find $2 -type f -print0 | xargs -0 sed -i '' "$1d"
+      }
+
+      # find all files by name with modern regex
+      function ff() {
+        find -E $2 -regex $1
+      }
+
+      function bigfiles() {
+        sudo du -ahx / | grep -E '\d+G\s+' | sort -hr
+      }
+
+      alias ip='curl ipecho.net/plain'
+
+      function faster() {
+        defaults write -g InitialKeyRepeat -int 10
+        defaults write -g KeyRepeat -int 1
+      }
+
+      function slower() {
+        defaults write -g InitialKeyRepeat -int 15
+        defaults write -g KeyRepeat -int 2
+      }
+
+      function hbd() {
+        say "$@" -v fred
+        say "$@" -v fred -o hbd.aiff
+        lame -m m hbd.aiff hbd.mp3
+        rm hbd.aiff
+      }
+
+      alias happy_birthday='hbd'
+
+			function notes() {
+				vim $NOTES/$1
+			}
+
+      function vrc() {
+        vim ~/.vimrc
+      }
+
+      function vp() {
+        vim $(fzf)
+      }
+
+      function git_show_email() {
+        git show -s --format='%ae' $1
+      }
+
+      function update_vim_bundles() {
+        STARTING_LOCATION=$(pwd)
+
+        cd ~/.vim/bundle
+
+        for i in `\ls -p -d */`; do
+          cd "$i"
+          echo "Updating $i..."
+          git pull --recurse-submodules | grep -v 'Already up-to-date' | sed 's/^/  /'
+          [ -f .git/.gitmodules ] && git submodule update | sed 's/^/  /'
+          cd ..
+        done
+
+        cd "$STARTING_LOCATION"
+      }
+
+      function search_kick_fucked() {
+        curl -XPUT -H "Content-Type: application/json" http://localhost:9200/_all/_settings -d '{"index.blocks.read_only_allow_delete": null}'
+      }
+
+      function du_in_order() {
+        du -sch .[!.]* * | sort -h
+      }
+
+			function prof() {
+				vim ~/.zshrc
+			}
+
+      function roamingclientshit() {
+        sudo launchctl unload /Library/LaunchDaemons/com.opendns.osx.RoamingClientConfigUpdater.plist
+      }
+
+      function bm() {
+        cat ~/Dropbox/development/misc/benchmark/bm.rb
+      }
+
+      function to_sql_array() {
+        cat ~/Dropbox/development/misc/to_sql_array/sql_array.rb
+      }
+
+      function to_protobuf() {
+        cat ~/Dropbox/development/misc/to_protobuf/to_protobuf.rb
+      }
+
+      function snippets() {
+        bm
+        to_protobuf
+        to_sql_array
+      }
+
+      function downloadems-add() {
+        echo "open $1" >> ~/Dropbox/development/downloadems
+      }
+
+      function brewskis-add() {
+        echo "brew install $1" >> ~/Dropbox/development/brewskis
+      }
+
+			function md() {
+				mkdir -p "$@" && cd "$@"
+			}
+
+      function coolthing() {
+        figlet -f banner "$1" | sed -e"s/#/:$2:/g" | sed -e"s/ /:$3:/g" | pbcopy
+      }
+
+      function 👟() {
+        case "$1" in
+          ""|jt ) bin/rake ironboard:run_all_workers ;;
+          *) WORKERS="$1" bin/rake sneakers:run ;;
+        esac
+      }
+
+      function neat() {
+        yes | ruby -ne h,w=$LINES,$COLUMNS'/2
+                        cy=rand h
+                        cx=rand w
+                        (h+w).times{|r|
+                         print"\e[4#{rand 8}m"
+                         0.step(6.28, 0.001)
+                          .map{|ø|[cy+r*Math.sin(ø),cx+r*Math.cos(ø)]}
+                          .map{|y,x|[y.round,x.round]}
+                          .reject{|y,x|y<0||x<0||y>h-1||x>w-1}
+                          .map{|y,x|print"\e[#{y+1};#{2*x+1}H  "}
+                        }'
+      }
+
+      function exer_all() {
+        lang="$1"
+        curl -LS "https://exercism.io/tracks/$lang/exercises" | grep "/tracks/$lang/exercises/" | awk '{print $3}' | cut -d/ -f5 | cut -d\" -f1 > exercises.txt
+        while read in; do exercism download --exercise="$in" --track="$lang"; done < exercises.txt
+      }
+
+      function current_branch() {
+        printf $(__git_ps1 "%s")
+      }
+
+      alias cb=current_branch
+
+      function qa_deploy() {
+        case "$1" in
+          "") echo "Ambiguous QA server dummy." && return 1 ;;
+          1) STAGE="qa" ;;
+          *) STAGE="qa$1" ;;
+        esac
+
+        case "$2" in
+          "") BRANCH="`current_branch`" ;;
+          *)  BRANCH="$2" ;;
+        esac
+
+        set -o xtrace
+        bundle exec cap $STAGE deploy BRANCH=$BRANCH
+        set +o xtrace
+      }
+
+      function f_zoom() {
+        (kill -9 $(lsof -i :19421|awk '/ZoomOpene/{print $2}') && echo "killed the webserver" || echo "webserver wasn't running" ); (if test -d ~/.zoomus;then rm -rf ~/.zoomus && touch ~/.zoomus && echo "protected from server restart";else echo "already safe from server restart";fi)
+      }
+
+
+	# 	Better lists
+	# 	-------------------------------------------------------------------------------------
+			alias ls='ls -lahGp'	# (one entry/line, all files, color allowed, directory indicator)
+			alias l='ls -lah'
+
+	# 	Text editors
+	# 	-------------------------------------------------------------------------
+      export VISUAL=vim
+      export EDITOR="$VISUAL"
+
+#	-------------
+# 3 DEVELOPMENT
+#	-------------
+
+	#	Elixir
+	#	-------------------------
+      export ERL_AFLAGS="-kernel shell_history enabled" # history in iex
+
+	#	Ruby
+	#	-------------------------
+			alias rb='ruby'
+			alias ruby_serve='ruby -run -e httpd . -p 8080'
+      alias be="bundle exec"
+      alias buns='bundle exec'
+      alias bunsies='bundle exec'
+      alias dkc='docker-compose'
+      alias te='terraform'
+      alias tf='terraform'
+
+	#	Rspec
+	#	-------------------------
+			alias rff='rspec --fail-fast'
+
+	#	Rake
+	#	-------------------------
+			function rkdbm() {
+				bin/rake db:migrate RAILS_ENV=development
+				bin/rake db:migrate RAILS_ENV=test
+			}
+
+			function rkdbr() {
+				bin/rake db:rollback RAILS_ENV=development
+				bin/rake db:rollback RAILS_ENV=test
+			}
+
+			function rkdb() {
+				bin/rake db:$1 RAILS_ENV=development
+				bin/rake db:$1 RAILS_ENV=test
+			}
+
+  #	Coffeescript
+  #	-------------------------
+      alias coffcomp='coffee --output lib --compile src'
+      alias rba='rubocop -a'
+
+	#	Rubocop
+	#	-------------------------
+			alias rba='rubocop -a'
+
+	#	Git concise
+	#	-------------------------
+			# hub alias
+			eval "$(hub alias -s)"
+
+			alias st='git status'
+			alias df='git diff'
+			alias br='git branch'
+
+			# Git tab completion
+      if type brew &>/dev/null; then
+        FPATH=$(brew --prefix)/share/zsh-completions:$FPATH
+
+        autoload -Uz compinit
+        compinit
+      fi
+
+	#	Vim
+	#	-------------------------
+      alias ivm='vim'
+      alias miv='vim'
+
+. /usr/local/opt/asdf/asdf.sh
