@@ -30,6 +30,11 @@ do
     fi
 done
 
+echo " ...removing ~/.config/nvim folder"
+rm -r ~/.config/nvim
+ln -s ${DIR}/nvim ~/.config/nvim
+echo " ...nvim folder re-linked"
+
 echo " ...removing bin folder"
 rm -r ~/bin
 ln -s ${DIR}/bin ~/bin
