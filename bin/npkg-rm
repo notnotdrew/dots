@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Check if DOTS_PATH is set
+if [ -z "$DOTS_PATH" ]; then
+  echo "DOTS_PATH is not set. Please set this environment variable."
+  exit 1
+fi
+
+# Save the current directory
+current_dir=$(pwd)
+
+# Change to the DOTS_PATH directory
+cd "$DOTS_PATH" || { echo "Failed to change directory to $DOTS_PATH"; exit 1; }
+
+# List all submodules
+submodules=($(git config --file .gitmodules --name-only --get-regexp path | sed 's/\.path//'))
+if [ ${#submodules[@]} -eq 0 ]; then
+  echo "No submodules found in $DOTS_PATH."
+  cd "$current_dir"
+  exit 0
+fi
+
+# Present submodules as options
+echo "Select a submodule to remove:"
+select submodule in "${submodules[@]}"; do
+  if [[ -n $submodule ]]; then
+    # Get the path of the selected submodule
+    submodule_path=$(git config --file .gitmodules --get "$submodule.path")
+    
+    # Remove the submodule
+    git submodule deinit -f -- "$submodule_path"
+    rm -rf "$submodule_path"
+    git rm -f "$submodule_path"
+    git config --file .gitmodules --remove-section "$submodule"
+    rm -rf ".git/modules/$submodule_path"
+    git commit -m "Removed submodule $submodule_path"
+
+    echo "Submodule '$submodule_path' has been removed."
+    break
+  else
+    echo "Invalid selection. Please try again."
+  fi
+done
+
+# Return to the original directory
+cd "$current_dir"

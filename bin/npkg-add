@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Check if DOTS_PATH is set
+if [ -z "$DOTS_PATH" ]; then
+  echo "DOTS_PATH is not set. Please set this environment variable."
+  exit 1
+fi
+
+# Check if the repository URL is provided
+if [ -z "$1" ]; then
+  echo "Usage: nvim-pkg <repository-url>"
+  exit 1
+fi
+
+# Save the current directory
+current_dir=$(pwd)
+
+# Change to the DOTS_PATH directory
+cd "$DOTS_PATH" || { echo "Failed to change directory to $DOTS_PATH"; exit 1; }
+
+# Extract the repository name from the URL
+repo_url="$1"
+repo_name=$(basename -s .git "$repo_url")
+
+# Define the target path for the submodule
+target_path="nvim/pack/stable/start/$repo_name"
+
+# Check if the target path already exists
+if [ -d "$target_path" ]; then
+  echo "Directory '$target_path' already exists."
+  cd "$current_dir"
+  exit 1
+fi
+
+# Add the repository as a submodule
+git submodule add "$repo_url" "$target_path"
+
+# Return to the original directory
+cd "$current_dir"
+
+echo "Submodule '$repo_name' added at '$target_path'."
