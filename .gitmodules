@@ -1,0 +1,3 @@
+[submodule "nvim/pack/stable/start/vim-surround"]
+	path = nvim/pack/stable/start/vim-surround
+	url = git@github.com:tpope/vim-surround.git
