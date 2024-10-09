@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+  bundle exec rspec --tag feature
+else
+  HEADLESS=false bundle exec rspec --tag feature
+fi
