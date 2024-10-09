@@ -3,6 +3,9 @@
 	ci = commit
 	co = checkout
 	df = diff
+	dfs = diff --staged
+	rs = restore
+	rss = restore --staged
 	st = status
 [commit]
 	gpgsign = true
