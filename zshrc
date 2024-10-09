@@ -19,11 +19,9 @@ alias zrc='nvim ~/.zshrc'
 autoload -Uz compinit && compinit # Load completions
 _comp_options+=(globdots) # include dot files for completions
 
-bindkey -v
-
 eval "$(direnv hook zsh)"
 eval "$(thefuck --alias)"
 
-source $DOTS_PATH/zsh/color.zsh
-source $DOTS_PATH/zsh/prompt.zsh
-source $DOTS_PATH/zsh/toggle_cursor.zsh
+for file in $DOTS_PATH/zsh/**/*.zsh; do
+  [ -r "$file" ] && source "$file"
+done
