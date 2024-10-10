@@ -26,3 +26,15 @@ eval "$(thefuck --alias)"
 for file in $DOTS_PATH/zsh/**/*.zsh; do
   [ -r "$file" ] && source "$file"
 done
+
+# Plugins (via https://github.com/mattmc3/zsh_unplugged)
+zsh_plugin_repos=(
+  jeffreytse/zsh-vi-mode
+  zsh-users/zsh-completions
+  zsh-users/zsh-syntax-highlighting
+  zsh-users/zsh-autosuggestions
+)
+
+plugin-load $zsh_plugin_repos # See $DOTS_PATH/zsh/plugin-load.zsh
+
+bindkey '^ ' autosuggest-accept # control + space to accept suggestions
