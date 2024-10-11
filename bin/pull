@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ "$1" = "-d" ]; then
+  git pull-request -opda notnotdrew
+else
+  git pull-request -opa notnotdrew --reviewer flatiron-labs/engineering
+fi

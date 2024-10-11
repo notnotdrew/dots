@@ -22,6 +22,7 @@ autoload -Uz compinit && compinit # Load completions
 _comp_options+=(globdots) # include dot files for completions
 
 eval "$(direnv hook zsh)"
+eval "$(hub alias -s)"
 eval "$(thefuck --alias)"
 
 for file in $DOTS_PATH/zsh/**/*.zsh; do
