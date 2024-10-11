@@ -9,6 +9,7 @@ alias asdfpi="cut -d' ' -f1 .tool-versions|xargs -I{} asdf plugin add {} && asdf
 alias be='bundle exec'
 alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
 alias g='git'
+alias init='nvim ~/.config/nvim/init.lua'
 alias ivm='nvim'
 alias ls='ls -lahGp' # one entry/line, all files, color allowed, directory indicator
 alias nv='nvim'
