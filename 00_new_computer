@@ -26,6 +26,8 @@ sudo sh -c 'echo /opt/homebrew/bin/bash >> /etc/shells'
 sudo sh -c 'echo /opt/homebrew/bin/zsh >> /etc/shells'
 chsh -s /opt/homebrew/bin/zsh
 
+source ~/.zshrc
+
 # General config
 # #####################################
 
