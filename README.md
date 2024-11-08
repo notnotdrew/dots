@@ -11,3 +11,4 @@
 - [ ] https://www.reddit.com/r/neovim/comments/1cuu9xg/setup_bash_lsp_for_zsh_files_in_lazyvim/
 - [ ] https://nanotipsforvim.prose.sh/treesitter-and-lsp-support-for-zsh
 - [ ] https://rdrn.me/neovim/
+- [ ] hub completions are not working as expected
