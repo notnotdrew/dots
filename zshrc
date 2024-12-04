@@ -40,3 +40,4 @@ zsh_plugin_repos=(
 plugin-load $zsh_plugin_repos # See $DOTS_PATH/zsh/plugin-load.zsh
 
 bindkey '^ ' autosuggest-accept # control + space to accept suggestions
+export PATH="/opt/homebrew/bin:$PATH"

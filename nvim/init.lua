@@ -19,36 +19,29 @@ vim.g.loaded_ruby_provider = 0
 
 -- Bootstrap vim-plug if it's not installed
 vim.cmd [[
- let data_dir = has('nvim') ? stdpath('data') . '/site' : '~/.vim'
- if empty(glob(data_dir . '/autoload/plug.vim'))
-     silent execute '!curl -fLo '.data_dir.'/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
-     autocmd VimEnter * PlugInstall --sync | source $MYVIMRC
- endif
+let data_dir = has('nvim') ? stdpath('data') . '/site' : '~/.vim'
+if empty(glob(data_dir . '/autoload/plug.vim'))
+  silent execute '!curl -fLo '.data_dir.'/autoload/plug.vim --create-dirs  https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
+  autocmd VimEnter * PlugInstall --sync | source $MYVIMRC
+endif
 ]]
 
 vim.cmd([[
 call plug#begin()
+Plug 'hrsh7th/cmp-nvim-lsp'                                       " nvim-cmp source for neovim builtin LSP client
 Plug 'AndrewRadev/splitjoin.vim'                                  " Switch between single-line and multiline forms of code
 Plug 'AndrewRadev/writable_search.vim'                            " Grep for something, then write the original files directly through the search results
 Plug 'DataWraith/auto_mkdir'                                      " Allows you to save files into directories that do not exist yet
-Plug 'EdenEast/nightfox.nvim'                                     " 🦊A highly customizable theme for vim and neovim with support for lsp, treesitter and a variety of plugins
-Plug 'Exafunction/codeium.nvim'                                   " A native neovim extension for Codeium
-Plug 'Glench/Vim-Jinja2-Syntax'                                   " Jinja2 syntax highlighting
 Plug 'L3MON4D3/LuaSnip'                                           " Snippet Engine for Neovim written in Lua.
-Plug 'Olical/conjure'                                             " Interactive evaluation for Neovim.
 Plug 'OliverChao/telescope-picker-list.nvim'                      " A plugin that helps you use any pickers in telescope
-Plug 'PaterJason/cmp-conjure'                                     " nvim-cmp source for conjure.
 Plug 'RRethy/nvim-treesitter-endwise'                             " Tree-sitter aware alternative to tpope's vim-endwise
 Plug 'elixir-editors/vim-elixir'                                  " Vim configuration files for Elixir
 Plug 'folke/neodev.nvim'                                          " Neovim setup for init.lua and plugin development with full signature help, docs and completion for the nvim lua API
 Plug 'gbprod/yanky.nvim'                                          " Improved Yank and Put functionalities for Neovim
-Plug 'guns/vim-clojure-static'                                    " Clojure syntax highlighting and indentation
-Plug 'guns/vim-sexp'                                              " Precision editing for s-expressions
 Plug 'hashivim/vim-terraform'                                     " basic vim/terraform integration
 Plug 'honza/vim-snippets'                                         " Default snippets'
 Plug 'hrsh7th/cmp-buffer'                                         " nvim-cmp source for buffer words
 Plug 'hrsh7th/cmp-cmdline'                                        " nvim-cmp source for vim's cmdline
-Plug 'hrsh7th/cmp-nvim-lsp'                                       " nvim-cmp source for neovim builtin LSP client
 Plug 'hrsh7th/cmp-nvim-lua'                                       " nvim-cmp source for nvim lua
 Plug 'hrsh7th/cmp-path'                                           " nvim-cmp source for path
 Plug 'hrsh7th/nvim-cmp'                                           " A completion plugin for neovim coded in Lua
@@ -69,23 +62,20 @@ Plug 'nvim-treesitter/nvim-treesitter-textobjects'                " Syntax aware
 Plug 'nvimtools/none-ls.nvim'                                     " Use Neovim as a language server to inject LSP diagnostics, code actions, and more via Lua
 Plug 'petertriho/cmp-git'                                         " Git source for nvim-cmp
 Plug 'reedes/vim-lexical'                                         " Build on Vim’s spell/thes/dict completion
+Plug 'RRethy/base16-nvim'                                         " Neovim plugin for building a sync base16 colorscheme. Includes support for Treesitter and LSP highlight groups.
 Plug 'saadparwaiz1/cmp_luasnip'                                   " luasnip completion source for nvim-cmp
 Plug 'scrooloose/nerdcommenter'                                   " quickly (un)comment lines
 Plug 'sjl/vitality.vim'                                           " Make Vim play nicely with iTerm 2 and tmux
-Plug 'slim-template/vim-slim'                                     " Syntax highlighting for slim
 Plug 'tpope/vim-abolish'                                          " easily search for, substitute, and abbreviate multiple variants of a word
 Plug 'tpope/vim-bundler'                                          " makes source navigation of bundled gems easier
-Plug 'tpope/vim-cucumber'                                         " provides syntax highlighting, indenting, and a filetype plugin
 Plug 'tpope/vim-dispatch'                                         " Asynchronous build and test dispatcher
 Plug 'tpope/vim-endwise'                                          " wisely add 'end' in ruby, endfunction/endif/more in vim script, etc
 Plug 'tpope/vim-fugitive'                                         " Git plugin
-Plug 'tpope/vim-leiningen'                                        " static support for Leiningen
 Plug 'tpope/vim-projectionist'                                    " project configuration
 Plug 'tpope/vim-rails'                                            " Rails helpers
 Plug 'tpope/vim-rake'                                             " makes Ruby project navigation easier for non-Rails projects
 Plug 'tpope/vim-repeat'                                           " Enable repeating supported plugin maps with '.'
 Plug 'tpope/vim-rhubarb'                                          " GitHub extension for fugitive.vim
-Plug 'tpope/vim-sexp-mappings-for-regular-people'                 " vim-sexp mappings rely on meta key; these don't
 Plug 'vim-ruby/vim-ruby'                                          " packaged w/ vim but this is latest and greatest
 Plug 'vim-test/vim-test'                                          " Run your tests at the speed of thought
 Plug 'williamboman/mason-lspconfig.nvim'                          " Extension to mason.nvim that makes it easier to use lspconfig
@@ -97,7 +87,7 @@ call plug#end()
 -- ###########################################################################
 -- Settings
 -- ###########################################################################
-vim.o.colorcolumn = "79"               -- Show vertical column
+vim.o.colorcolumn = "81"               -- Show vertical column
 vim.o.completeopt = 'menuone,noselect' -- Set completeopt to have a better completion experience
 vim.o.cursorline = true                -- Highlight current line
 vim.o.expandtab = true                 -- Expand tabs to spaces
@@ -110,17 +100,16 @@ vim.o.smartcase = true                 -- Turn case sensitive search back on in 
 vim.o.termguicolors = true             -- Enables 24-bit RGB color
 vim.o.timeoutlen = 300                 -- Decrease update time
 vim.o.updatetime = 250
-vim.o.wrap = true                      -- Turn on line wrapping
+vim.o.wrap = false                     -- Turn on line wrapping
 vim.wo.number = true                   -- Display line numbers
 vim.wo.signcolumn = 'yes'              -- Always show signcolumn
 
-vim.cmd 'colorscheme nightfox'
+vim.cmd 'colorscheme base16-eighties'
 
 -- ###########################################################################
 -- Plugin Configuration
 -- ###########################################################################
 
-require('codeium').setup({})
 require('colorizer').setup()
 require('gitsigns').setup()
 require('lualine').setup({})
@@ -337,9 +326,6 @@ local servers = {
   },
 
   solargraph = {},
-  stimulus_ls = {},
-  tailwindcss = {},
-  tsserver = {}
 }
 
 -- Setup neovim lua configuration
@@ -469,6 +455,8 @@ require("cmp_git").setup()
 -- ###########################################################################
 -- Keymaps
 -- ###########################################################################
+
+vim.keymap.set('n', '<leader>s', ':source $MYVIMRC<CR>', { noremap = true, desc = 'Reload init.lua' })
 
 vim.keymap.set('n', '<leader><space>', ":let @/=''<cr>",
   { noremap = true, desc = 'Clear out recent search highlighting' })
