@@ -1,7 +1,24 @@
 #!/bin/bash
 
-if [ -z "$1" ]; then
-  bundle exec rspec --tag feature
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--headful)
+      HEADLESS=false
+      ;;
+    *)
+      FEATURE_PATH="$1"
+      ;;
+  esac
+  shift
+done
+
+# Build the command
+CMD="bundle exec rspec --tag feature"
+[[ -n "$FEATURE_PATH" ]] && CMD="$CMD $FEATURE_PATH"
+
+if [[ "$HEADLESS" = false ]]; then
+  HEADLESS=false $CMD
 else
-  HEADLESS=false bundle exec rspec --tag feature
+  $CMD
 fi
