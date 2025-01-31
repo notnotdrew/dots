@@ -1,3 +1,66 @@
 [submodule "zsh/plugins/zsh-vi-mode"]
 	path = zsh/plugins/zsh-vi-mode
 	url = git@github.com:jeffreytse/zsh-vi-mode.git
+[submodule "nvim/pack/plugins/start/ale"]
+	path = nvim/pack/plugins/start/ale
+	url = https://github.com/dense-analysis/ale.git
+[submodule "nvim/pack/plugins/start/fzf.vim"]
+	path = nvim/pack/plugins/start/fzf.vim
+	url = https://github.com/junegunn/fzf.vim.git
+[submodule "nvim/pack/plugins/start/golden-ratio"]
+	path = nvim/pack/plugins/start/golden-ratio
+	url = https://github.com/roman/golden-ratio.git
+[submodule "nvim/pack/plugins/start/lightline.vim"]
+	path = nvim/pack/plugins/start/lightline.vim
+	url = https://github.com/itchyny/lightline.vim.git
+[submodule "nvim/pack/plugins/start/rainbow"]
+	path = nvim/pack/plugins/start/rainbow
+	url = https://github.com/luochen1990/rainbow.git
+[submodule "nvim/pack/plugins/start/splitjoin.vim"]
+	path = nvim/pack/plugins/start/splitjoin.vim
+	url = https://github.com/andrewradev/splitjoin.vim.git
+[submodule "nvim/pack/plugins/start/supertab"]
+	path = nvim/pack/plugins/start/supertab
+	url = https://github.com/ervandew/supertab.git
+[submodule "nvim/pack/plugins/start/vim-css-color"]
+	path = nvim/pack/plugins/start/vim-css-color
+	url = https://github.com/ap/vim-css-color.git
+[submodule "nvim/pack/plugins/start/vim-fetch"]
+	path = nvim/pack/plugins/start/vim-fetch
+	url = https://github.com/wsdjeg/vim-fetch.git
+[submodule "nvim/pack/plugins/start/vim-fugitive"]
+	path = nvim/pack/plugins/start/vim-fugitive
+	url = https://github.com/tpope/vim-fugitive.git
+[submodule "nvim/pack/plugins/start/vim-gitgutter"]
+	path = nvim/pack/plugins/start/vim-gitgutter
+	url = https://github.com/airblade/vim-gitgutter.git
+[submodule "nvim/pack/plugins/start/vim-go"]
+	path = nvim/pack/plugins/start/vim-go
+	url = https://github.com/fatih/vim-go.git
+[submodule "nvim/pack/plugins/start/vim-illuminate"]
+	path = nvim/pack/plugins/start/vim-illuminate
+	url = https://github.com/RRethy/vim-illuminate.git
+[submodule "nvim/pack/plugins/start/vim-lexical"]
+	path = nvim/pack/plugins/start/vim-lexical
+	url = https://github.com/reedes/vim-lexical.git
+[submodule "nvim/pack/plugins/start/vim-polyglot"]
+	path = nvim/pack/plugins/start/vim-polyglot
+	url = https://github.com/sheerun/vim-polyglot.git
+[submodule "nvim/pack/plugins/start/vim-rhubarb"]
+	path = nvim/pack/plugins/start/vim-rhubarb
+	url = https://github.com/tpope/vim-rhubarb.git
+[submodule "nvim/pack/plugins/start/vim-search-pulse"]
+	path = nvim/pack/plugins/start/vim-search-pulse
+	url = https://github.com/inside/vim-search-pulse.git
+[submodule "nvim/pack/plugins/start/vim-surround"]
+	path = nvim/pack/plugins/start/vim-surround
+	url = https://github.com/tpope/vim-surround.git
+[submodule "nvim/pack/plugins/start/vim-test"]
+	path = nvim/pack/plugins/start/vim-test
+	url = https://github.com/vim-test/vim-test.git
+[submodule "nvim/pack/plugins/start/vim-trailing-whitespace"]
+	path = nvim/pack/plugins/start/vim-trailing-whitespace
+	url = https://github.com/bronson/vim-trailing-whitespace.git
+[submodule "nvim/pack/plugins/start/base16-nvim"]
+	path = nvim/pack/plugins/start/base16-nvim
+	url = https://github.com/RRethy/base16-nvim
