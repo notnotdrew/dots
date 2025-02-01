@@ -86,7 +86,6 @@ require('lazy').setup({
   'RRethy/vim-illuminate', -- Highlight other uses of the word under the cursor
   'andrewradev/splitjoin.vim', -- Switch between single-line and multiline forms of code
   'bronson/vim-trailing-whitespace', -- Highlights trailing whitespace in red
-  'dense-analysis/ale', -- Check syntax asynchronously and fix files
   'ervandew/supertab', -- Insert mode completions with Tab
   'hrsh7th/cmp-nvim-lsp', -- nvim-cmp source for neovim builtin LSP client
   'hrsh7th/cmp-path', -- nvim-cmp source for patha,
@@ -105,11 +104,21 @@ require('lazy').setup({
   'wsdjeg/vim-fetch', -- Handle line and column numbers in file names
 
   {
+    -- Check syntax asynchronously and fix files
+    "dense-analysis/ale",
+    config = function()
+      vim.g.ale_fix_on_save = 1
+      vim.g.ale_fixers = { javascript = { "eslint" }, ruby = { "rubocop" } }
+      vim.g.ale_ruby_rubocop_executable = "bundle"
+    end
+  },
+
+  {
     'lewis6991/gitsigns.nvim', opts = {}, -- Shows git diff markers in the sign column
   },
 
   {
-    'nvim-neotest/neotest',
+    "nvim-neotest/neotest",
     dependencies = {
       "nvim-neotest/nvim-nio",
       "nvim-lua/plenary.nvim",
@@ -231,6 +240,7 @@ require('lazy').setup({
     'folke/lazydev.nvim',
     ft = 'lua'
   },
+
   {
     -- Main LSP Configuration
     'neovim/nvim-lspconfig',
@@ -410,6 +420,7 @@ require('lazy').setup({
             },
           },
         },
+        -- rubocop = {}, TODO: get this working?
         solargraph = {}
       }
 
