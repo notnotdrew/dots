@@ -84,7 +84,6 @@ vim.opt.rtp:prepend(lazypath)
 require('lazy').setup({
   'DataWraith/auto_mkdir', -- Save files into directories that do not exist yet
   'RRethy/vim-illuminate', -- Highlight other uses of the word under the cursor
-  'airblade/vim-gitgutter', -- Shows git diff markers in the sign column
   'andrewradev/splitjoin.vim', -- Switch between single-line and multiline forms of code
   'bronson/vim-trailing-whitespace', -- Highlights trailing whitespace in red
   'dense-analysis/ale', -- Check syntax asynchronously and fix files
@@ -93,19 +92,49 @@ require('lazy').setup({
   'hrsh7th/cmp-path', -- nvim-cmp source for patha,
   'hrsh7th/nvim-cmp', -- nvim-cmp source for patha,
   'inside/vim-search-pulse', -- Easily locate the cursor after a search
-  'itchyny/lightline.vim', -- [TRIAL] A light and configurable statusline/tabline
   'luochen1990/rainbow', -- Rainbow parentheses,
+  'nvim-lualine/lualine.nvim', -- Neovim statusline
   'preservim/vim-lexical', -- Build on Vim’s spell/thes/dict completion
   'roman/golden-ratio', -- Automatic resizing of windows to the golden ratio
-  'sheerun/vim-polyglot', -- [TRIAL] A language pack
   'tkatsu/vim-erblint', -- Shopify/erb-lint
   'tpope/vim-fugitive', -- Git wrapper
   'tpope/vim-rails', -- Ruby on Rails power tools
   'tpope/vim-rhubarb', -- GitHub extension for fugitive.vim
   'tpope/vim-surround', -- Delete/change/add parentheses/quotes/XML-tags/much more
   'vim-ruby/vim-ruby', -- Vim/Ruby Configuration Files
-  'vim-test/vim-test', -- Run tests
   'wsdjeg/vim-fetch', -- Handle line and column numbers in file names
+
+  {
+    'lewis6991/gitsigns.nvim', opts = {}, -- Shows git diff markers in the sign column
+  },
+
+  {
+    'nvim-neotest/neotest',
+    dependencies = {
+      "nvim-neotest/nvim-nio",
+      "nvim-lua/plenary.nvim",
+      "antoinemadec/FixCursorHold.nvim",
+      "nvim-treesitter/nvim-treesitter",
+      "olimorris/neotest-rspec",
+      -- Add other test providers here as needed
+    },
+    config = function()
+      -- Set up keymaps for running tests
+      require("neotest").setup({
+        adapters = {
+          require("neotest-rspec")
+        },
+      })
+
+      vim.keymap.set("n", "<Leader>t", ':Neotest run<CR>', { desc = "Test nearest" })
+      -- TODO: this doesn't work with feature tagged specs (it runs as nearest)?
+      vim.keymap.set("n", "<Leader>T", ':Neotest run file<CR>', { desc = "Test file" })
+      vim.keymap.set("n", "<Leader>l", ':Neotest run last<CR>', { desc = "Test last" })
+
+      vim.keymap.set("n", "<Leader>a", ':Neotest attach<CR>', { desc = "Test attach" })
+      vim.keymap.set("n", "<Leader>o", ':Neotest output<CR>', { desc = "Test output" })
+    end,
+  },
 
   {
     -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
@@ -114,6 +143,32 @@ require('lazy').setup({
     init = function()
       vim.cmd.colorscheme 'base16-eighties'
     end,
+  },
+
+  { -- Highlight, edit, and navigate code
+    'nvim-treesitter/nvim-treesitter',
+    build = ':TSUpdate',
+    main = 'nvim-treesitter.configs', -- Sets main module to use for opts
+    -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
+    opts = {
+      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'ruby', 'vim', 'vimdoc' },
+      -- Autoinstall languages that are not installed
+      auto_install = true,
+      highlight = {
+        enable = true,
+        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
+        --  If you are experiencing weird indenting issues, add the language to
+        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
+        additional_vim_regex_highlighting = { 'javascript', 'ruby' },
+      },
+      indent = { enable = true, disable = { 'ruby' } },
+    },
+    -- There are additional nvim-treesitter modules that you can use to interact
+    -- with nvim-treesitter. You should go explore a few and see what interests you:
+    --
+    --    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
+    --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
+    --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
   },
 
   { -- Fuzzy Finder (files, lsp, etc)
