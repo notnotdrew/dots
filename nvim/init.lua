@@ -109,13 +109,16 @@ require('lazy').setup({
     config = function()
       vim.g.ale_fix_on_save = 1
       vim.g.ale_fixers = { javascript = { "eslint" }, ruby = { "rubocop" } }
+      vim.g.ale_ruby_rubocop_auto_correct_all = 1
       vim.g.ale_ruby_rubocop_executable = "bundle"
 
+      vim.api.nvim_set_keymap('n', '<leader>af', ':ALEFix<CR>', { desc = "Ale fix" })
+
       vim.api.nvim_set_keymap(
-        'n',
-        '<leader>rd',
-        [[:execute '!bundle exec rubocop --autocorrect --disable-uncorrectable ' . expand('%') <CR>]],
-        { noremap = true, silent = true }
+        "n",
+        "<leader>rd",
+        [[:execute '!bundle exec rubocop --autocorrect-all --disable-uncorrectable ' . expand('%') | :%s/rubocop:todo/rubocop:disable/g<CR>]],
+        { desc = "Rubocop disable uncorrectable" }
       )
     end
   },
