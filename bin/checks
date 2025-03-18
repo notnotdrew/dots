@@ -1,0 +1,3 @@
+#!/bin/bash
+
+specs && features && bundle exec rubocop

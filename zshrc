@@ -1,11 +1,9 @@
 . $HOMEBREW_PREFIX/etc/profile.d/z.sh # https://formulae.brew.sh/formula/z
-. $HOMEBREW_PREFIX/opt/asdf/libexec/asdf.sh https://formulae.brew.sh/formula/asdf
 
 alias ....='cd ../../..'
 alias ...='cd ../..'
 alias ..='cd ..'
 alias ag='rg'
-alias asdfpi="cut -d' ' -f1 .tool-versions|xargs -I{} asdf plugin add {} && asdf install"
 alias be='bundle exec'
 alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
 alias g='git'
@@ -41,3 +39,4 @@ plugin-load $zsh_plugin_repos # See $DOTS_PATH/zsh/plugin-load.zsh
 
 bindkey '^ ' autosuggest-accept # control + space to accept suggestions
 export PATH="/opt/homebrew/bin:$PATH"
+eval "$(mise activate zsh)"

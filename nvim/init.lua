@@ -145,9 +145,9 @@ require('lazy').setup({
         },
       })
 
-      vim.keymap.set("n", "<Leader>t", ':Neotest run<CR>', { desc = "Test nearest" })
-      -- TODO: this doesn't work with feature tagged specs (it runs as nearest)?
-      vim.keymap.set("n", "<Leader>T", ':Neotest run file<CR>', { desc = "Test file" })
+      -- NOTE: this reads backwards... but works as described.
+      vim.keymap.set("n", "<Leader>t", ':Neotest run file<CR>', { desc = "Test nearest" })
+      vim.keymap.set("n", "<Leader>T", ':Neotest run<CR>', { desc = "Test file" })
       vim.keymap.set("n", "<Leader>l", ':Neotest run last<CR>', { desc = "Test last" })
 
       vim.keymap.set("n", "<Leader>a", ':Neotest attach<CR>', { desc = "Test attach" })

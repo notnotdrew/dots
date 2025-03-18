@@ -21,3 +21,8 @@
 	email = 7977907+notnotdrew@users.noreply.github.com
 [push]
 	autoSetupRemote = true
+[credential]
+	helper = store
+	helper = /usr/local/share/gcm-core/git-credential-manager
+[credential "https://dev.azure.com"]
+	useHttpPath = true

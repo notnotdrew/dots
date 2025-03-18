@@ -1,7 +1,11 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-  CLEANUP=true CLEANUP_VCR=true bundle exec rspec spec/
+  if [ ! -d "spec/features/" ]; then
+    CLEANUP=true CLEANUP_VCR=true bundle exec rspec spec/
+  else
+    bundle exec rspec spec/
+  fi
 else
-  bundle exec rspec $1
+  bundle exec rspec "$1"
 fi
