@@ -160,10 +160,6 @@ require('lazy').setup({
   },
 
   {
-    'tpope/vim-fugitive', -- Git wrapper
-  },
-
-  {
     'tpope/vim-rails', -- Ruby on Rails power tools
   },
 
