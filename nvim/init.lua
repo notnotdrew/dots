@@ -101,7 +101,6 @@ require('lazy').setup({
   {
     'hrsh7th/nvim-cmp', -- nvim-cmp source for patha,
     dependencies = {
-      'hrsh7th/cmp-nvim-lsp',
       'hrsh7th/cmp-buffer',
       'hrsh7th/cmp-path',
       'hrsh7th/cmp-cmdline',
@@ -129,7 +128,6 @@ require('lazy').setup({
           ['<CR>'] = cmp.mapping.confirm({ select = true }),
         },
         sources = cmp.config.sources({
-          { name = 'nvim_lsp' },
           { name = 'buffer' },
           { name = 'path' },
         })
@@ -287,83 +285,6 @@ require('lazy').setup({
       -- See `:help telescope.builtin`
       local builtin = require 'telescope.builtin'
       vim.keymap.set('n', '<C-p>', builtin.find_files, { desc = 'Search Files' })
-    end,
-  },
-
-  {
-    'folke/lazydev.nvim', -- Faster LuaLS setup for Neovim
-    ft = 'lua'
-  },
-
-  {
-    'neovim/nvim-lspconfig', -- Main LSP Configuration
-    dependencies = {
-      {
-        'williamboman/mason.nvim',
-        opts = {}
-      },
-
-      'williamboman/mason-lspconfig.nvim',
-      'WhoIsSethDaniel/mason-tool-installer.nvim',
-
-      {
-        'j-hui/fidget.nvim', -- Useful status updates for LSP.
-        opts = {}
-      },
-
-      'hrsh7th/cmp-nvim-lsp', -- Allows extra capabilities provided by nvim-cmp
-    },
-    config = function()
-      vim.api.nvim_create_autocmd('LspAttach', {
-        group = vim.api.nvim_create_augroup('kickstart-lsp-attach', { clear = true }),
-        callback = function(event)
-          local map = function(keys, func, desc, mode)
-            mode = mode or 'n'
-            vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = 'LSP: ' .. desc })
-          end
-
-          map('<leader>ca', vim.lsp.buf.code_action, '[C]ode [A]ction', { 'n', 'x' })
-        end,
-      })
-
-      -- Change diagnostic symbols in the sign column (gutter)
-      if vim.g.have_nerd_font then
-        local signs = { ERROR = '', WARN = '', INFO = '', HINT = '' }
-        local diagnostic_signs = {}
-        for type, icon in pairs(signs) do
-          diagnostic_signs[vim.diagnostic.severity[type]] = icon
-        end
-        vim.diagnostic.config { signs = { text = diagnostic_signs } }
-      end
-
-      local capabilities = vim.lsp.protocol.make_client_capabilities()
-      capabilities = vim.tbl_deep_extend('force', capabilities, require('cmp_nvim_lsp').default_capabilities())
-
-      local servers = {
-        eslint = {},
-        html = {},
-        lua_ls = {},
-        ruby_lsp = {
-          init_options = {
-            formatter = 'standard',
-            linters = { 'standard' },
-          }
-        },
-      }
-
-      local ensure_installed = vim.tbl_keys(servers or {})
-      vim.list_extend(ensure_installed, { 'stylua', })
-      require('mason-tool-installer').setup { ensure_installed = ensure_installed }
-
-      require('mason-lspconfig').setup {
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
-      }
     end,
   },
 
