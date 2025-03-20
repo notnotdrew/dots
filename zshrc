@@ -8,13 +8,14 @@ alias be='bundle exec'
 alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
 alias g='git'
 alias init='nvim ~/.config/nvim/init.lua'
-alias ivm='nvim'
+alias ivm='vim'
 alias ls='ls -lahGp' # one entry/line, all files, color allowed, directory indicator
 alias nv='nvim'
 alias rk='bin/rake'
-alias vi='nvim'
-alias vim='nvim'
-alias zrc='nvim ~/.zshrc'
+alias vi='vim'
+alias vim='vim'
+alias vrc='vim ~/.vimrc'
+alias zrc='vim ~/.zshrc'
 
 autoload -Uz compinit && compinit # Load completions
 _comp_options+=(globdots) # include dot files for completions
