@@ -21,9 +21,9 @@ Plug 'inside/vim-search-pulse' " Easily locate the cursor after a search
 Plug 'junegunn/fzf' " Necessary for fzf.vim
 Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
-Plug 'morhetz/gruvbox' " Retro groove color scheme for Vim
 Plug 'preservim/vim-lexical' " Build on Vim’s spell/thes/dict completion
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
+Plug 'sainnhe/gruvbox-material' " Gruvbox with Material Palette
 Plug 'sheerun/vim-polyglot' " Language pack for Vim
 Plug 'tkatsu/vim-erblint' " Shopify/erb-lint
 Plug 'tpope/vim-rails' " Ruby on Rails power tools
@@ -37,16 +37,7 @@ call plug#end() " Automatically executes filetype plugin indent on and syntax en
 
 " Options
 " --------------
-
-" Gruvbox
-colorscheme gruvbox
-highlight SignColumn guibg=bg
-
-" Eighties
-" colorscheme base16-eighties
-" highlight CursorLineNr guibg=NONE cterm=NONE
-" highlight LineNr guibg=NONE
-" highlight SignColumn guibg=NONE
+colorscheme gruvbox-material
 
 set background=dark " Set dark background (works with many colorschemes)
 set colorcolumn=79 " Show vertical column
