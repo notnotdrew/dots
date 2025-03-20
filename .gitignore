@@ -1,3 +1,4 @@
-zsh/secrets.zsh
 nvim/thesaurus/*.txt
+vim/.netrwhist
 vim/plugged
+zsh/secrets.zsh
