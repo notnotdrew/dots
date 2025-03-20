@@ -21,12 +21,14 @@ Plug 'inside/vim-search-pulse' " Easily locate the cursor after a search
 Plug 'junegunn/fzf' " Necessary for fzf.vim
 Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
+Plug 'morhetz/gruvbox' " Retro groove color scheme for Vim
 Plug 'preservim/vim-lexical' " Build on Vim’s spell/thes/dict completion
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
 Plug 'sheerun/vim-polyglot' " Language pack for Vim
 Plug 'tkatsu/vim-erblint' " Shopify/erb-lint
 Plug 'tpope/vim-rails' " Ruby on Rails power tools
 Plug 'tpope/vim-surround' " Delete/change/add parentheses/quotes/XML-tags/much more
+Plug 'tpope/vim-dispatch' " Asynchronous build and test dispatcher
 Plug 'vim-ruby/vim-ruby' " Vim/Ruby Configuration Files
 Plug 'vim-test/vim-test' " It's tests
 Plug 'wsdjeg/vim-fetch' " Handle line and column numbers in file names
@@ -35,10 +37,16 @@ call plug#end() " Automatically executes filetype plugin indent on and syntax en
 
 " Options
 " --------------
-colorscheme base16-eighties
-highlight CursorLineNr guibg=NONE cterm=NONE
-highlight LineNr guibg=NONE
-highlight SignColumn guibg=NONE
+
+" Gruvbox
+colorscheme gruvbox
+highlight SignColumn guibg=bg
+
+" Eighties
+" colorscheme base16-eighties
+" highlight CursorLineNr guibg=NONE cterm=NONE
+" highlight LineNr guibg=NONE
+" highlight SignColumn guibg=NONE
 
 set background=dark " Set dark background (works with many colorschemes)
 set colorcolumn=79 " Show vertical column
@@ -79,7 +87,8 @@ let g:ale_fix_on_save = 1
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
 let g:ruby_indent_assignment_style = 'variable' " Resolves a conflict with standardrb
 let g:ruby_indent_hanging_elements = 0 " Resolves a conflict with standardrb
-
+let g:test#javascript#jest#options = '--reporters jest-vim-reporter' " https://www.npmjs.com/package/jest-vim-reporter
+let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a split window.
 
 " Commands
 " ----------------
@@ -87,7 +96,6 @@ command W w
 command Q q
 command Vsp vsp
 command! ALEDisableRubyRule call ALEDisableRubyRule()
-
 
 " Keymaps
 " --------------
