@@ -6,6 +6,7 @@ alias ..='cd ..'
 alias ag='rg'
 alias be='bundle exec'
 alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
+alias cat='bat'
 alias g='git'
 alias init='nvim ~/.config/nvim/init.lua'
 alias ivm='vim'
@@ -16,6 +17,8 @@ alias vi='vim'
 alias vim='vim'
 alias vrc='vim ~/.vimrc'
 alias zrc='vim ~/.zshrc'
+
+export BAT_THEME="base16"
 
 autoload -Uz compinit && compinit # Load completions
 _comp_options+=(globdots) # include dot files for completions

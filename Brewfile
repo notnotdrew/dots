@@ -1,6 +1,7 @@
 brew "awscli"
 brew "bash"
 brew "bash-completion"
+brew "bat"
 brew "cmatrix"
 brew "cowsay"
 brew "ctags"

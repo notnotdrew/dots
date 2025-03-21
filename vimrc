@@ -14,7 +14,6 @@ Plug 'RRethy/vim-illuminate' " Highlight other uses of the word under the cursor
 Plug 'airblade/vim-gitgutter' " Git diff markers in the sign column
 Plug 'andrewradev/splitjoin.vim' " Switch between single-line and multiline forms of code
 Plug 'bronson/vim-trailing-whitespace' " Highlights trailing whitespace in red
-Plug 'chriskempson/base16-vim' " base16 colorschemes
 Plug 'dense-analysis/ale' " Async linter
 Plug 'ervandew/supertab' " Insert mode completions with Tab
 Plug 'inside/vim-search-pulse' " Easily locate the cursor after a search
@@ -23,12 +22,14 @@ Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
 Plug 'preservim/vim-lexical' " Build on Vim’s spell/thes/dict completion
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
+Plug 'sainnhe/everforest' " Comfortable & Pleasant Color Scheme for Vim
 Plug 'sainnhe/gruvbox-material' " Gruvbox with Material Palette
 Plug 'sheerun/vim-polyglot' " Language pack for Vim
 Plug 'tkatsu/vim-erblint' " Shopify/erb-lint
+Plug 'tlhr/anderson.vim' " Based on colors from Wes Anderson films
+Plug 'tpope/vim-dispatch' " Asynchronous build and test dispatcher
 Plug 'tpope/vim-rails' " Ruby on Rails power tools
 Plug 'tpope/vim-surround' " Delete/change/add parentheses/quotes/XML-tags/much more
-Plug 'tpope/vim-dispatch' " Asynchronous build and test dispatcher
 Plug 'vim-ruby/vim-ruby' " Vim/Ruby Configuration Files
 Plug 'vim-test/vim-test' " It's tests
 Plug 'wsdjeg/vim-fetch' " Handle line and column numbers in file names
@@ -37,8 +38,6 @@ call plug#end() " Automatically executes filetype plugin indent on and syntax en
 
 " Options
 " --------------
-colorscheme gruvbox-material
-
 set background=dark " Set dark background (works with many colorschemes)
 set colorcolumn=79 " Show vertical column
 set completeopt=menuone,noselect " [TRIAL] Set completeopt to have a better completion experience
@@ -123,6 +122,15 @@ nnoremap <leader>lf :ALEFix<CR>
 
 " Functions
 " --------------
+
+" NOTE: for some reason, the environment's BAT_THEME is not picked up, and
+" outside of a function call, neither is let $BAT_THEME. In this function
+" though, it is :shrug:
+function! GruvboxTheme()
+  let $BAT_THEME='base16' " Set BAT_THEME for fzf previews
+  colorscheme gruvbox-material
+endfunction
+
 function! ALEDisableRubyRule()
   let l:line = line('.')
   let l:loclist = getloclist(0)
@@ -153,3 +161,5 @@ function! ALEDisableRubyRule()
   call setline('.', getline('.') . ' ' . l:comment)
   echo "Added: " . l:comment
 endfunction
+
+call GruvboxTheme()
