@@ -69,15 +69,14 @@ let &t_SI = "\e[5 q" " Blinking line in insert mode
 let &t_EI = "\e[2 q" " Block cursor in normal mode
 let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
 let g:ale_linters_explicit = 1
-let g:ale_linters= {'ruby': ['rubocop', 'standardrb']}
-let g:ale_fixers = {'ruby': ['rubocop', 'standardrb']}
+let g:ale_linters= {'javascript': ['eslint'], 'ruby': ['rubocop']}
+let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
 let g:ale_ruby_rubocop_executable = "bin/rubocop"
-let g:ale_ruby_standardrb_executable = "bin/standardrb"
 let g:ale_fix_on_save = 1
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
 let g:ruby_indent_assignment_style = 'variable' " Resolves a conflict with standardrb
 let g:ruby_indent_hanging_elements = 0 " Resolves a conflict with standardrb
-let g:test#javascript#jest#options = '--reporters jest-vim-reporter' " https://www.npmjs.com/package/jest-vim-reporter
+let g:test#javascript#jest#executable = 'yarn test'
 let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a split window.
 
 " Commands
@@ -85,7 +84,7 @@ let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a 
 command W w
 command Q q
 command Vsp vsp
-command! ALEDisableRubyRule call ALEDisableRubyRule()
+command! ALEDisableRule call ALEDisableRule()
 
 " Keymaps
 " --------------
@@ -117,7 +116,7 @@ nnoremap <C-P> <CR>:Files<CR>
 nnoremap <C-B> <CR>:Buffers<CR>
 
 " Linter
-nnoremap <leader>ld :ALEDisableRubyRule<CR>
+nnoremap <leader>ld :ALEDisableRule<CR>
 nnoremap <leader>lf :ALEFix<CR>
 
 " Functions
@@ -131,14 +130,21 @@ function! GruvboxTheme()
   colorscheme gruvbox-material
 endfunction
 
-function! ALEDisableRubyRule()
+function! ALEDisableRule()
   let l:line = line('.')
   let l:loclist = getloclist(0)
+
+  if empty(l:loclist)
+    echo "No diagnostics found."
+    return
+  endif
+
   let l:rules = []
 
   for l:item in l:loclist
-    if l:item.lnum == l:line && has_key(l:item, 'text') && !empty(l:item.text)
-      let l:rule = matchstr(l:item.text, '\v(\w+/[^:]+)')
+    if l:item.lnum == l:line && has_key(l:item, 'text')
+      " Extract the first word-like pattern that resembles a rule name
+      let l:rule = matchstr(l:item.text, '\v\zs[^:]+')
       if !empty(l:rule)
         call add(l:rules, l:rule)
       endif
@@ -152,14 +158,20 @@ function! ALEDisableRubyRule()
 
   let l:rules = uniq(sort(l:rules))
 
-  if l:rules[0] =~# '^standard/'
-    let l:comment = '# standard:disable ' . join(l:rules, ', ')
+  if &filetype =~ 'javascript\|typescript'
+    let l:comment = ' // eslint-disable-line ' . join(l:rules, ', ')
+  elseif &filetype ==# 'ruby'
+    let l:comment = ' # rubocop:disable ' . join(l:rules, ', ')
   else
-    let l:comment = '# rubocop:disable ' . join(l:rules, ', ')
+    echo "Unsupported filetype for disabling rules."
+    return
   endif
 
-  call setline('.', getline('.') . ' ' . l:comment)
+  call setline('.', getline('.') . l:comment)
   echo "Added: " . l:comment
 endfunction
+
+command! ALEDisableRule call ALEDisableRule()
+nnoremap <leader>ld :ALEDisableRule<CR>
 
 call GruvboxTheme()
