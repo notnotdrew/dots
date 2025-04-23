@@ -1,41 +1,52 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Get the directory this script is stored in; assumes dotfiles to be symlinked
-# are in the same directory as this file.
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+set -eo pipefail
 
-DOTFILES=( gitconfig gitignore_global vimrc vim zshenv zshrc )
+# Get the directory this script is stored in
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for dotfile in "${DOTFILES[@]}"
-do
-    file_path=${DIR}/${dotfile}
-    symlink_path=~/.${dotfile}
-    echo; echo "Symlinking ${file_path} to ${symlink_path}"
-    if [ -f $symlink_path ];
-    then
-        read -p "${symlink_path} exists, overwrite? (y/n) " -n 1 -r
-        if [[ ^[Yy]$ =~ $REPLY ]]
-        then
-            rm $symlink_path
-            ln -s $file_path $symlink_path
-            echo " ...overwrote ${symlink_path}"
-        else
-            echo " ...skipped"
-        fi
+# Dotfiles to symlink to ~/.<dotfile>
+DOTFILES=(gitconfig gitignore_global vimrc zshenv zshrc)
+
+# Folder symlinks, mapped from source (in $DIR) to destination
+declare -A FOLDERS=(
+  [vim]="$HOME/.vim"
+  [yarn]="$HOME/.config/yarn"
+  [nvim]="$HOME/.config/nvim"
+  [bin]="$HOME/bin"
+)
+
+set -u
+
+link_item() {
+  local src=$1
+  local dest=$2
+
+  echo
+  echo "Linking $src → $dest"
+
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    read -p "$dest exists, overwrite? (y/n) " -n 1 -r
+    echo
+    if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+      rm -rf "$dest"
+      ln -s "$src" "$dest"
+      echo " ...overwrote $dest"
     else
-        echo " ...removing folder ${symlink_path}"
-        rm -r $symlink_path
-        ln -s $file_path $symlink_path
-        echo " ...${symlink_path} re-linked"
+      echo " ...skipped"
     fi
+  else
+    ln -s "$src" "$dest"
+    echo " ...linked $dest"
+  fi
+}
+
+# Link dotfiles
+for dotfile in "${DOTFILES[@]}"; do
+  link_item "$DIR/$dotfile" "$HOME/.$dotfile"
 done
 
-echo " ...removing ~/.config/nvim folder"
-rm -r ~/.config/nvim
-ln -s ${DIR}/nvim ~/.config/nvim
-echo " ...nvim folder re-linked"
-
-echo " ...removing bin folder"
-rm -r ~/bin
-ln -s ${DIR}/bin ~/bin
-echo " ...bin folder re-linked"
+# Link folders
+for folder in "${!FOLDERS[@]}"; do
+  link_item "$DIR/$folder" "${FOLDERS[$folder]}"
+done
