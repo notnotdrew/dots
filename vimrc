@@ -1,3 +1,5 @@
+scriptencoding utf-8
+
 " Plugins
 " --------------
 
@@ -67,13 +69,14 @@ set signcolumn=yes " Always show signcolumn
 " ----------------
 let &t_SI = "\e[5 q" " Blinking line in insert mode
 let &t_EI = "\e[2 q" " Block cursor in normal mode
-let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
-let g:ale_linters_explicit = 1
-let g:ale_linters= {'javascript': ['eslint'], 'ruby': ['rubocop']}
-let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
-let g:ale_ruby_rubocop_executable = "bin/rubocop"
 let g:ale_fix_on_save = 1
+let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
+let g:ale_linters= {'javascript': ['eslint'], 'ruby': ['rubocop'], 'vim': ['vint'], 'yaml': ['yamllint']}
+" let g:ale_linters_explicit = 1
+let g:ale_ruby_rubocop_executable = 'bundle'
+let g:ale_yaml_yamllint_executable = 'yamllint'
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
+let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
 let g:ruby_indent_assignment_style = 'variable' " Resolves a conflict with standardrb
 let g:ruby_indent_hanging_elements = 0 " Resolves a conflict with standardrb
 let g:test#javascript#jest#executable = 'yarn test'
@@ -89,8 +92,13 @@ command! ALEDisableRule call ALEDisableRule()
 " Keymaps
 " --------------
 
-" Bind "K" to search for the word under the cursor using "grep" and show results in the quickfix window
-nnoremap K :grep! "\b<C-R><C-W>\b"<CR>:cw<CR>
+"" Normal mode
+
+" Global search for the word under the cursor (match Foo not FooBar)
+nnoremap <silent> K :Rg \b<C-R><C-W>\b<CR>
+
+" Global search for the pattern under cursor (match Foo, Foobar, SomeFooTeeOne)
+nnoremap <silent> KK :Rg <C-R><C-W><CR>
 
 " Delete file
 nnoremap <leader>D :call delete(expand('%')) \| bdelete!<CR>
@@ -119,6 +127,14 @@ nnoremap <C-B> <CR>:Buffers<CR>
 nnoremap <leader>ld :ALEDisableRule<CR>
 nnoremap <leader>lf :ALEFix<CR>
 
+"" Visual mode
+
+" Global search for visual selection
+vnoremap <silent> K y:Rg <C-R>"<CR>
+
+" Search buffer for visual selection
+vnoremap <silent> // y/\V<C-r>=escape(@",'/\')<CR><CR>
+
 " Functions
 " --------------
 
@@ -135,7 +151,7 @@ function! ALEDisableRule()
   let l:loclist = getloclist(0)
 
   if empty(l:loclist)
-    echo "No diagnostics found."
+    echo 'No diagnostics found.'
     return
   endif
 
@@ -152,26 +168,26 @@ function! ALEDisableRule()
   endfor
 
   if empty(l:rules)
-    echo "No rules found for this line."
+    echo 'No rules found for this line.'
     return
   endif
 
   let l:rules = uniq(sort(l:rules))
 
-  if &filetype =~ 'javascript\|typescript'
+  if &filetype =~# 'javascript\|typescript'
     let l:comment = ' // eslint-disable-line ' . join(l:rules, ', ')
+  elseif &filetype =~# 'yaml\|eruby.yaml'
+    let l:rules = map(l:rules, { _, val -> 'rule:' . val })
+    let l:comment = '  # yamllint disable-line ' . join(l:rules, ' ')
   elseif &filetype ==# 'ruby'
     let l:comment = ' # rubocop:disable ' . join(l:rules, ', ')
   else
-    echo "Unsupported filetype for disabling rules."
+    echo 'Unsupported filetype for disabling rules: ' . &filetype
     return
   endif
 
   call setline('.', getline('.') . l:comment)
-  echo "Added: " . l:comment
+  echo 'Added: ' . l:comment
 endfunction
-
-command! ALEDisableRule call ALEDisableRule()
-nnoremap <leader>ld :ALEDisableRule<CR>
 
 call GruvboxTheme()
