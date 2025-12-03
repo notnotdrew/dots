@@ -13,6 +13,7 @@ call plug#begin()
 
 Plug 'DataWraith/auto_mkdir' " Save files into directories that do not exist yet
 Plug 'RRethy/vim-illuminate' " Highlight other uses of the word under the cursor
+Plug 'SirVer/ultisnips' " FZF compatible snippet solution for Vim
 Plug 'airblade/vim-gitgutter' " Git diff markers in the sign column
 Plug 'andrewradev/splitjoin.vim' " Switch between single-line and multiline forms of code
 Plug 'bronson/vim-trailing-whitespace' " Highlights trailing whitespace in red
@@ -23,7 +24,9 @@ Plug 'junegunn/fzf' " Necessary for fzf.vim
 Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
 Plug 'preservim/vim-lexical' " Build on Vim’s spell/thes/dict completion
+Plug 'prisma/vim-prisma' " Prisma support for Vim
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
+Plug 'ruanyl/vim-gh-line' " Open current line on GitHub
 Plug 'sainnhe/everforest' " Comfortable & Pleasant Color Scheme for Vim
 Plug 'sainnhe/gruvbox-material' " Gruvbox with Material Palette
 Plug 'sheerun/vim-polyglot' " Language pack for Vim
@@ -70,10 +73,33 @@ set signcolumn=yes " Always show signcolumn
 let &t_SI = "\e[5 q" " Blinking line in insert mode
 let &t_EI = "\e[2 q" " Block cursor in normal mode
 let g:ale_fix_on_save = 1
-let g:ale_fixers = {'javascript': ['eslint'], 'ruby': ['rubocop']}
-let g:ale_linters= {'javascript': ['eslint'], 'ruby': ['rubocop'], 'vim': ['vint'], 'yaml': ['yamllint']}
+let g:ale_fixers =
+  \ {
+  \ 'css': ['prettier'],
+  \ 'eruby': ['erblint'],
+  \ 'javascript': ['eslint'],
+  \ 'javascript.jsx': ['eslint'],
+  \ 'ruby': ['rubocop'],
+  \ 'sql': ['sqlfluff'],
+  \ 'typescript': ['eslint'],
+  \ 'typescriptreact': ['eslint'],
+  \ }
+let g:ale_linters =
+  \ {
+  \ 'eruby': ['erblint'],
+  \ 'javascript': ['eslint'],
+  \ 'ruby': ['rubocop'],
+  \ 'typescript': ['eslint', 'tslint'],
+  \ 'typescriptreact': ['eslint', 'tslint'],
+  \ 'vim': ['vint'],
+  \ 'yaml': ['yamllint']
+  \ }
+
+" TODO: once the list of linters is reasonably settled, re-enable explicit
+" linters.
 " let g:ale_linters_explicit = 1
 let g:ale_ruby_rubocop_executable = 'bundle'
+" let g:ale_ruby_rubocop_options = '--autocorrect-all'
 let g:ale_yaml_yamllint_executable = 'yamllint'
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
 let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
@@ -181,6 +207,10 @@ function! ALEDisableRule()
     let l:comment = '  # yamllint disable-line ' . join(l:rules, ' ')
   elseif &filetype ==# 'ruby'
     let l:comment = ' # rubocop:disable ' . join(l:rules, ', ')
+  elseif &filetype ==# 'eruby'
+    let l:comment = ' <%# erb_lint:disable ' . join(l:rules, ', ') . ' %>'
+  elseif &filetype ==# 'sql'
+    let l:comment = ' -- noqa: ' . join(l:rules, ', ')
   else
     echo 'Unsupported filetype for disabling rules: ' . &filetype
     return

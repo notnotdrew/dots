@@ -8,9 +8,12 @@ alias be='bundle exec'
 alias brewup='brew update; brew upgrade; brew cleanup; brew doctor'
 alias cat='bat'
 alias g='git'
+alias gti='git'
 alias init='nvim ~/.config/nvim/init.lua'
 alias ivm='vim'
 alias ls='ls -lahGp' # one entry/line, all files, color allowed, directory indicator
+alias npmr='npm run'
+alias npr='npm run'
 alias nv='nvim'
 alias rk='bin/rake'
 alias vi='vim'
@@ -44,3 +47,6 @@ plugin-load $zsh_plugin_repos # See $DOTS_PATH/zsh/plugin-load.zsh
 bindkey '^ ' autosuggest-accept # control + space to accept suggestions
 export PATH="/opt/homebrew/bin:$PATH"
 eval "$(mise activate zsh)"
+
+# heroku autocomplete setup
+HEROKU_AC_ZSH_SETUP_PATH=/Users/drewprice/Library/Caches/heroku/autocomplete/zsh_setup && test -f $HEROKU_AC_ZSH_SETUP_PATH && source $HEROKU_AC_ZSH_SETUP_PATH;
