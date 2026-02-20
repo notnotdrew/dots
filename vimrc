@@ -23,6 +23,7 @@ Plug 'inside/vim-search-pulse' " Easily locate the cursor after a search
 Plug 'junegunn/fzf' " Necessary for fzf.vim
 Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
+Plug 'neoclide/coc.nvim', {'branch': 'release'}
 Plug 'preservim/vim-lexical' " Build on Vim’s spell/thes/dict completion
 Plug 'prisma/vim-prisma' " Prisma support for Vim
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
@@ -108,6 +109,11 @@ let g:ruby_indent_hanging_elements = 0 " Resolves a conflict with standardrb
 let g:test#javascript#jest#executable = 'yarn test'
 let g:test#javascript#runner = 'vitest'
 let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a split window.
+
+let g:coc_global_extensions = [
+  \ 'coc-json',
+  \ 'coc-tsserver'
+  \ ]
 
 " Commands
 " ----------------
