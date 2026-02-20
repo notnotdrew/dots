@@ -77,20 +77,20 @@ let g:ale_fixers =
   \ {
   \ 'css': ['prettier'],
   \ 'eruby': ['erblint'],
-  \ 'javascript': ['eslint'],
-  \ 'javascript.jsx': ['eslint'],
+  \ 'javascript': ['eslint', 'prettier'],
+  \ 'javascript.jsx': ['eslint', 'prettier'],
   \ 'ruby': ['rubocop'],
   \ 'sql': ['sqlfluff'],
-  \ 'typescript': ['eslint'],
-  \ 'typescriptreact': ['eslint'],
+  \ 'typescript': ['eslint', 'prettier'],
+  \ 'typescriptreact': ['eslint', 'prettier'],
   \ }
 let g:ale_linters =
   \ {
   \ 'eruby': ['erblint'],
   \ 'javascript': ['eslint'],
   \ 'ruby': ['rubocop'],
-  \ 'typescript': ['eslint', 'tslint'],
-  \ 'typescriptreact': ['eslint', 'tslint'],
+  \ 'typescript': ['tsserver', 'eslint', 'tslint'],
+  \ 'typescriptreact': ['tsserver', 'eslint', 'tslint'],
   \ 'vim': ['vint'],
   \ 'yaml': ['yamllint']
   \ }
@@ -106,6 +106,7 @@ let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
 let g:ruby_indent_assignment_style = 'variable' " Resolves a conflict with standardrb
 let g:ruby_indent_hanging_elements = 0 " Resolves a conflict with standardrb
 let g:test#javascript#jest#executable = 'yarn test'
+let g:test#javascript#runner = 'vitest'
 let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a split window.
 
 " Commands

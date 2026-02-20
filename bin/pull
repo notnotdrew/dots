@@ -2,6 +2,8 @@
 
 if [ "$1" = "-d" ]; then
   hub pull-request -opda notnotdrew
+elif [ "$1" = "-no" ]; then
+  hub pull-request -opa notnotdrew
 else
-  hub pull-request -opa notnotdrew --reviewer kylon-tyner-fis
+  hub pull-request -opa notnotdrew --reviewer flatiron-labs/engineering
 fi
