@@ -1,0 +1,49 @@
+{
+  "diagnostic-languageserver.filetypes": {
+    "prisma": "prisma"
+  },
+  "diagnostic-languageserver.debug": true,
+  "diagnostic-languageserver.trace.server": "verbose",
+  "coc.preferences.formatOnSaveFiletypes": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact",
+    "json",
+    "jsonc"
+  ],
+  "eslint.autoFixOnSave": true,
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "diagnostic-languageserver.linters": {
+    "prisma": {
+      "command": "npx",
+      "args": ["--yes", "prisma-lint", "-o", "json", "%filepath"],
+      "rootPatterns": ["package.json", ".git"],
+      "sourceName": "prisma-lint",
+      "isStdout": true,
+      "isStderr": true,
+      "parseJson": {
+        "errorsRoot": "violations",
+        "line": "location.startLine",
+        "column": "location.startColumn",
+        "message": "${message} [${ruleName}]",
+        "code": "ruleName",
+        "sourceName": "fileName",
+        "sourceNameFilter": true
+      },
+      "securities": {
+        "error": "error",
+        "warning": "warning",
+        "info": "info"
+      }
+    }
+  },
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  }
+}

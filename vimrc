@@ -13,18 +13,15 @@ call plug#begin()
 
 Plug 'DataWraith/auto_mkdir' " Save files into directories that do not exist yet
 Plug 'RRethy/vim-illuminate' " Highlight other uses of the word under the cursor
-Plug 'SirVer/ultisnips' " FZF compatible snippet solution for Vim
 Plug 'airblade/vim-gitgutter' " Git diff markers in the sign column
 Plug 'andrewradev/splitjoin.vim' " Switch between single-line and multiline forms of code
 Plug 'bronson/vim-trailing-whitespace' " Highlights trailing whitespace in red
 Plug 'dense-analysis/ale' " Async linter
-Plug 'ervandew/supertab' " Insert mode completions with Tab
 Plug 'inside/vim-search-pulse' " Easily locate the cursor after a search
 Plug 'junegunn/fzf' " Necessary for fzf.vim
 Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
 Plug 'neoclide/coc.nvim', {'branch': 'release'}
-Plug 'preservim/vim-lexical' " Build on Vim’s spell/thes/dict completion
 Plug 'prisma/vim-prisma' " Prisma support for Vim
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
 Plug 'ruanyl/vim-gh-line' " Open current line on GitHub
@@ -78,22 +75,24 @@ let g:ale_fixers =
   \ {
   \ 'css': ['prettier'],
   \ 'eruby': ['erblint'],
-  \ 'javascript': ['eslint', 'prettier'],
-  \ 'javascript.jsx': ['eslint', 'prettier'],
   \ 'ruby': ['rubocop'],
   \ 'sql': ['sqlfluff'],
-  \ 'typescript': ['eslint', 'prettier'],
-  \ 'typescriptreact': ['eslint', 'prettier'],
   \ }
 let g:ale_linters =
   \ {
   \ 'eruby': ['erblint'],
-  \ 'javascript': ['eslint'],
   \ 'ruby': ['rubocop'],
-  \ 'typescript': ['tsserver', 'eslint', 'tslint'],
-  \ 'typescriptreact': ['tsserver', 'eslint', 'tslint'],
   \ 'vim': ['vint'],
   \ 'yaml': ['yamllint']
+  \ }
+let g:ale_linters_ignore =
+  \ {
+  \ 'javascript': ['*'],
+  \ 'javascript.jsx': ['*'],
+  \ 'typescript': ['*'],
+  \ 'typescriptreact': ['*'],
+  \ 'json': ['*'],
+  \ 'jsonc': ['*']
   \ }
 
 " TODO: once the list of linters is reasonably settled, re-enable explicit
@@ -112,7 +111,11 @@ let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a 
 
 let g:coc_global_extensions = [
   \ 'coc-json',
-  \ 'coc-tsserver'
+  \ 'coc-tsserver',
+  \ 'coc-diagnostic',
+  \ 'coc-eslint',
+  \ 'coc-prettier',
+  \ 'coc-snippets'
   \ ]
 
 " Commands
@@ -160,6 +163,18 @@ nnoremap <C-B> <CR>:Buffers<CR>
 nnoremap <leader>ld :ALEDisableRule<CR>
 nnoremap <leader>lf :ALEFix<CR>
 
+"" Insert mode
+
+inoremap <silent><expr> <TAB> coc#pum#visible()
+      \ ? coc#pum#next(1)
+      \ : CheckBackspace() ? "\<TAB>" : coc#refresh()
+inoremap <silent><expr> <S-TAB> coc#pum#visible()
+      \ ? coc#pum#prev(1)
+      \ : "\<C-h>"
+inoremap <silent><expr> <CR> coc#pum#visible()
+      \ ? coc#pum#confirm()
+      \ : "\<CR>"
+
 "" Visual mode
 
 " Global search for visual selection
@@ -170,6 +185,11 @@ vnoremap <silent> // y/\V<C-r>=escape(@",'/\')<CR><CR>
 
 " Functions
 " --------------
+
+function! CheckBackspace() abort
+  let l:col = col('.') - 1
+  return !l:col || getline('.')[l:col - 1]  =~# '\s'
+endfunction
 
 " NOTE: for some reason, the environment's BAT_THEME is not picked up, and
 " outside of a function call, neither is let $BAT_THEME. In this function
