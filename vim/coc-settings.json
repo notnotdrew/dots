@@ -19,6 +19,9 @@
     "typescript",
     "typescriptreact"
   ],
+  "diagnostic.enableMessage": "always",
+  "diagnostic.messageTarget": "float",
+  "diagnostic.checkCurrentLine": true,
   "diagnostic-languageserver.linters": {
     "prisma": {
       "command": "npx",
@@ -45,5 +48,14 @@
   },
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true
-  }
+  },
+  "cSpell.userWords": [
+    "bable",
+    "chax",
+    "import",
+    "vercel",
+    "vite",
+    "vitejs",
+    "vitest"
+  ]
 }

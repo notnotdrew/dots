@@ -76,14 +76,12 @@ let g:ale_fixers =
   \ 'css': ['prettier'],
   \ 'eruby': ['erblint'],
   \ 'ruby': ['rubocop'],
-  \ 'sql': ['sqlfluff'],
   \ }
 let g:ale_linters =
   \ {
   \ 'eruby': ['erblint'],
   \ 'ruby': ['rubocop'],
   \ 'vim': ['vint'],
-  \ 'yaml': ['yamllint']
   \ }
 let g:ale_linters_ignore =
   \ {
@@ -97,10 +95,9 @@ let g:ale_linters_ignore =
 
 " TODO: once the list of linters is reasonably settled, re-enable explicit
 " linters.
-" let g:ale_linters_explicit = 1
+let g:ale_linters_explicit = 1
 let g:ale_ruby_rubocop_executable = 'bundle'
 " let g:ale_ruby_rubocop_options = '--autocorrect-all'
-let g:ale_yaml_yamllint_executable = 'yamllint'
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
 let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
 let g:ruby_indent_assignment_style = 'variable' " Resolves a conflict with standardrb
@@ -124,7 +121,6 @@ command W w
 command Q q
 command Vsp vsp
 command! ALEDisableRule call ALEDisableRule()
-
 " Keymaps
 " --------------
 
@@ -159,6 +155,9 @@ nnoremap <Leader>v :w<CR>:TestLast --tag feature<CR>
 nnoremap <C-P> <CR>:Files<CR>
 nnoremap <C-B> <CR>:Buffers<CR>
 
+" Spell
+nnoremap <silent> <leader>sp :CocCommand cSpell.addWordToUserDictionary<CR>
+
 " Linter
 nnoremap <leader>ld :ALEDisableRule<CR>
 nnoremap <leader>lf :ALEFix<CR>
@@ -189,14 +188,6 @@ vnoremap <silent> // y/\V<C-r>=escape(@",'/\')<CR><CR>
 function! CheckBackspace() abort
   let l:col = col('.') - 1
   return !l:col || getline('.')[l:col - 1]  =~# '\s'
-endfunction
-
-" NOTE: for some reason, the environment's BAT_THEME is not picked up, and
-" outside of a function call, neither is let $BAT_THEME. In this function
-" though, it is :shrug:
-function! GruvboxTheme()
-  let $BAT_THEME='base16' " Set BAT_THEME for fzf previews
-  colorscheme gruvbox-material
 endfunction
 
 function! ALEDisableRule()
@@ -245,6 +236,14 @@ function! ALEDisableRule()
 
   call setline('.', getline('.') . l:comment)
   echo 'Added: ' . l:comment
+endfunction
+
+" NOTE: for some reason, the environment's BAT_THEME is not picked up, and
+" outside of a function call, neither is let $BAT_THEME. In this function
+" though, it is :shrug:
+function! GruvboxTheme()
+  let $BAT_THEME='base16' " Set BAT_THEME for fzf previews
+  colorscheme gruvbox-material
 endfunction
 
 call GruvboxTheme()
