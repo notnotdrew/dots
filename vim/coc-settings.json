@@ -1,17 +1,22 @@
 {
   "diagnostic-languageserver.filetypes": {
-    "prisma": "prisma"
+    "prisma": "prisma",
+    "css": "stylelint",
+    "scss": "stylelint",
+    "sass": "stylelint",
+    "less": "stylelint"
   },
+  "diagnostic-languageserver.formatFiletypes": {
+    "css": "stylelint",
+    "scss": "stylelint",
+    "sass": "stylelint",
+    "less": "stylelint"
+  },
+  "diagnostic-languageserver.mergeConfig": true,
   "diagnostic-languageserver.debug": true,
   "diagnostic-languageserver.trace.server": "verbose",
-  "coc.preferences.formatOnSaveFiletypes": [
-    "javascript",
-    "javascriptreact",
-    "typescript",
-    "typescriptreact",
-    "json",
-    "jsonc"
-  ],
+  "coc.preferences.formatOnSave": true,
+  "prettier.requireConfig": true,
   "eslint.autoFixOnSave": true,
   "eslint.validate": [
     "javascript",
@@ -44,15 +49,83 @@
         "warning": "warning",
         "info": "info"
       }
+    },
+    "stylelint": {
+      "command": "stylelint",
+      "args": [
+        "--stdin",
+        "--stdin-filename",
+        "%filepath",
+        "--formatter",
+        "json"
+      ],
+      "rootPatterns": [
+        "package.json",
+        ".stylelintrc",
+        ".stylelintrc.json",
+        ".stylelintrc.yaml",
+        ".stylelintrc.yml",
+        ".stylelintrc.js",
+        ".stylelintrc.cjs",
+        ".stylelintrc.mjs",
+        "stylelint.config.js",
+        "stylelint.config.cjs",
+        "stylelint.config.mjs",
+        ".git"
+      ],
+      "sourceName": "stylelint",
+      "parseJson": {
+        "errorsRoot": "[0].warnings",
+        "line": "line",
+        "column": "column",
+        "message": "${text}",
+        "security": "severity"
+      },
+      "securities": {
+        "error": "error",
+        "warning": "warning"
+      }
+    }
+  },
+  "diagnostic-languageserver.formatters": {
+    "stylelint": {
+      "command": "stylelint",
+      "args": [
+        "--fix",
+        "--stdin",
+        "--stdin-filename",
+        "%filepath"
+      ],
+      "rootPatterns": [
+        "package.json",
+        ".stylelintrc",
+        ".stylelintrc.json",
+        ".stylelintrc.yaml",
+        ".stylelintrc.yml",
+        ".stylelintrc.js",
+        ".stylelintrc.cjs",
+        ".stylelintrc.mjs",
+        "stylelint.config.js",
+        "stylelint.config.cjs",
+        "stylelint.config.mjs",
+        ".git"
+      ]
     }
   },
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true
   },
   "cSpell.userWords": [
+    "askbot",
     "bable",
     "chax",
+    "fabbrica",
     "import",
+    "nextjs",
+    "openai",
+    "ristow",
+    "stylelint",
+    "upsert",
     "vercel",
     "vite",
     "vitejs",

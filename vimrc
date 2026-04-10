@@ -106,6 +106,9 @@ let g:test#javascript#jest#executable = 'yarn test'
 let g:test#javascript#runner = 'vitest'
 let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a split window.
 
+" FZF: exclude Next.js build output from Ctrl-P (:Files)
+let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --glob "!.git/" --glob "!.next/"'
+
 let g:coc_global_extensions = [
   \ 'coc-json',
   \ 'coc-tsserver',
