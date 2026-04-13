@@ -192,6 +192,25 @@ ResumeTarget: ${RESUME_TARGET}
 EOF
 }
 
+build_review_variables_block() {
+    local review_action="$1"
+
+    cat <<EOF
+## Runner Variable Values
+
+\`\`\`text
+ProjectRoot: ${PROJECT_ROOT}
+ProjectKey: ${PROJECT_KEY}
+ArtifactRoot: ${ARTIFACT_ROOT}
+TopicSlug: ${TOPIC_SLUG}
+TaskPrompt: ${TASK_PROMPT}
+PlanArtifact: $(artifact_path plan)
+ReviewAction: ${review_action}
+ResumeTarget: ${RESUME_TARGET}
+\`\`\`
+EOF
+}
+
 build_prompt() {
     local stage_name="$1"
     local current_artifact="$2"
@@ -202,6 +221,24 @@ build_prompt() {
     cat "$prompt_file"
     printf '\n\n'
     build_runner_variables_block "$stage_name" "$current_artifact" "$related_artifacts"
+}
+
+review_prompt_path() {
+    case "$1" in
+        approve) printf '%s/review-approve-commit.md\n' "$PROMPTS_DIR" ;;
+        request-changes) printf '%s/review-request-changes.md\n' "$PROMPTS_DIR" ;;
+        *) die "unknown review action: $1" ;;
+    esac
+}
+
+build_review_prompt() {
+    local review_action="$1"
+    local prompt_file
+
+    prompt_file="$(review_prompt_path "$review_action")"
+    cat "$prompt_file"
+    printf '\n\n'
+    build_review_variables_block "$review_action"
 }
 
 find_existing_artifact_root() {
@@ -276,6 +313,60 @@ resolve_task_prompt_for_resume() {
     fi
 }
 
+git_in_repo() {
+    git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+git_head_commit() {
+    git_in_repo || return 1
+    git -C "$PROJECT_ROOT" rev-parse --verify HEAD 2>/dev/null
+}
+
+git_has_worktree_changes() {
+    git_in_repo || return 1
+    [ -n "$(git -C "$PROJECT_ROOT" status --short --untracked-files=all 2>/dev/null)" ]
+}
+
+print_review_diff() {
+    echo
+    echo "Post-phase review for ${PROJECT_ROOT}"
+    echo
+    echo "git status --short --untracked-files=all"
+    git -C "$PROJECT_ROOT" status --short --untracked-files=all
+    echo
+    echo "git diff --no-ext-diff --submodule=diff"
+    git -C "$PROJECT_ROOT" --no-pager diff --no-ext-diff --submodule=diff
+}
+
+prompt_review_action() {
+    local choice
+
+    while true; do
+        printf '\nReview action:\n' >&2
+        printf '  1. Approve and launch Codex to commit\n' >&2
+        printf '  2. Request changes in Codex\n' >&2
+        printf '> ' >&2
+
+        if ! IFS= read -r choice; then
+            return 1
+        fi
+
+        case "$choice" in
+            1|approve|Approve)
+                printf 'approve\n'
+                return 0
+                ;;
+            2|request|Request|changes|Changes|request-changes)
+                printf 'request-changes\n'
+                return 0
+                ;;
+            *)
+                echo "Enter 1 or 2." >&2
+                ;;
+        esac
+    done
+}
+
 phase_status_table() {
     local plan_artifact="$1"
 
@@ -317,6 +408,13 @@ phase_status_table() {
             emit_phase()
         }
     ' "$plan_artifact"
+}
+
+count_completed_phases() {
+    local plan_artifact="$1"
+
+    [ -f "$plan_artifact" ] || return 1
+    phase_status_table "$plan_artifact" | awk -F '\t' '$2 == "completed" { count++ } END { print count + 0 }'
 }
 
 determine_execution_stage() {
@@ -425,17 +523,63 @@ EOF
     build_runner_variables_block "$stage_name" "$current_artifact" "$related_artifacts"
 }
 
+launch_codex_prompt() {
+    local launch_label="$1"
+    local prompt="$2"
+
+    command -v codex >/dev/null 2>&1 || die "codex CLI is not available in PATH"
+    echo "Launching ${launch_label} from ${PROJECT_ROOT}"
+    codex --cd "$PROJECT_ROOT" "$prompt"
+}
+
 launch_stage() {
     local stage_name="$1"
     local current_artifact="$2"
     local related_artifacts="$3"
     local prompt
 
-    command -v codex >/dev/null 2>&1 || die "codex CLI is not available in PATH"
     prompt="$(build_prompt "$stage_name" "$current_artifact" "$related_artifacts")"
+    launch_codex_prompt "$stage_name" "$prompt"
+}
 
-    echo "Launching ${stage_name} from ${PROJECT_ROOT}"
-    codex --cd "$PROJECT_ROOT" "$prompt"
+run_post_phase_review() {
+    local review_action
+    local prompt
+    local head_before
+    local head_after
+
+    if ! git_has_worktree_changes; then
+        echo "Skipping post-phase review: working tree is clean"
+        return
+    fi
+
+    while true; do
+        print_review_diff
+        review_action="$(prompt_review_action)" || die "post-phase review aborted"
+        prompt="$(build_review_prompt "$review_action")"
+
+        case "$review_action" in
+            approve)
+                head_before="$(git_head_commit || true)"
+                launch_codex_prompt "post-phase approval" "$prompt"
+                head_after="$(git_head_commit || true)"
+
+                if [ "$head_before" != "$head_after" ]; then
+                    return
+                fi
+
+                echo "Post-phase approval did not create a commit; review again."
+                ;;
+            request-changes)
+                launch_codex_prompt "post-phase change request" "$prompt"
+
+                if ! git_has_worktree_changes; then
+                    echo "Post-phase review complete: working tree is clean"
+                    return
+                fi
+                ;;
+        esac
+    done
 }
 
 while [ $# -gt 0 ]; do
@@ -492,6 +636,8 @@ while true; do
     local_stage=""
     current_artifact=""
     related_artifacts=""
+    completed_phases_before=0
+    completed_phases_after=0
 
     determine_next_stage
 
@@ -509,7 +655,20 @@ while true; do
     fi
 
     local_stage="$NEXT_STAGE"
+
+    if [ "$local_stage" = "implement-plan" ]; then
+        completed_phases_before="$(count_completed_phases "$(artifact_path plan)" || printf '0')"
+    fi
+
     launch_stage "$local_stage" "$current_artifact" "$related_artifacts"
+
+    if [ "$local_stage" = "implement-plan" ]; then
+        completed_phases_after="$(count_completed_phases "$(artifact_path plan)" || printf '0')"
+
+        if [ "$completed_phases_after" -gt "$completed_phases_before" ]; then
+            run_post_phase_review
+        fi
+    fi
 
     if "$run_once"; then
         echo "Stopped: --once requested after ${local_stage}"

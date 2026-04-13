@@ -13,7 +13,7 @@ Add `--once` when you want the runner to stop after a single launched stage for 
 
 ## Current Runner Scope
 
-The runner auto-advances from `question` through repeated `implement-plan` invocations when artifact state clearly allows it.
+The runner auto-advances from `question` through repeated `implement-plan` invocations when artifact state clearly allows it. Completed implementation phases now pass through a post-phase review gate before the runner can continue.
 
 ## Canonical Artifact Root
 
@@ -86,6 +86,15 @@ When multiple artifacts exist, the runner trusts the furthest approved stage ins
 - Inside `Execution Status`, `Status: completed` is the only execution state that lets the runner consider the next phase.
 - `Status: blocked` and `Status: waiting-for-manual-verification` both stop the runner.
 - It stops after one phase checkpoint instead of rolling directly into the next phase inside the same invocation.
+
+## Post-Phase Review Gate
+
+When `implement-plan` completes a phase, the runner pauses before continuing.
+
+- The runner prints the current `git status --short --untracked-files=all` output and `git diff --no-ext-diff --submodule=diff`.
+- `1. Approve` launches Codex with the local `writing-git-commits` skill so the reviewed phase can be committed.
+- `2. Request changes` launches Codex back into the repository so the human can request follow-up edits, then returns to the diff review loop.
+- This review loop does not create a sixth QRDSPI stage or a new artifact. It is runner-controlled flow around execution.
 
 ## Prompt Template Contract
 
