@@ -9,6 +9,16 @@ description: Surfaces the key decisions a human must make before codebase resear
 
 Use this skill when the task is still fuzzy and the next useful step is to ask a small set of questions that changes what should be researched or built.
 
+If the task is already specific enough to research or implement safely, say so and move to the next workflow step instead of manufacturing questions.
+
+## Choose Your Approach
+
+**The user referenced a local artifact**
+Read that file completely before asking questions.
+
+**The user gave only a brief task description**
+Work from the task description alone and ask only the questions that materially change scope, research targets, or the definition of done.
+
 ## Instructions
 
 - Start from the user's provided task description only
@@ -112,3 +122,4 @@ Once you answer these, I can target the next step precisely.
 - Avoid asking for information that can be learned cheaply from later research
 - Do not ask generic preference questions unless they affect scope or system boundaries
 - If the user has already answered a decision implicitly, do not ask it again
+- Keep the handoff obvious: after answers arrive, summarize the resolved decisions and name the next research or implementation target
