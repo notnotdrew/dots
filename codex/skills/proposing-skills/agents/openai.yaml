@@ -1,0 +1,4 @@
+interface:
+  display_name: "Proposing Skills"
+  short_description: "Recommend missing Codex skills for a codebase"
+  default_prompt: "Use proposing skills to identify useful Codex skills that are missing for this codebase and workflow"

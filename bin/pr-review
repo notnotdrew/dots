@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# Launch Codex with the local `pr-review` skill and a validated PR reference.
+#
+# Usage:
+#   pr-review <PR-URL>
+#   pr-review <PR-ID>
+#   pr-review --dry-run <PR-URL-or-ID>
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+ROOT_DIR=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
+PR_PARSE="${ROOT_DIR}/codex/skills/pr-review/scripts/gh-pr-parse"
+
+die() {
+    echo "error: $1" >&2
+    exit 1
+}
+
+dry_run=false
+if [ "${1:-}" = "--dry-run" ]; then
+    dry_run=true
+    shift
+fi
+
+[ $# -ge 1 ] || die "usage: pr-review [--dry-run] <PR-URL-or-ID>"
+
+pr_ref="$1"
+
+[ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
+"$PR_PARSE" "$pr_ref" >/dev/null || exit 1
+
+prompt="\$pr-review $pr_ref"
+
+if "$dry_run"; then
+    printf 'codex %s\n' "$prompt"
+    exit 0
+fi
+
+exec codex "$prompt"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Discussion"
+  short_description: "Turn research into a reviewable design doc"
+  default_prompt: "Use design discussion to synthesize this research into a concise design document for review"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analyzing Use Cases"
+  short_description: "Turn stories into structured Cockburn-style use cases"
+  default_prompt: "Use analyzing use cases to break this story into a structured use case with main scenario, extensions, and TDD mapping"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Documentation"
+  short_description: "Write code, architecture, and project documentation"
+  default_prompt: "Use writing documentation to add or improve code docs, architecture docs, READMEs, or AGENTS.md guidance"

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+dry_run=false
+
+# Parse flags
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -lt 2 ]]; then
+  echo "Usage: cdx-each [--dry-run] \"prompt with {item}\" <comma-list | file-path>"
+  exit 1
+fi
+
+template="$1"
+input="$2"
+
+items=()
+
+# Determine if input is a file
+if [[ -f "$input" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    items+=("$line")
+  done < "$input"
+else
+  IFS=',' read -ra items <<< "$input"
+fi
+
+for item in "${items[@]}"; do
+  # Trim whitespace
+  item="$(echo "$item" | xargs)"
+
+  prompt="${template//\{item\}/$item}"
+
+  echo "-----------------------------------"
+  echo "Item: $item"
+  echo "Prompt: $prompt"
+
+  if [[ "$dry_run" == true ]]; then
+    echo "[dry-run] Skipping execution"
+    continue
+  fi
+
+  if ! codex "$prompt"; then
+    echo "❌ Failed: $item (continuing...)"
+  else
+    echo "✅ Done: $item"
+  fi
+
+  echo
+done
+
+echo "All done."

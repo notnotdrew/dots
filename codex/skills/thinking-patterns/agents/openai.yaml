@@ -1,0 +1,4 @@
+interface:
+  display_name: "Thinking Patterns"
+  short_description: "Apply structured reasoning patterns with auditable output"
+  default_prompt: "Use thinking patterns to structure complex reasoning, planning, comparison, verification, or synthesis work"

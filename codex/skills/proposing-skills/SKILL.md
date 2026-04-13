@@ -92,7 +92,7 @@ Be strict about duplicates. A new proposal needs a real gap, not a sharper title
 
 Examples:
 
-- `exploring-codebase` is adjacent to research-oriented skills in Claude, so that alone does not justify another generic research skill.
+- `research-codebase` is adjacent to research-oriented skills in Claude, so that alone does not justify another generic research skill.
 - `writing-git-commits` is already represented if the Claude analog is also about commit messages.
 
 ### 4. Search Claude skills selectively

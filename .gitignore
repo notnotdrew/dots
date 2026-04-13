@@ -1,4 +1,5 @@
 codex/.tmp/
+codex/artifacts
 codex/auth.json
 codex/history*
 codex/installation_id

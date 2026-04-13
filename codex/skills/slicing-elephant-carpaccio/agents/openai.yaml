@@ -1,0 +1,4 @@
+interface:
+  display_name: "Slicing Elephant Carpaccio"
+  short_description: "Break a feature into thin vertical slices"
+  default_prompt: "Use slicing elephant carpaccio to turn this feature into an ordered backlog of thin, demoable vertical slices"

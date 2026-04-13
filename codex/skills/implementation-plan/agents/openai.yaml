@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Plan"
+  short_description: "Expand approved artifacts into an implementation plan"
+  default_prompt: "Use implementation plan to turn the approved design and outline into a concrete implementation plan"

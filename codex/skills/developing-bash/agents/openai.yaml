@@ -1,0 +1,4 @@
+interface:
+  display_name: "Developing Bash"
+  short_description: "Write robust, portable shell scripts"
+  default_prompt: "Use developing bash to write or improve POSIX shell and Bash scripts with defensive and cross-platform patterns"

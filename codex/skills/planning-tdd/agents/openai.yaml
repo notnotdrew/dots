@@ -1,0 +1,4 @@
+interface:
+  display_name: "Planning TDD"
+  short_description: "Plan work in test-first increments"
+  default_prompt: "Use planning TDD to break this work into test-first phases centered on observable behavior"
