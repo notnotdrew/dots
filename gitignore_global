@@ -1,6 +1,13 @@
-# ignore vim swp files
 *.sw*
-
-# ignore vim tags
+.codex/.tmp/
+.codex/auth.json
+.codex/history*
+.codex/installation_id
+.codex/log*
+.codex/session*
+.codex/shell_snapshots/
+.codex/skills/.system/
+.codex/state*
+.codex/tmp/
+.codex/version.json
 tags
-

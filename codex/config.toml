@@ -1,0 +1,51 @@
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+personality = "pragmatic"
+[projects."/Users/drewprice/Documents/dev/fs/fis-demos"]
+trust_level = "untrusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/fs-demos"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs"]
+trust_level = "untrusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/horse-app"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/beverly-ristow"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/dots"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/aggregate-demos-canonical"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/snippets"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/AskBot"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/rotary-girder"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/beta-ristow"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/github-helpers"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/ops"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/fsv6"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/bobfiles"]
+trust_level = "trusted"
+
+[notice.model_migrations]
+"gpt-5.1" = "gpt-5.2-codex"
+"gpt-5.2-codex" = "gpt-5.4"
