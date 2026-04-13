@@ -37,6 +37,7 @@ If those conditions are not met, stop and ask for the missing artifact or clarif
      - `Done When`
      - `Manual Verification`
      - `Implementation Notes` when needed
+   - Keep each phase ready for later execution checkpoints appended in place by `implementation-execution`.
 
 4. Validate the plan.
    - Every phase has concrete implementation detail, not just summary prose.
@@ -78,6 +79,24 @@ If those conditions are not met, stop and ask for the missing artifact or clarif
 
 - Use only for non-obvious ordering constraints, edge cases, migration concerns, or gotchas.
 - Omit this section when it adds no value.
+
+## Execution Checkpoint Contract
+
+`implementation-execution` appends the execution record directly under the phase it just ran. The plan should not pre-fill these sections, but its structure should leave room for them to be appended in place with these exact headings:
+
+- `### Execution Status`
+- `### Automated Verification`
+- `### Review And Simplification`
+- `### Manual Verification Result`
+- `### Blockers Or Follow-Up Notes`
+
+Inside `### Execution Status`, use a machine-readable `Status:` line:
+
+- `completed` means the phase is fully done, including the required manual verification result, so the runner may consider the next phase
+- `blocked` means the runner must stop
+- `waiting-for-manual-verification` means the runner must stop until the required human check is completed
+
+If a phase has no `### Execution Status` section yet, the runner should treat it as not started.
 
 ## Output Template
 

@@ -54,6 +54,7 @@ If those conditions are not met, stop and route the work back to the correct ups
    - Update the existing plan artifact in place after the phase attempt.
    - Capture completion state, verification evidence, and blockers directly under the executed phase.
    - Record whether subagent orchestration was used or whether execution fell back to single-agent mode.
+   - Preserve the plan artifact's frontmatter `Status: approved` so the runner can keep resuming execution from the same plan artifact.
    - If the phase is incomplete, record the precise blocker and stop.
 
 8. Stop after the checkpoint.
@@ -119,7 +120,15 @@ ExecutionMode: subagents
 - None.
 ```
 
-If the phase is blocked or partially complete, keep the same structure and change `Status` accordingly.
+If the phase is blocked or still waiting on human verification, keep the same structure and change `Status` accordingly.
+
+Use only these runner-readable `Status:` values:
+
+- `completed`: the phase is fully done, including required manual verification, so the runner may consider the next phase
+- `blocked`: the runner must stop because execution hit a real blocker
+- `waiting-for-manual-verification`: the code and automated checks are done, but the required manual check is still outstanding, so the runner must stop
+
+If a phase has no `### Execution Status` section yet, the runner should treat it as not started.
 
 ## Validation Checklist
 

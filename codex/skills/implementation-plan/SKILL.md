@@ -9,7 +9,7 @@ description: Produces a detailed implementation plan from approved planning arti
 
 Use this skill after `$design-discussion` and `$structure-outline`. Treat the approved design document and approved structure artifact as fixed inputs, then expand each approved phase into concrete file changes, verified `file:line` references, completion criteria, automated checks, and manual verification checkpoints.
 If the input starts from a Jira ticket, use `managing-jira` first, then use `artifact-management` to locate any existing question, research, design, or structure artifacts before drafting the plan.
-In runner-driven QRDSPI mode, the human approves the plan inside the current invocation. When that happens, update the plan artifact frontmatter to `Status: approved`, then stop so the runner can decide whether to launch execution.
+In runner-driven QRDSPI mode, the human approves the plan inside the current invocation. When that happens, update the plan artifact frontmatter to `Status: approved`, keep that approved status during later execution checkpoints, and stop so the runner can decide whether to launch execution.
 
 For the detailed plan format, see [references/plan-template.md](references/plan-template.md).
 
@@ -23,10 +23,11 @@ For the detailed plan format, see [references/plan-template.md](references/plan-
 6. Do not reopen design questions or reorder, split, or merge phases unless you find a concrete conflict grounded in the current code.
 7. Re-verify important `file:line` references against the current code before making strong claims or copying them into the plan.
 8. Expand each approved phase with concrete changes, done criteria, automated checks, and manual verification that a human must complete before implementation proceeds to the next phase.
-9. Require the final plan to have no unresolved questions, TODO markers, or placeholders.
-10. Stop if essential information is missing or conflicts with the approved artifacts.
-11. In a staged workflow, persist the plan artifact by default through `artifact-management` and return the path you updated.
-12. In runner-driven QRDSPI mode, leave the plan artifact non-approved until the human approves inside the invocation, then set `Status: approved`.
+9. Make each phase execution-ready so `implementation-execution` can later append its checkpoint sections in place using the shared headings from `references/execution-template.md`.
+10. Require the final plan to have no unresolved questions, TODO markers, or placeholders.
+11. Stop if essential information is missing or conflicts with the approved artifacts.
+12. In a staged workflow, persist the plan artifact by default through `artifact-management` and return the path you updated.
+13. In runner-driven QRDSPI mode, leave the plan artifact non-approved until the human approves inside the invocation, then set `Status: approved`.
 
 ## Advanced Features
 
@@ -56,6 +57,7 @@ For the detailed plan format, see [references/plan-template.md](references/plan-
 4. Expand the approved phases.
    - Preserve the approved phase names and ordering.
    - Add concrete changes, completion criteria, automated checks, and manual verification per phase.
+   - Keep each phase ready for later execution checkpoints so `implementation-execution` can append `Execution Status`, `Automated Verification`, `Review And Simplification`, `Manual Verification Result`, and `Blockers Or Follow-Up Notes` without inventing a new artifact.
    - Keep each phase grounded in verified references and explicit scope boundaries from the approved artifacts.
    - Do not reopen research, redesign the solution, or turn the phase descriptions back into open-ended discovery.
 

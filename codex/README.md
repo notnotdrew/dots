@@ -23,7 +23,15 @@ Use skills as the current top-level interface for recurring work:
 - `developing-typescript`
   Covers TypeScript-specific engineering decisions without duplicating testing or planning skills.
 
-For staged QRDSPI workflow orchestration, the contract now lives in `codex/qrdspi/README.md` and `codex/qrdspi/prompts/`. `bin/qrdspi` is the intended single entrypoint for that flow once the runner script is implemented.
+For staged QRDSPI workflow orchestration, the contract now lives in `codex/qrdspi/README.md` and `codex/qrdspi/prompts/`. `bin/qrdspi` is the single entrypoint for that flow.
+
+Typical usage from a target repo root:
+
+- `bin/qrdspi start "example task"`
+- `bin/qrdspi resume ~/.codex/artifacts/<project-root-or-repo>/<feature>/`
+- `bin/qrdspi --dry-run start "example task"`
+
+Use `--once` to stop after one launched stage when you want to inspect a single handoff.
 
 ## Working Definitions
 

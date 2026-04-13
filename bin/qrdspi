@@ -1,0 +1,530 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly RUNNER_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
+readonly PROMPTS_DIR="${RUNNER_ROOT}/codex/qrdspi/prompts"
+
+dry_run=false
+run_once=false
+
+die() {
+    echo "error: $*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'EOF'
+Usage:
+  qrdspi [--dry-run] [--once] start <task prompt>
+  qrdspi [--dry-run] [--once] resume <artifact-root-or-artifact-file-or-topic>
+
+Options:
+  --dry-run  Print resolved workflow state and the intended Codex launch command.
+  --once     Launch at most one stage invocation, then stop.
+  -h, --help Show this help text.
+EOF
+}
+
+abspath_dir() {
+    local target_dir="$1"
+    (
+        cd -- "$target_dir"
+        pwd
+    )
+}
+
+slugify() {
+    local value="$1"
+    local slug
+
+    slug="$(printf '%s' "$value" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g')"
+
+    [ -n "$slug" ] || die "unable to derive a topic slug from: $value"
+    printf '%s\n' "$slug"
+}
+
+artifact_path() {
+    local stage_name="$1"
+
+    printf '%s/%s--%s.md\n' "$ARTIFACT_ROOT" "$stage_name" "$TOPIC_SLUG"
+}
+
+artifact_status() {
+    local artifact_file="$1"
+
+    [ -f "$artifact_file" ] || return 1
+
+    awk '
+        BEGIN { in_frontmatter = 0 }
+        /^---$/ {
+            if (in_frontmatter == 0) {
+                in_frontmatter = 1
+                next
+            }
+            exit
+        }
+        in_frontmatter == 1 && /^Status:/ {
+            sub(/^Status:[[:space:]]*/, "", $0)
+            print tolower($0)
+            exit
+        }
+    ' "$artifact_file"
+}
+
+artifact_title() {
+    local artifact_file="$1"
+
+    [ -f "$artifact_file" ] || return 1
+
+    awk '
+        BEGIN { in_frontmatter = 0 }
+        /^---$/ {
+            if (in_frontmatter == 0) {
+                in_frontmatter = 1
+                next
+            }
+            exit
+        }
+        in_frontmatter == 1 && /^Title:/ {
+            sub(/^Title:[[:space:]]*/, "", $0)
+            gsub(/^"/, "", $0)
+            gsub(/"$/, "", $0)
+            print
+            exit
+        }
+    ' "$artifact_file"
+}
+
+artifact_has_heading() {
+    local artifact_file="$1"
+    local heading="$2"
+
+    [ -f "$artifact_file" ] || return 1
+    rg -q "^## ${heading}$" "$artifact_file"
+}
+
+question_ready() {
+    local artifact_file
+
+    artifact_file="$(artifact_path question)"
+    artifact_has_heading "$artifact_file" "Research Targets" || return 1
+    artifact_has_heading "$artifact_file" "Next Step"
+}
+
+research_ready() {
+    local artifact_file
+
+    artifact_file="$(artifact_path research)"
+    artifact_has_heading "$artifact_file" "Design Inputs"
+}
+
+stage_approved() {
+    local artifact_file
+    local status
+
+    artifact_file="$(artifact_path "$1")"
+    status="$(artifact_status "$artifact_file" || true)"
+    [ "$status" = "approved" ]
+}
+
+stage_prompt_path() {
+    case "$1" in
+        question) printf '%s/question.md\n' "$PROMPTS_DIR" ;;
+        research) printf '%s/research.md\n' "$PROMPTS_DIR" ;;
+        design) printf '%s/design.md\n' "$PROMPTS_DIR" ;;
+        structure) printf '%s/structure.md\n' "$PROMPTS_DIR" ;;
+        plan) printf '%s/plan.md\n' "$PROMPTS_DIR" ;;
+        implementation-execution) printf '%s/implementation-execution.md\n' "$PROMPTS_DIR" ;;
+        *) die "unknown stage: $1" ;;
+    esac
+}
+
+current_artifact_for_stage() {
+    case "$1" in
+        implementation-execution) artifact_path plan ;;
+        *) artifact_path "$1" ;;
+    esac
+}
+
+collect_related_artifacts() {
+    local current_artifact="$1"
+    local stage_name
+    local candidate
+    local collected=()
+
+    for stage_name in question research design structure plan; do
+        candidate="$(artifact_path "$stage_name")"
+        if [ -f "$candidate" ] && [ "$candidate" != "$current_artifact" ]; then
+            collected+=("$candidate")
+        fi
+    done
+
+    if [ "${#collected[@]}" -eq 0 ]; then
+        printf 'none'
+        return
+    fi
+
+    printf '%s\n' "${collected[@]}"
+}
+
+build_runner_variables_block() {
+    local stage_name="$1"
+    local current_artifact="$2"
+    local related_artifacts="$3"
+
+    cat <<EOF
+## Runner Variable Values
+
+\`\`\`text
+ProjectRoot: ${PROJECT_ROOT}
+ProjectKey: ${PROJECT_KEY}
+ArtifactRoot: ${ARTIFACT_ROOT}
+TopicSlug: ${TOPIC_SLUG}
+Stage: ${stage_name}
+TaskPrompt: ${TASK_PROMPT}
+CurrentArtifact: ${current_artifact}
+RelatedArtifacts: ${related_artifacts}
+ResumeTarget: ${RESUME_TARGET}
+\`\`\`
+EOF
+}
+
+build_prompt() {
+    local stage_name="$1"
+    local current_artifact="$2"
+    local related_artifacts="$3"
+    local prompt_file
+
+    prompt_file="$(stage_prompt_path "$stage_name")"
+    cat "$prompt_file"
+    printf '\n\n'
+    build_runner_variables_block "$stage_name" "$current_artifact" "$related_artifacts"
+}
+
+find_existing_artifact_root() {
+    local topic_slug="$1"
+    local candidate
+    local candidates=(
+        "${PROJECT_ROOT}/codex/artifacts/${PROJECT_KEY}/${topic_slug}"
+        "${PROJECT_ROOT}/.codex/artifacts/${PROJECT_KEY}/${topic_slug}"
+        "${HOME}/.codex/artifacts/${PROJECT_KEY}/${topic_slug}"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [ -d "$candidate" ]; then
+            printf '%s\n' "$(abspath_dir "$candidate")"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+resolve_resume_target() {
+    local target="$1"
+    local base_name
+
+    RESUME_TARGET="$target"
+
+    if [ -d "$target" ]; then
+        ARTIFACT_ROOT="$(abspath_dir "$target")"
+        TOPIC_SLUG="$(basename "$ARTIFACT_ROOT")"
+        return
+    fi
+
+    if [ -f "$target" ]; then
+        ARTIFACT_ROOT="$(abspath_dir "$(dirname "$target")")"
+        base_name="$(basename "$target")"
+        if [[ "$base_name" == *--*.md ]]; then
+            TOPIC_SLUG="${base_name#*--}"
+            TOPIC_SLUG="${TOPIC_SLUG%.md}"
+        else
+            TOPIC_SLUG="$(basename "$ARTIFACT_ROOT")"
+        fi
+        return
+    fi
+
+    TOPIC_SLUG="$(slugify "$target")"
+    ARTIFACT_ROOT="$(find_existing_artifact_root "$TOPIC_SLUG" || true)"
+    [ -n "$ARTIFACT_ROOT" ] || die "could not find an existing workflow for resume target: $target"
+}
+
+resolve_start_target() {
+    TOPIC_SLUG="$(slugify "$TASK_PROMPT")"
+    RESUME_TARGET=""
+    ARTIFACT_ROOT="$(find_existing_artifact_root "$TOPIC_SLUG" || true)"
+
+    if [ -z "$ARTIFACT_ROOT" ]; then
+        ARTIFACT_ROOT="${HOME}/.codex/artifacts/${PROJECT_KEY}/${TOPIC_SLUG}"
+    fi
+}
+
+resolve_task_prompt_for_resume() {
+    local question_artifact
+    local title
+
+    question_artifact="$(artifact_path question)"
+    title="$(artifact_title "$question_artifact" || true)"
+
+    if [ -n "$title" ]; then
+        TASK_PROMPT="$title"
+    else
+        TASK_PROMPT="$TOPIC_SLUG"
+    fi
+}
+
+phase_status_table() {
+    local plan_artifact="$1"
+
+    [ -f "$plan_artifact" ] || return 1
+
+    awk '
+        function emit_phase() {
+            if (phase_heading != "") {
+                print phase_heading "\t" phase_status
+            }
+        }
+
+        /^## Phase [0-9]+:/ {
+            emit_phase()
+            phase_heading = $0
+            phase_status = "not-started"
+            in_execution_status = 0
+            next
+        }
+
+        /^### Execution Status$/ {
+            in_execution_status = 1
+            next
+        }
+
+        /^### / {
+            in_execution_status = 0
+            next
+        }
+
+        in_execution_status == 1 && /^Status:/ {
+            status_line = $0
+            sub(/^Status:[[:space:]]*/, "", status_line)
+            phase_status = tolower(status_line)
+            next
+        }
+
+        END {
+            emit_phase()
+        }
+    ' "$plan_artifact"
+}
+
+determine_execution_stage() {
+    local plan_artifact
+    local saw_phase=false
+    local phase_heading
+    local phase_status
+
+    plan_artifact="$(artifact_path plan)"
+    [ -f "$plan_artifact" ] || die "approved plan artifact is missing: $plan_artifact"
+
+    while IFS=$'\t' read -r phase_heading phase_status; do
+        [ -n "$phase_heading" ] || continue
+        saw_phase=true
+
+        case "$phase_status" in
+            completed)
+                continue
+                ;;
+            not-started)
+                NEXT_STAGE="implementation-execution"
+                STOP_REASON=""
+                return
+                ;;
+            blocked|waiting-for-manual-verification)
+                NEXT_STAGE=""
+                STOP_REASON="${phase_heading} is ${phase_status}; resolve that execution checkpoint before continuing"
+                return
+                ;;
+            *)
+                NEXT_STAGE=""
+                STOP_REASON="${phase_heading} has unsupported execution status '${phase_status}'; update the plan artifact before continuing"
+                return
+                ;;
+        esac
+    done < <(phase_status_table "$plan_artifact")
+
+    if ! "$saw_phase"; then
+        NEXT_STAGE=""
+        STOP_REASON="approved plan does not define any executable phases"
+        return
+    fi
+
+    NEXT_STAGE=""
+    STOP_REASON="all approved plan phases are completed"
+}
+
+determine_next_stage() {
+    NEXT_STAGE=""
+    STOP_REASON=""
+
+    if stage_approved plan; then
+        determine_execution_stage
+        return
+    fi
+
+    if ! question_ready; then
+        NEXT_STAGE="question"
+        return
+    fi
+
+    if ! research_ready; then
+        NEXT_STAGE="research"
+        return
+    fi
+
+    if ! stage_approved design; then
+        NEXT_STAGE="design"
+        return
+    fi
+
+    if ! stage_approved structure; then
+        NEXT_STAGE="structure"
+        return
+    fi
+
+    if ! stage_approved plan; then
+        NEXT_STAGE="plan"
+        return
+    fi
+}
+
+print_dry_run() {
+    local stage_name="$1"
+    local current_artifact="$2"
+    local related_artifacts="$3"
+    local prompt_file
+
+    prompt_file="$(stage_prompt_path "$stage_name")"
+
+    cat <<EOF
+Mode: ${MODE}
+ProjectRoot: ${PROJECT_ROOT}
+ProjectKey: ${PROJECT_KEY}
+ArtifactRoot: ${ARTIFACT_ROOT}
+TopicSlug: ${TOPIC_SLUG}
+SelectedStage: ${stage_name}
+PromptTemplate: ${prompt_file}
+CurrentArtifact: ${current_artifact}
+RelatedArtifacts:
+${related_artifacts}
+LaunchCommand: codex --cd ${PROJECT_ROOT} '<contents of ${prompt_file} plus appended runner variables>'
+EOF
+
+    printf '\n'
+    build_runner_variables_block "$stage_name" "$current_artifact" "$related_artifacts"
+}
+
+launch_stage() {
+    local stage_name="$1"
+    local current_artifact="$2"
+    local related_artifacts="$3"
+    local prompt
+
+    command -v codex >/dev/null 2>&1 || die "codex CLI is not available in PATH"
+    prompt="$(build_prompt "$stage_name" "$current_artifact" "$related_artifacts")"
+
+    echo "Launching ${stage_name} from ${PROJECT_ROOT}"
+    codex --cd "$PROJECT_ROOT" "$prompt"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run)
+            dry_run=true
+            shift
+            ;;
+        --once)
+            run_once=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        start|resume)
+            MODE="$1"
+            shift
+            break
+            ;;
+        *)
+            usage >&2
+            die "unknown argument: $1"
+            ;;
+    esac
+done
+
+[ "${MODE:-}" ] || {
+    usage >&2
+    exit 1
+}
+
+PROJECT_ROOT="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_KEY="$(basename "$PROJECT_ROOT")"
+
+case "$MODE" in
+    start)
+        [ $# -ge 1 ] || die "start requires a task prompt"
+        TASK_PROMPT="$*"
+        resolve_start_target
+        ;;
+    resume)
+        [ $# -eq 1 ] || die "resume requires exactly one artifact root, artifact file, or topic"
+        resolve_resume_target "$1"
+        resolve_task_prompt_for_resume
+        ;;
+    *)
+        die "unsupported mode: $MODE"
+        ;;
+esac
+
+while true; do
+    local_stage=""
+    current_artifact=""
+    related_artifacts=""
+
+    determine_next_stage
+
+    if [ -z "$NEXT_STAGE" ]; then
+        echo "Stopped: ${STOP_REASON}"
+        exit 0
+    fi
+
+    current_artifact="$(current_artifact_for_stage "$NEXT_STAGE")"
+    related_artifacts="$(collect_related_artifacts "$current_artifact")"
+
+    if "$dry_run"; then
+        print_dry_run "$NEXT_STAGE" "$current_artifact" "$related_artifacts"
+        exit 0
+    fi
+
+    local_stage="$NEXT_STAGE"
+    launch_stage "$local_stage" "$current_artifact" "$related_artifacts"
+
+    if "$run_once"; then
+        echo "Stopped: --once requested after ${local_stage}"
+        exit 0
+    fi
+
+    determine_next_stage
+
+    if [ -z "$NEXT_STAGE" ]; then
+        echo "Stopped: ${STOP_REASON}"
+        exit 0
+    fi
+
+    if [ "$NEXT_STAGE" = "$local_stage" ]; then
+        echo "Stopped: ${local_stage} still requires human input, approval, or artifact updates before the runner can continue"
+        exit 0
+    fi
+done

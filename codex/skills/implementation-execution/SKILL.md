@@ -41,8 +41,12 @@ For the detailed single-phase workflow and plan update format, see [references/e
 19. Re-run the relevant scoped verification after any review-driven or simplification edits.
 20. Fall back to single-agent execution only when meaningful automated TDD is not possible or when subagent decomposition would be artificial; record the reason in the phase checkpoint.
 21. Update the existing plan artifact after the phase attempt with status, automated verification, manual verification, and blockers or follow-up notes.
-22. Stop after that single phase checkpoint; do not roll directly into the next phase in the same skill run.
-23. If implementation reveals a real artifact conflict, stop and route back upstream instead of silently changing the plan.
+22. Use a machine-readable `Status:` line under the phase's `### Execution Status` section:
+    - `completed` only when the phase, its review/simplification pass, and its required manual verification are all done
+    - `blocked` when the runner must stop for a real blocker
+    - `waiting-for-manual-verification` when implementation is done but the required human check is still outstanding
+23. Stop after that single phase checkpoint; do not roll directly into the next phase in the same skill run.
+24. If implementation reveals a real artifact conflict, stop and route back upstream instead of silently changing the plan.
 
 ## Advanced Features
 
