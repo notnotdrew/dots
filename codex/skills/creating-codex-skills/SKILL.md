@@ -40,6 +40,9 @@ Run `git log --since="1 week ago"` and summarize changes by author.
 - **Chores:** Updated dependencies
 ````
 
+Before creating a skill from scratch, check `~/bobfiles/claude/skills/` for an analogous Claude skill.
+If one exists, translate that skill into Codex-native form instead of inventing a new workflow from scratch.
+
 ## Relationship to Prompt Writing
 
 Skills are prompts packaged for Codex. For foundational prompt engineering, workflow design, and reusable prompt structure, use Bob's prompt-writing skill as inspiration:
@@ -160,7 +163,21 @@ Rules and constraints...
 
 ## Creating a New Skill
 
-### Step 1: Choose Type
+### Step 1: Check For An Existing Analog
+
+Before choosing a structure, search `~/bobfiles/claude/skills/` for a skill covering the same job.
+
+If a close analog exists:
+
+- treat Bob's skill as the primary source
+- preserve its core workflow, judgment, constraints, and examples
+- translate Claude-specific mechanics into Codex-native instructions
+- keep only the content that still makes sense in Codex
+- avoid reinventing the workflow unless the original is clearly wrong or stale
+
+If no good analog exists, create the skill from scratch.
+
+### Step 2: Choose Type
 
 **Simple skill (single file):**
 - Short and self-contained
@@ -172,7 +189,7 @@ Rules and constraints...
 - Reference files for detailed docs
 - Scripts for utilities when needed
 
-### Step 2: Create SKILL.md
+### Step 3: Create SKILL.md
 
 ````markdown
 ---
@@ -218,7 +235,7 @@ WHERE o.total > 100
 - Do not change query logic, only formatting
 ````
 
-### Step 3: Add Reference Files (If Needed)
+### Step 4: Add Reference Files (If Needed)
 
 Link from `SKILL.md` to detailed content:
 
@@ -229,7 +246,7 @@ For form filling guidance, see [references/forms.md](references/forms.md).
 
 Keep references one level deep from `SKILL.md`.
 
-### Step 4: Add Scripts (If Needed)
+### Step 5: Add Scripts (If Needed)
 
 Scripts execute without loading into context:
 
@@ -242,12 +259,22 @@ python scripts/analyze.py input.pdf > fields.json
 ```
 ````
 
-### Step 5: Test With Real Usage
+### Step 6: Test With Real Usage
 
 1. Test with actual tasks, not contrived examples
 2. Observe where Codex struggles
 3. Refine based on real behavior
 4. Keep the skill small until the workflow proves itself
+
+## Translation-First Rule
+
+When the user asks for a skill in a domain that may already exist in `~/bobfiles/claude/skills/`:
+
+1. Search Bob's skills first.
+2. If a close analog exists, use it as the primary source.
+3. Preserve the original workflow, judgment, examples, and constraints.
+4. Translate Claude-specific mechanics into Codex-native instructions, tools, and file references.
+5. Only create the skill from scratch when no suitable analog exists.
 
 ## Auditing Existing Skills
 
@@ -289,6 +316,7 @@ Guide through decision points:
 - Vague descriptions
 - Deep nesting
 - Too many options without a default
+- Rebuilding a skill from scratch when a suitable Bob skill already exists
 - Copying Claude-specific mechanics directly into Codex
 - Time-sensitive guidance that will rot quickly
 - Overbuilding a skill before the workflow is proven
@@ -307,4 +335,5 @@ A well-structured skill:
 - Keeps `SKILL.md` concise
 - Links to reference files for detailed content
 - Includes concrete examples with input/output pairs
+- Preserves the core workflow and intent of an analogous Bob skill when one exists
 - Has been tested with real usage
