@@ -8,8 +8,12 @@ This directory defines the tracked contract for runner-driven QRDSPI work. `bin/
 - `bin/qrdspi resume ~/.codex/artifacts/<project-root-or-repo>/<feature>/`
 - `bin/qrdspi --dry-run start "example task"`
 - `bin/qrdspi --dry-run resume ~/.codex/artifacts/dots/general-human-in-the-loop-workflow/`
+- `bin/qrdspi BR-60`
+- `bin/qrdspi https://flatiron.atlassian.net/browse/BR-60`
 
 Add `--once` when you want the runner to stop after a single launched stage for debugging.
+
+When the input is a single Jira issue key or Jira `/browse/...` URL, the runner treats it as shorthand for `start` and normalizes the task prompt to the issue key.
 
 ## Current Runner Scope
 
