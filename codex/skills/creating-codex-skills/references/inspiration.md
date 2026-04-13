@@ -4,18 +4,18 @@ This skill intentionally borrows patterns from two sources.
 
 ## 1. Bob's dotfiles repo
 
-Canonical repo:
+Preferred local checkout:
 
-- `git@github.com:bnadlerjr/dotfiles.git`
-- `https://github.com/bnadlerjr/dotfiles.git`
+- `~/bobfiles`
+- Keep it current with `bin/update-bobfiles`
 
-Browse these files for concrete inspiration:
+Browse these files for concrete inspiration. Prefer the local checkout when it exists so references are stable even without network access:
 
-- `https://github.com/bnadlerjr/dotfiles/blob/main/claude/commands/create-skill.md`
+- `~/bobfiles/claude/commands/create-skill.md`
   A thin entrypoint that gathers intent and delegates to the durable skill-authoring layer.
-- `https://github.com/bnadlerjr/dotfiles/blob/main/claude/skills/creating-agent-skills/SKILL.md`
+- `~/bobfiles/claude/skills/creating-agent-skills/SKILL.md`
   The main structural inspiration for this Codex skill.
-- `https://github.com/bnadlerjr/dotfiles/blob/main/claude/skills/writing-prompts/SKILL.md`
+- `~/bobfiles/claude/skills/writing-prompts/SKILL.md`
   Useful for thinking about prompt complexity, workflow shape, and reusable prompt sections.
 
 What to borrow:

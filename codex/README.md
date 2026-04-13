@@ -29,3 +29,12 @@ It is intended to be linked into `~/.codex` so Codex discovers the same global s
 
 Treat this repo as the source of truth for global Codex behavior.
 Start with small skills, then add more structure only after a repeated need appears.
+
+## External References
+
+Keep third-party or inspirational repos outside this repo unless there is a strong reason to track them in git.
+
+For Bob's dotfiles, use the fixed local checkout at `~/bobfiles`.
+That path is the preferred reference source for skill-authoring work, with GitHub only as a fallback when the local checkout is missing.
+
+Use `bin/update-bobfiles` to clone or update that checkout.

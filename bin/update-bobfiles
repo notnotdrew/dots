@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -euo pipefail
+
+target="$HOME/bobfiles"
+repo="git@github.com:bnadlerjr/dotfiles.git"
+
+if [ -d "$target/.git" ]; then
+  git -C "$target" pull --ff-only
+else
+  if [ -e "$target" ]; then
+    echo "Refusing to overwrite existing path: $target" >&2
+    exit 1
+  fi
+
+  git clone "$repo" "$target"
+fi

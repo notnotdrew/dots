@@ -44,7 +44,8 @@ Run `git log --since="1 week ago"` and summarize changes by author.
 
 Skills are prompts packaged for Codex. For foundational prompt engineering, workflow design, and reusable prompt structure, use Bob's prompt-writing skill as inspiration:
 
-- `https://github.com/bnadlerjr/dotfiles/blob/main/claude/skills/writing-prompts/SKILL.md`
+- Preferred local checkout: `~/bobfiles/claude/skills/writing-prompts/SKILL.md`
+- Refresh or install that checkout with `bin/update-bobfiles`
 
 This skill focuses on packaging prompts as Codex skills:
 - YAML frontmatter for discovery
