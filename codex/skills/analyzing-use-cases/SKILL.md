@@ -7,7 +7,7 @@ description: Analyzes stories and acceptance criteria into structured use cases 
 
 Turn a story, ticket, or research artifact into a behavioral specification using Alistair Cockburn's use case framework.
 
-The output is a use case document with a main success scenario, extensions, preconditions, postconditions, acceptance-criteria coverage, and TDD mapping. It should give `implementation-plan`, `planning-tdd`, or `practicing-tdd` a behavioral spine instead of forcing them to infer one from a loose story.
+The output is a use case document with a main success scenario, extensions, preconditions, postconditions, acceptance-criteria coverage, and TDD mapping. It should give `plan-implementation`, `planning-tdd`, or `practicing-tdd` a behavioral spine instead of forcing them to infer one from a loose story.
 
 ## Quick Start
 
@@ -38,7 +38,7 @@ Do not use this skill when:
 
 - the request is still too ambiguous to research safely; use `question-stage` first
 - the story is really an epic that needs slicing; use `slicing-elephant-carpaccio` first
-- the work is already at detailed implementation-plan level
+- the work is already at detailed plan-implementation level
 
 ## Core Principles
 
@@ -183,7 +183,7 @@ Default to casual unless the complexity clearly justifies the full template.
 - `managing-jira`: the source of truth is a Jira ticket
 - `slicing-elephant-carpaccio`: the story is summary-level and too broad
 - `research-codebase`: the behavior depends on current code reality not yet captured in artifacts
-- `implementation-plan`: the use case is approved and needs a concrete execution plan
+- `plan-implementation`: the use case is approved and needs a concrete execution plan
 - `planning-tdd` or `practicing-tdd`: turn the scenario and extensions into a test-first implementation sequence
 
 ## Examples

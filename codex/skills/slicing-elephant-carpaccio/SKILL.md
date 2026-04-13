@@ -35,7 +35,7 @@ Use this skill when:
 - work crosses frontend, backend, data, or multiple repos
 - task decomposition is premature, but the work still needs smaller delivery increments
 
-Do not use this skill for implementation task breakdown inside a single approved slice. Use `implementation-plan` or `planning-tdd` there.
+Do not use this skill for implementation task breakdown inside a single approved slice. Use `plan-implementation` or `planning-tdd` there.
 
 ## Workflow
 
@@ -154,5 +154,5 @@ Use nearby skills when slicing is not the whole job:
 - `thinking-patterns`: compare alternative slice orders when the sequencing is controversial
 - `design-discussion`: align on scope or end-state before turning it into slices
 - `structure-outline`: group approved slices into larger execution phases when needed
-- `implementation-plan`: write the detailed plan for one approved slice
+- `plan-implementation`: write the detailed plan for one approved slice
 - `planning-tdd` or `practicing-tdd`: implement a chosen slice test-first

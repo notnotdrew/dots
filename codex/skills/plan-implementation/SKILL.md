@@ -1,9 +1,9 @@
 ---
-name: implementation-plan
+name: plan-implementation
 description: Produces a detailed implementation plan from approved planning artifacts. Use when design alignment is complete, phase structure is approved, and the next step is to specify exact changes and verification for each phase.
 ---
 
-# Implementation Plan
+# Plan Implementation
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ For the detailed plan format, see [references/plan-template.md](references/plan-
 6. Do not reopen design questions or reorder, split, or merge phases unless you find a concrete conflict grounded in the current code.
 7. Re-verify important `file:line` references against the current code before making strong claims or copying them into the plan.
 8. Expand each approved phase with concrete changes, done criteria, automated checks, and manual verification that a human must complete before implementation proceeds to the next phase.
-9. Make each phase execution-ready so `implementation-execution` can later append its checkpoint sections in place using the shared headings from `references/execution-template.md`.
+9. Make each phase execution-ready so `implement-plan` can later append its checkpoint sections in place using the shared headings from `references/execution-template.md`.
 10. Require the final plan to have no unresolved questions, TODO markers, or placeholders.
 11. Stop if essential information is missing or conflicts with the approved artifacts.
 12. In a staged workflow, persist the plan artifact by default through `artifact-management` and return the path you updated.
@@ -57,7 +57,7 @@ For the detailed plan format, see [references/plan-template.md](references/plan-
 4. Expand the approved phases.
    - Preserve the approved phase names and ordering.
    - Add concrete changes, completion criteria, automated checks, and manual verification per phase.
-   - Keep each phase ready for later execution checkpoints so `implementation-execution` can append `Execution Status`, `Automated Verification`, `Review And Simplification`, `Manual Verification Result`, and `Blockers Or Follow-Up Notes` without inventing a new artifact.
+   - Keep each phase ready for later execution checkpoints so `implement-plan` can append `Execution Status`, `Automated Verification`, `Review And Simplification`, `Manual Verification Result`, and `Blockers Or Follow-Up Notes` without inventing a new artifact.
    - Keep each phase grounded in verified references and explicit scope boundaries from the approved artifacts.
    - Do not reopen research, redesign the solution, or turn the phase descriptions back into open-ended discovery.
 

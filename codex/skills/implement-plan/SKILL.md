@@ -1,13 +1,13 @@
 ---
-name: implementation-execution
-description: Executes one approved implementation-plan phase at a time and records progress back into the plan artifact. Use when an approved plan already exists and the next step is to implement the next phase without changing the agreed sequencing or scope.
+name: implement-plan
+description: Executes one approved plan-implementation phase at a time and records progress back into the plan artifact. Use when an approved plan already exists and the next step is to implement the next phase without changing the agreed sequencing or scope.
 ---
 
-# Implementation Execution
+# Implement Plan
 
 ## Quick Start
 
-Use this skill after `$implementation-plan`. Load the approved plan artifact first, then execute exactly one approved phase: normally the next incomplete phase in the documented order.
+Use this skill after `$plan-implementation`. Load the approved plan artifact first, then execute exactly one approved phase: normally the next incomplete phase in the documented order.
 
 If the user did not provide a plan path, use `artifact-management` to find the current approved `plan--<topic-slug>.md` artifact before doing anything else.
 
@@ -102,7 +102,7 @@ For the detailed single-phase workflow and plan update format, see [references/e
 7. Escalate conflicts correctly.
    - Route design mismatches to `design-discussion`.
    - Route sequencing or phase-boundary conflicts to `structure-outline`.
-   - Route concrete plan-detail conflicts to `implementation-plan`.
+   - Route concrete plan-detail conflicts to `plan-implementation`.
 
 ## Examples
 

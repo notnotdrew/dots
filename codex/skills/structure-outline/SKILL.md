@@ -11,7 +11,7 @@ Use this skill after design alignment is complete and before detailed implementa
 
 This skill is about structure and sequencing. Keep the outline short, reviewable, and roughly two pages or less: a skeleton, not a plan.
 If the user has not provided an approved design document or equivalent alignment artifact, stop and send them back to `$design-discussion` before outlining phases.
-Treat the approved design document as the source of truth. The phase names and ordering produced here should be stable inputs for `$implementation-plan`.
+Treat the approved design document as the source of truth. The phase names and ordering produced here should be stable inputs for `$plan-implementation`.
 In runner-driven QRDSPI mode, approval happens inside the current invocation. When the human approves the phase structure, update the structure artifact frontmatter to `Status: approved`, then stop so the runner can continue safely.
 When the workflow is persisted, use `artifact-management` so the structure artifact becomes the canonical phase artifact consumed by planning.
 
@@ -160,6 +160,6 @@ The shared retry rules come first so later phases do not duplicate behavior. Exe
 - If a phase cannot be verified on its own, it is probably too large or incorrectly grouped
 - Keep the outline focused on sequencing and safety, not implementation detail
 - Carry forward explicit non-goals so they do not quietly expand during planning
-- Phase names should be stable enough that `$implementation-plan` can reuse them directly
+- Phase names should be stable enough that `$plan-implementation` can reuse them directly
 - If the design is still unresolved, stop and return to alignment instead of inventing a phase structure
 - Preserve the same topic slug and artifact root when writing the structure artifact

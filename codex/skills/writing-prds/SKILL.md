@@ -42,7 +42,7 @@ Do not use this skill for:
 
 - writing the initial product vision from scratch; use `writing-product-briefs`
 - breaking a PRD into slices; use `slicing-elephant-carpaccio`
-- writing an implementation plan; use `implementation-plan` or `planning-tdd`
+- writing an implementation plan; use `plan-implementation` or `planning-tdd`
 
 ## Core Principles
 
@@ -228,7 +228,7 @@ Use nearby skills when the PRD is only one stage of the work:
 
 - `writing-product-briefs`: create or refine the source brief first
 - `slicing-elephant-carpaccio`: turn the approved PRD into thin delivery slices
-- `implementation-plan`: produce a concrete implementation plan for an approved slice
+- `plan-implementation`: produce a concrete implementation plan for an approved slice
 - `planning-tdd`: plan implementation where tests are the unit of progress
 
 ## Review Checklist

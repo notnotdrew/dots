@@ -23,7 +23,7 @@ This stage is ready for runner continuation only when:
 ## When To Stop
 
 - Stop after presenting or revising the structure artifact until the human approves it.
-- If the human approves in-session, update the artifact to `Status: approved`, state that it is ready for `$implementation-plan`, and stop.
+- If the human approves in-session, update the artifact to `Status: approved`, state that it is ready for `$plan-implementation`, and stop.
 - If approval is still pending, leave the artifact in a non-approved state and stop.
 - Do not expand the structure artifact into a detailed plan in this invocation.
 

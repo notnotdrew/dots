@@ -43,7 +43,7 @@ Global defaults for Codex. Repository-local `AGENTS.md` files may add or overrid
 - Use `thinking-patterns` for structured reasoning, comparisons, verification, and explicit reasoning-pattern selection when the approach is not obvious.
 - Use `question-stage` before broad exploration when requirements are still fuzzy.
 - Use `research-codebase` for documentation-first codebase exploration.
-- Use `design-discussion`, `structure-outline`, `implementation-plan`, and `implementation-execution` for staged work.
+- Use `design-discussion`, `structure-outline`, `plan-implementation`, and `implement-plan` for staged work.
 - Use `writing-documentation` for `AGENTS.md`, README, ADR, onboarding, and architecture docs.
 - Use `writing-git-commits` for commit messages.
 - Use `developing-bash` for shell and Bash scripting tasks.

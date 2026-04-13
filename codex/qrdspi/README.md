@@ -13,7 +13,7 @@ Add `--once` when you want the runner to stop after a single launched stage for 
 
 ## Current Runner Scope
 
-The runner auto-advances from `question` through repeated `implementation-execution` invocations when artifact state clearly allows it.
+The runner auto-advances from `question` through repeated `implement-plan` invocations when artifact state clearly allows it.
 
 ## Canonical Artifact Root
 
@@ -37,7 +37,7 @@ QRDSPI persists exactly five stage artifacts:
 - `structure--<feature>.md`
 - `plan--<feature>.md`
 
-Execution does not create a sixth artifact. `implementation-execution` updates the existing `plan--<feature>.md` file in place.
+Execution does not create a sixth artifact. `implement-plan` updates the existing `plan--<feature>.md` file in place.
 
 ## Stage Mapping
 
@@ -47,8 +47,8 @@ Execution does not create a sixth artifact. `implementation-execution` updates t
 | `R` | `research-codebase` | `codex/qrdspi/prompts/research.md` | `research--<feature>.md` | The research artifact is written and leaves concrete design inputs for `design-discussion` |
 | `D` | `design-discussion` | `codex/qrdspi/prompts/design.md` | `design--<feature>.md` | The design artifact is updated to `Status: approved` inside the invocation |
 | `S` | `structure-outline` | `codex/qrdspi/prompts/structure.md` | `structure--<feature>.md` | The structure artifact is updated to `Status: approved` inside the invocation |
-| `P` | `implementation-plan` | `codex/qrdspi/prompts/plan.md` | `plan--<feature>.md` | The plan artifact is updated to `Status: approved` inside the invocation |
-| `I` | `implementation-execution` | `codex/qrdspi/prompts/implementation-execution.md` | Updated `plan--<feature>.md` | The first phase without an execution checkpoint is the next safe target, and every earlier execution checkpoint is `Status: completed` |
+| `P` | `plan-implementation` | `codex/qrdspi/prompts/plan.md` | `plan--<feature>.md` | The plan artifact is updated to `Status: approved` inside the invocation |
+| `I` | `implement-plan` | `codex/qrdspi/prompts/implement-plan.md` | Updated `plan--<feature>.md` | The first phase without an execution checkpoint is the next safe target, and every earlier execution checkpoint is `Status: completed` |
 
 ## Continuation Rule
 
@@ -69,7 +69,7 @@ Approval-gated stages handle approval inside the launched Codex invocation, not 
 
 - `design-discussion` sets the design artifact to `Status: approved` when the human approves the design in-session
 - `structure-outline` sets the structure artifact to `Status: approved` when the human approves the phase structure in-session
-- `implementation-plan` sets the plan artifact to `Status: approved` when the human approves the plan in-session
+- `plan-implementation` sets the plan artifact to `Status: approved` when the human approves the plan in-session
 
 If the human has not approved yet, the stage leaves the artifact in a non-approved state and the runner stops there.
 
@@ -77,7 +77,7 @@ When multiple artifacts exist, the runner trusts the furthest approved stage ins
 
 ## Execution Rule
 
-`implementation-execution` is still one approved phase per invocation.
+`implement-plan` is still one approved phase per invocation.
 
 - It starts from an approved local plan artifact.
 - It updates the existing plan artifact in place.

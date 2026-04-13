@@ -51,7 +51,7 @@ Use this skill when the task is to:
 Do not use this skill for:
 
 - slicing a large feature into delivery increments; use `slicing-elephant-carpaccio`
-- turning an approved story into an implementation plan; use `implementation-plan` or `planning-tdd`
+- turning an approved story into an implementation plan; use `plan-implementation` or `planning-tdd`
 - drafting a product brief or PRD; use `writing-product-briefs` or `writing-prds`
 
 ## Core Principles
@@ -263,7 +263,7 @@ Use nearby skills when story writing is only one stage of the work:
 
 - `slicing-elephant-carpaccio`: split a feature or epic before writing an individual story
 - `managing-jira`: load a Jira ticket before drafting when the request starts from an issue key
-- `implementation-plan` or `planning-tdd`: plan the implementation of an approved story
+- `plan-implementation` or `planning-tdd`: plan the implementation of an approved story
 - `practicing-tdd`: implement the approved story test-first
 
 ## Reference Files

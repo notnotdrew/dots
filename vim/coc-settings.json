@@ -123,6 +123,7 @@
     "import",
     "nextjs",
     "openai",
+    "qrdspi",
     "ristow",
     "stylelint",
     "upsert",

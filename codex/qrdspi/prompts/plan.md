@@ -1,6 +1,6 @@
-# QRDSPI Plan Stage
+# QRDSPI Plan Implementation Stage
 
-Use the local skill `implementation-plan`.
+Use the local skill `plan-implementation`.
 
 ## Objective
 

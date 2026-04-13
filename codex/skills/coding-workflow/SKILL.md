@@ -16,8 +16,8 @@ Start at the earliest stage the request still needs. Do not force every task thr
 - Unclear scope or missing current-state understanding: `research-codebase`
 - Competing approaches or design tradeoffs: `thinking-patterns` then `design-discussion`
 - Agreed direction but no phase structure: `structure-outline`
-- Approved structure but no concrete implementation plan: `implementation-plan`
-- Approved plan with a ready next phase: `implementation-execution`
+- Approved structure but no concrete implementation plan: `plan-implementation`
+- Approved plan with a ready next phase: `implement-plan`
 - Active coding inside execution: `practicing-tdd`
 
 For small, already-specified changes, skip this skill and implement directly.
@@ -52,8 +52,8 @@ In those cases, go straight to the relevant execution skill or complete the work
 | "Think through the options" | `thinking-patterns` | Make the reasoning visible and auditable |
 | "Help me choose a direction" | `thinking-patterns` -> `design-discussion` | Compare approaches, then lock the design |
 | "Break this into safe phases" | `structure-outline` | Define the phase boundaries before detail |
-| "Write the implementation plan" | `implementation-plan` | Turn approved structure into concrete steps |
-| "Complete the next approved step" | `implementation-execution` | Execute exactly one approved phase |
+| "Write the implementation plan" | `plan-implementation` | Turn approved structure into concrete steps |
+| "Complete the next approved step" | `implement-plan` | Execute exactly one approved phase |
 | "Implement this with tests first" | `practicing-tdd` | Enforce RED -> GREEN -> REFACTOR |
 
 ## Workflow
@@ -79,7 +79,7 @@ In those cases, go straight to the relevant execution skill or complete the work
 
 The common path for substantial feature work is:
 
-`research-codebase` -> `thinking-patterns` / `design-discussion` -> `structure-outline` -> `implementation-plan` -> `implementation-execution`
+`research-codebase` -> `thinking-patterns` / `design-discussion` -> `structure-outline` -> `plan-implementation` -> `implement-plan`
 
 That path is a default, not a mandate. Enter where the request actually starts.
 

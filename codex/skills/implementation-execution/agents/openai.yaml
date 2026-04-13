@@ -1,4 +1,0 @@
-interface:
-  display_name: "Implementation Execution"
-  short_description: "Execute one approved plan phase"
-  default_prompt: "Use implementation execution to carry out the next approved phase of this plan"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement Plan"
+  short_description: "Execute one approved plan phase"
+  default_prompt: "Use implement-plan to carry out the next approved phase of this plan"

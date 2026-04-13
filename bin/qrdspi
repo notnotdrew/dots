@@ -137,14 +137,14 @@ stage_prompt_path() {
         design) printf '%s/design.md\n' "$PROMPTS_DIR" ;;
         structure) printf '%s/structure.md\n' "$PROMPTS_DIR" ;;
         plan) printf '%s/plan.md\n' "$PROMPTS_DIR" ;;
-        implementation-execution) printf '%s/implementation-execution.md\n' "$PROMPTS_DIR" ;;
+        implement-plan) printf '%s/implement-plan.md\n' "$PROMPTS_DIR" ;;
         *) die "unknown stage: $1" ;;
     esac
 }
 
 current_artifact_for_stage() {
     case "$1" in
-        implementation-execution) artifact_path plan ;;
+        implement-plan) artifact_path plan ;;
         *) artifact_path "$1" ;;
     esac
 }
@@ -337,7 +337,7 @@ determine_execution_stage() {
                 continue
                 ;;
             not-started)
-                NEXT_STAGE="implementation-execution"
+                NEXT_STAGE="implement-plan"
                 STOP_REASON=""
                 return
                 ;;

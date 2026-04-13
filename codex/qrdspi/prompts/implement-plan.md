@@ -1,6 +1,6 @@
-# QRDSPI Implementation Execution Stage
+# QRDSPI Implement Plan Stage
 
-Use the local skill `implementation-execution`.
+Use the local skill `implement-plan`.
 
 ## Objective
 
@@ -35,7 +35,7 @@ ProjectRoot: {{ProjectRoot}}
 ProjectKey: {{ProjectKey}}
 ArtifactRoot: {{ArtifactRoot}}
 TopicSlug: {{TopicSlug}}
-Stage: implementation-execution
+Stage: implement-plan
 TaskPrompt: {{TaskPrompt}}
 CurrentArtifact: {{CurrentArtifact}}
 RelatedArtifacts: {{RelatedArtifacts}}

@@ -67,7 +67,7 @@ Stop and route back upstream when implementation conflicts with approved artifac
 
 - `design-discussion`: the approved design is internally inconsistent with the code reality or desired end state.
 - `structure-outline`: the approved phase boundaries or sequencing no longer fit the implementation dependency graph.
-- `implementation-plan`: the phase detail is too vague, missing concrete execution information, or points to stale implementation steps.
+- `plan-implementation`: the phase detail is too vague, missing concrete execution information, or points to stale implementation steps.
 
 ## Plan Artifact Update Format
 
