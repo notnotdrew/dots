@@ -17,7 +17,8 @@ usage() {
     cat <<'EOF'
 Usage:
   qrdspi [--dry-run] [--once] start <task prompt>
-  qrdspi [--dry-run] [--once] resume <artifact-root-or-artifact-file-or-topic>
+  qrdspi [--dry-run] [--once] resume [<artifact-root-or-artifact-file-or-topic>]
+  qrdspi delete
   qrdspi [--dry-run] [--once] <jira-issue-key-or-browse-url>
 
 Options:
@@ -33,6 +34,10 @@ abspath_dir() {
         cd -- "$target_dir"
         pwd
     )
+}
+
+artifacts_home_dir() {
+    printf '%s/.codex/artifacts\n' "$HOME"
 }
 
 slugify() {
@@ -76,10 +81,166 @@ normalize_start_prompt() {
     printf '%s\n' "$value"
 }
 
+list_artifact_roots() {
+    local artifacts_home="$1"
+
+    [ -d "$artifacts_home" ] || return 0
+    find "$artifacts_home" -mindepth 2 -maxdepth 2 -type d | LC_ALL=C sort
+}
+
+prompt_artifact_root_selection() {
+    local root_count="$1"
+    local action_label="$2"
+    local choice
+
+    while true; do
+        printf '\nSelect artifact root to %s [1-%s] or q to cancel:\n' "$action_label" "$root_count" >&2
+        printf '> ' >&2
+
+        if ! IFS= read -r choice; then
+            return 1
+        fi
+
+        case "$choice" in
+            q|Q|quit|Quit)
+                return 1
+                ;;
+            ''|*[!0-9]*)
+                printf 'Enter a number from 1 to %s, or q.\n' "$root_count" >&2
+                ;;
+            *)
+                if [ "$choice" -ge 1 ] && [ "$choice" -le "$root_count" ]; then
+                    printf '%s\n' "$choice"
+                    return 0
+                fi
+
+                printf 'Enter a number from 1 to %s, or q.\n' "$root_count" >&2
+                ;;
+        esac
+    done
+}
+
+confirm_artifact_root_deletion() {
+    local artifact_root="$1"
+    local choice
+
+    printf 'Delete artifact root %s? [y/N]: ' "$artifact_root" >&2
+
+    if ! IFS= read -r choice; then
+        return 1
+    fi
+
+    case "$choice" in
+        y|Y|yes|YES|Yes)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+normalize_artifact_root_for_deletion() {
+    local artifacts_home="$1"
+    local artifact_root="$2"
+    local normalized_home
+    local normalized_root
+
+    [ -d "$artifact_root" ] || die "artifact root does not exist: $artifact_root"
+
+    normalized_home="$(abspath_dir "$artifacts_home")"
+    normalized_root="$(abspath_dir "$artifact_root")"
+
+    [[ "$normalized_root" == "$normalized_home"/* ]] || die "refusing to delete outside ${normalized_home}: ${normalized_root}"
+    [ "$(dirname "$(dirname "$normalized_root")")" = "$normalized_home" ] || die "refusing to delete non-root artifact directory: ${normalized_root}"
+
+    printf '%s\n' "$normalized_root"
+}
+
+delete_artifact_root_command() {
+    local artifacts_home
+    local selection_index
+    local selected_root
+    local i
+    local artifact_roots=()
+
+    artifacts_home="$(artifacts_home_dir)"
+
+    while IFS= read -r artifact_root; do
+        [ -n "$artifact_root" ] || continue
+        artifact_roots+=("$(abspath_dir "$artifact_root")")
+    done < <(list_artifact_roots "$artifacts_home")
+
+    if [ "${#artifact_roots[@]}" -eq 0 ]; then
+        echo "No artifact roots found under ${artifacts_home}"
+        return 0
+    fi
+
+    echo "Artifact roots under ${artifacts_home}:"
+    for ((i = 0; i < ${#artifact_roots[@]}; i++)); do
+        printf '%d. %s\n' "$((i + 1))" "${artifact_roots[$i]}"
+    done
+
+    selection_index="$(prompt_artifact_root_selection "${#artifact_roots[@]}" "delete")" || {
+        echo "Deletion cancelled."
+        return 0
+    }
+
+    selected_root="${artifact_roots[$((selection_index - 1))]}"
+    selected_root="$(normalize_artifact_root_for_deletion "$artifacts_home" "$selected_root")"
+
+    if ! confirm_artifact_root_deletion "$selected_root"; then
+        echo "Deletion cancelled."
+        return 0
+    fi
+
+    rm -rf -- "$selected_root"
+    echo "Deleted artifact root: ${selected_root}"
+}
+
+prompt_resume_target_selection() {
+    local artifacts_home
+    local selection_index
+    local selected_root
+    local i
+    local artifact_roots=()
+
+    artifacts_home="$(artifacts_home_dir)"
+
+    while IFS= read -r artifact_root; do
+        [ -n "$artifact_root" ] || continue
+        artifact_roots+=("$(abspath_dir "$artifact_root")")
+    done < <(list_artifact_roots "$artifacts_home")
+
+    if [ "${#artifact_roots[@]}" -eq 0 ]; then
+        echo "No artifact roots found under ${artifacts_home}"
+        return 1
+    fi
+
+    echo "Artifact roots under ${artifacts_home}:"
+    for ((i = 0; i < ${#artifact_roots[@]}; i++)); do
+        printf '%d. %s\n' "$((i + 1))" "${artifact_roots[$i]}"
+    done
+
+    selection_index="$(prompt_artifact_root_selection "${#artifact_roots[@]}" "resume")" || {
+        echo "Resume cancelled."
+        return 1
+    }
+
+    selected_root="${artifact_roots[$((selection_index - 1))]}"
+    resolve_resume_target "$selected_root"
+}
+
 artifact_path() {
     local stage_name="$1"
 
     printf '%s/%s--%s.md\n' "$ARTIFACT_ROOT" "$stage_name" "$TOPIC_SLUG"
+}
+
+artifact_exists() {
+    local stage_name="$1"
+
+    [ -f "$(artifact_path "$stage_name")" ]
 }
 
 artifact_status() {
@@ -128,29 +289,6 @@ artifact_title() {
     ' "$artifact_file"
 }
 
-artifact_has_heading() {
-    local artifact_file="$1"
-    local heading="$2"
-
-    [ -f "$artifact_file" ] || return 1
-    rg -q "^## ${heading}$" "$artifact_file"
-}
-
-question_ready() {
-    local artifact_file
-
-    artifact_file="$(artifact_path question)"
-    artifact_has_heading "$artifact_file" "Research Targets" || return 1
-    artifact_has_heading "$artifact_file" "Next Step"
-}
-
-research_ready() {
-    local artifact_file
-
-    artifact_file="$(artifact_path research)"
-    artifact_has_heading "$artifact_file" "Design Inputs"
-}
-
 stage_approved() {
     local artifact_file
     local status
@@ -196,13 +334,6 @@ stage_input_artifact() {
     esac
 }
 
-stage_output_artifact() {
-    case "$1" in
-        implement-plan) artifact_path plan ;;
-        *) artifact_path "$1" ;;
-    esac
-}
-
 stage_skill_invocation() {
     local stage_name="$1"
     local skill_name
@@ -221,7 +352,6 @@ stage_skill_invocation() {
 
 build_runner_contract_block() {
     local stage_name="$1"
-    local output_artifact="$2"
     local input_artifact
 
     cat <<EOF
@@ -229,9 +359,13 @@ build_runner_contract_block() {
 
 \`\`\`text
 SkillInvocation: $(stage_skill_invocation "$stage_name")
-ArtifactRoot: ${ARTIFACT_ROOT}
-OutputArtifact: ${output_artifact}
+ProjectRoot: ${PROJECT_ROOT}
+ProjectKey: ${PROJECT_KEY}
 EOF
+
+    if [ -n "${ARTIFACT_ROOT:-}" ]; then
+        printf 'ArtifactRoot: %s\n' "$ARTIFACT_ROOT"
+    fi
 
     if [ "$stage_name" = "question" ]; then
         printf 'TaskPrompt: %s\n' "$TASK_PROMPT"
@@ -252,8 +386,9 @@ EOF
     fi
 
     cat <<EOF
+- Use \`artifact-management\` to locate, create, or update the correct QRDSPI artifacts for this workflow.
 - Let the skill discover sibling artifacts from the same artifact root when it needs more context.
-- Stop when human input or approval is still needed, or when the output artifact remains unresolved.
+- Stop when human input or approval is still needed, or when the stage artifact remains unresolved.
 - Do not advance to the next stage.
 EOF
 }
@@ -279,13 +414,11 @@ EOF
 
 build_prompt() {
     local stage_name="$1"
-    local output_artifact="$2"
-
     local prompt_file
     prompt_file="$(stage_prompt_path "$stage_name")"
     cat "$prompt_file"
     printf '\n\n'
-    build_runner_contract_block "$stage_name" "$output_artifact"
+    build_runner_contract_block "$stage_name"
 }
 
 review_prompt_path() {
@@ -310,8 +443,6 @@ find_existing_artifact_root() {
     local topic_slug="$1"
     local candidate
     local candidates=(
-        "${PROJECT_ROOT}/codex/artifacts/${PROJECT_KEY}/${topic_slug}"
-        "${PROJECT_ROOT}/.codex/artifacts/${PROJECT_KEY}/${topic_slug}"
         "${HOME}/.codex/artifacts/${PROJECT_KEY}/${topic_slug}"
     )
 
@@ -357,13 +488,9 @@ resolve_resume_target() {
 
 resolve_start_target() {
     TASK_PROMPT="$(normalize_start_prompt "$TASK_PROMPT")"
-    TOPIC_SLUG="$(slugify "$TASK_PROMPT")"
     RESUME_TARGET=""
-    ARTIFACT_ROOT="$(find_existing_artifact_root "$TOPIC_SLUG" || true)"
-
-    if [ -z "$ARTIFACT_ROOT" ]; then
-        ARTIFACT_ROOT="${HOME}/.codex/artifacts/${PROJECT_KEY}/${TOPIC_SLUG}"
-    fi
+    ARTIFACT_ROOT=""
+    TOPIC_SLUG=""
 }
 
 resolve_task_prompt_for_resume() {
@@ -533,40 +660,58 @@ determine_next_stage() {
     NEXT_STAGE=""
     STOP_REASON=""
 
-    if stage_approved plan; then
-        determine_execution_stage
-        return
-    fi
-
-    if ! question_ready; then
+    if [ "$MODE" = "start" ]; then
         NEXT_STAGE="question"
         return
     fi
 
-    if ! research_ready; then
-        NEXT_STAGE="research"
+    if artifact_exists plan && stage_approved plan; then
+        determine_execution_stage
         return
     fi
 
-    if ! stage_approved design; then
+    if artifact_exists plan; then
+        NEXT_STAGE="plan"
+        return
+    fi
+
+    if artifact_exists structure; then
+        if stage_approved structure; then
+            NEXT_STAGE="plan"
+        else
+            NEXT_STAGE="structure"
+        fi
+        return
+    fi
+
+    if artifact_exists design; then
+        if stage_approved design; then
+            NEXT_STAGE="structure"
+        else
+            NEXT_STAGE="design"
+        fi
+        return
+    fi
+
+    if artifact_exists research; then
         NEXT_STAGE="design"
         return
     fi
 
-    if ! stage_approved structure; then
-        NEXT_STAGE="structure"
+    if artifact_exists question; then
+        NEXT_STAGE="research"
         return
     fi
 
-    if ! stage_approved plan; then
-        NEXT_STAGE="plan"
+    if [ -n "${ARTIFACT_ROOT:-}" ]; then
+        NEXT_STAGE="question"
+        STOP_REASON="no QRDSPI artifacts found under ${ARTIFACT_ROOT}"
         return
     fi
 }
 
 print_dry_run() {
     local stage_name="$1"
-    local output_artifact="$2"
     local prompt_file
 
     prompt_file="$(stage_prompt_path "$stage_name")"
@@ -575,17 +720,22 @@ print_dry_run() {
 Mode: ${MODE}
 ProjectRoot: ${PROJECT_ROOT}
 ProjectKey: ${PROJECT_KEY}
-ArtifactRoot: ${ARTIFACT_ROOT}
-TopicSlug: ${TOPIC_SLUG}
 SelectedStage: ${stage_name}
 PromptTemplate: ${prompt_file}
 SkillInvocation: $(stage_skill_invocation "$stage_name")
-OutputArtifact: ${output_artifact}
 LaunchCommand: codex --cd ${PROJECT_ROOT} '<contents of ${prompt_file} plus appended QRDSPI runner contract>'
 EOF
 
+    if [ -n "${ARTIFACT_ROOT:-}" ]; then
+        printf 'ArtifactRoot: %s\n' "$ARTIFACT_ROOT"
+    fi
+
+    if [ -n "${TOPIC_SLUG:-}" ]; then
+        printf 'TopicSlug: %s\n' "$TOPIC_SLUG"
+    fi
+
     printf '\n'
-    build_runner_contract_block "$stage_name" "$output_artifact"
+    build_runner_contract_block "$stage_name"
 }
 
 launch_codex_prompt() {
@@ -599,10 +749,9 @@ launch_codex_prompt() {
 
 launch_stage() {
     local stage_name="$1"
-    local output_artifact="$2"
     local prompt
 
-    prompt="$(build_prompt "$stage_name" "$output_artifact")"
+    prompt="$(build_prompt "$stage_name")"
     launch_codex_prompt "$stage_name" "$prompt"
 }
 
@@ -672,7 +821,7 @@ done
 }
 
 case "$1" in
-    start|resume)
+    start|resume|delete)
         MODE="$1"
         shift
         ;;
@@ -696,9 +845,21 @@ case "$MODE" in
         resolve_start_target
         ;;
     resume)
-        [ $# -eq 1 ] || die "resume requires exactly one artifact root, artifact file, or topic"
-        resolve_resume_target "$1"
+        if [ $# -eq 0 ]; then
+            prompt_resume_target_selection || exit 0
+        elif [ $# -eq 1 ]; then
+            resolve_resume_target "$1"
+        else
+            die "resume accepts at most one artifact root, artifact file, or topic"
+        fi
         resolve_task_prompt_for_resume
+        ;;
+    delete)
+        [ $# -eq 0 ] || die "delete does not accept additional arguments"
+        "$dry_run" && die "delete does not support --dry-run"
+        "$run_once" && die "delete does not support --once"
+        delete_artifact_root_command
+        exit 0
         ;;
     *)
         die "unsupported mode: $MODE"
@@ -707,7 +868,6 @@ esac
 
 while true; do
     local_stage=""
-    output_artifact=""
     completed_phases_before=0
     completed_phases_after=0
 
@@ -718,10 +878,8 @@ while true; do
         exit 0
     fi
 
-    output_artifact="$(stage_output_artifact "$NEXT_STAGE")"
-
     if "$dry_run"; then
-        print_dry_run "$NEXT_STAGE" "$output_artifact"
+        print_dry_run "$NEXT_STAGE"
         exit 0
     fi
 
@@ -731,7 +889,7 @@ while true; do
         completed_phases_before="$(count_completed_phases "$(artifact_path plan)" || printf '0')"
     fi
 
-    launch_stage "$local_stage" "$output_artifact"
+    launch_stage "$local_stage"
 
     if [ "$local_stage" = "implement-plan" ]; then
         completed_phases_after="$(count_completed_phases "$(artifact_path plan)" || printf '0')"

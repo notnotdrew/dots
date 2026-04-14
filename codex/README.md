@@ -25,10 +25,14 @@ Use skills as the current top-level interface for recurring work:
 
 For staged QRDSPI workflow orchestration, the contract now lives in `codex/qrdspi/README.md` and `codex/qrdspi/prompts/`. `bin/qrdspi` is the single entrypoint for that flow.
 
+`bin/qrdspi` is a thin runner. `start` launches the question stage from the raw task prompt, while the QRDSPI skills handle artifact lookup and persistence through `artifact-management`.
+
 Typical usage from a target repo root:
 
 - `bin/qrdspi start "example task"`
 - `bin/qrdspi resume ~/.codex/artifacts/<project-root-or-repo>/<feature>/`
+- `bin/qrdspi resume`
+- `bin/qrdspi delete`
 - `bin/qrdspi --dry-run start "example task"`
 
 Use `--once` to stop after one launched stage when you want to inspect a single handoff.

@@ -18,6 +18,15 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    local haystack="$1"
+    local needle="$2"
+
+    if [[ "$haystack" == *"$needle"* ]]; then
+        fail "expected output not to contain: $needle"
+    fi
+}
+
 run_start_shorthand_test() {
     local temp_dir
     local repo_dir
@@ -34,8 +43,8 @@ run_start_shorthand_test() {
     )"
 
     assert_contains "$output" "Mode: start"
-    assert_contains "$output" "TopicSlug: br-60"
     assert_contains "$output" "TaskPrompt: BR-60"
+    assert_not_contains "$output" "TopicSlug:"
 
     rm -rf "$temp_dir"
     trap - RETURN
@@ -57,8 +66,8 @@ run_explicit_start_url_test() {
     )"
 
     assert_contains "$output" "Mode: start"
-    assert_contains "$output" "TopicSlug: br-60"
     assert_contains "$output" "TaskPrompt: BR-60"
+    assert_not_contains "$output" "TopicSlug:"
 
     rm -rf "$temp_dir"
     trap - RETURN

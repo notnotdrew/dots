@@ -18,6 +18,15 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    local haystack="$1"
+    local needle="$2"
+
+    if [[ "$haystack" == *"$needle"* ]]; then
+        fail "expected output not to contain: $needle"
+    fi
+}
+
 write_question_artifact() {
     local artifact_root="$1"
 
@@ -124,8 +133,39 @@ run_question_contract_test() {
 
     assert_contains "$output" 'SelectedStage: question'
     assert_contains "$output" 'SkillInvocation: $question-stage Test\ flow'
-    assert_contains "$output" "OutputArtifact: ${artifact_root}/question--test-flow.md"
     assert_contains "$output" '- Task prompt: `Test flow`'
+    assert_not_contains "$output" 'TopicSlug:'
+    assert_not_contains "$output" 'ArtifactRoot:'
+    assert_not_contains "$output" 'OutputArtifact:'
+
+    rm -rf "$temp_dir"
+    trap - RETURN
+}
+
+run_long_prompt_stays_prompt_driven_test() {
+    local temp_dir
+    local setup_output
+    local repo_dir
+    local fake_home
+    local output
+    local task_prompt="some long text with spaces and punctuation: this should not become a slug"
+
+    temp_dir="$(mktemp -d)"
+    trap 'rm -rf "$temp_dir"' RETURN
+    setup_output="$(setup_fixture "$temp_dir")"
+    repo_dir="$(printf '%s\n' "$setup_output" | sed -n '1p')"
+    fake_home="$(printf '%s\n' "$setup_output" | sed -n '2p')"
+
+    output="$(
+        cd "$repo_dir" &&
+        HOME="$fake_home" "$RUNNER" --dry-run start "$task_prompt"
+    )"
+
+    assert_contains "$output" "TaskPrompt: ${task_prompt}"
+    assert_contains "$output" '- Task prompt: `some long text with spaces and punctuation: this should not become a slug`'
+    assert_not_contains "$output" 'TopicSlug: some-long-text-with-spaces-and-punctuation-this-should-not-become-a-slug'
+    assert_not_contains "$output" 'ArtifactRoot:'
+    assert_not_contains "$output" 'OutputArtifact:'
 
     rm -rf "$temp_dir"
     trap - RETURN
@@ -156,8 +196,9 @@ run_design_contract_test() {
 
     assert_contains "$output" 'SelectedStage: design'
     assert_contains "$output" "SkillInvocation: \$design-discussion ${artifact_root}/research--test-flow.md"
-    assert_contains "$output" "OutputArtifact: ${artifact_root}/design--test-flow.md"
+    assert_contains "$output" "ArtifactRoot: ${artifact_root}"
     assert_contains "$output" "- Input artifact: \`${artifact_root}/research--test-flow.md\`"
+    assert_not_contains "$output" 'OutputArtifact:'
 
     rm -rf "$temp_dir"
     trap - RETURN
@@ -191,14 +232,16 @@ run_implement_contract_test() {
 
     assert_contains "$output" 'SelectedStage: implement-plan'
     assert_contains "$output" "SkillInvocation: \$implement-plan ${artifact_root}/plan--test-flow.md"
-    assert_contains "$output" "OutputArtifact: ${artifact_root}/plan--test-flow.md"
+    assert_contains "$output" "ArtifactRoot: ${artifact_root}"
     assert_contains "$output" "- Input artifact: \`${artifact_root}/plan--test-flow.md\`"
+    assert_not_contains "$output" 'OutputArtifact:'
 
     rm -rf "$temp_dir"
     trap - RETURN
 }
 
 run_question_contract_test
+run_long_prompt_stays_prompt_driven_test
 run_design_contract_test
 run_implement_contract_test
 

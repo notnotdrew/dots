@@ -6,6 +6,8 @@ This directory defines the tracked contract for runner-driven QRDSPI work. `bin/
 
 - `bin/qrdspi start "example task"`
 - `bin/qrdspi resume ~/.codex/artifacts/<project-root-or-repo>/<feature>/`
+- `bin/qrdspi resume`
+- `bin/qrdspi delete`
 - `bin/qrdspi --dry-run start "example task"`
 - `bin/qrdspi --dry-run resume ~/.codex/artifacts/dots/general-human-in-the-loop-workflow/`
 - `bin/qrdspi BR-60`
@@ -13,11 +15,19 @@ This directory defines the tracked contract for runner-driven QRDSPI work. `bin/
 
 Add `--once` when you want the runner to stop after a single launched stage for debugging.
 
+`bin/qrdspi delete` lists artifact roots under `~/.codex/artifacts`, lets you choose one interactively, and asks for confirmation before removing it.
+
 When the input is a single Jira issue key or Jira `/browse/...` URL, the runner treats it as shorthand for `start` and normalizes the task prompt to the issue key.
 
 ## Current Runner Scope
 
-The runner auto-advances from `question` through repeated `implement-plan` invocations when artifact state clearly allows it. Completed implementation phases now pass through a post-phase review gate before the runner can continue.
+The runner is intentionally thin.
+
+- `start` launches the `question` stage from the task prompt only. It does not derive the QRDSPI slug, artifact root, or output filename up front.
+- Stage skills own artifact lookup and persistence through `artifact-management`.
+- `resume` resolves the current workflow from the existing artifact root or artifact file and advances only from explicit artifact presence plus approval state.
+- `resume` without an argument lists artifact roots under `~/.codex/artifacts`, lets you choose one interactively, and resumes that workflow.
+- Completed implementation phases still pass through a post-phase review gate before the runner can continue.
 
 ## Canonical Artifact Root
 
@@ -67,6 +77,13 @@ Continue only when all of these are true:
 
 If any of those conditions fail, the runner stops and reports why.
 
+The runner keeps that decision surface narrow:
+
+- `question` continues only when a question artifact now exists
+- `research` continues only when a research artifact now exists
+- `design`, `structure`, and `plan` continue only when their artifacts exist and show `Status: approved`
+- execution continues only from the approved plan artifact plus explicit per-phase execution checkpoints
+
 ## Approval Rule
 
 Approval-gated stages handle approval inside the launched Codex invocation, not between runner steps.
@@ -109,10 +126,11 @@ Each prompt template in `codex/qrdspi/prompts/` is intentionally thin. The templ
 The runner-owned contract should provide:
 
 - `SkillInvocation`
-- `ArtifactRoot`
-- `OutputArtifact`
+- `ProjectRoot`
+- `ProjectKey`
+- `ArtifactRoot` when resuming an existing workflow
 - either `TaskPrompt` for `question` or `InputArtifact` for later stages
-- the stop rule: stop when the stage still needs human input or approval, or when the output artifact remains unresolved
+- the stop rule: stop when the stage still needs human input or approval, or when the stage artifact remains unresolved
 - the no-chaining rule: do not advance to the next stage inside the same invocation
 
 For `research`, `design`, `structure`, and `plan`, the primary handoff is the previous stage artifact. The skill should discover sibling artifacts from the same artifact root when it needs more context rather than receiving the whole artifact set inline.
