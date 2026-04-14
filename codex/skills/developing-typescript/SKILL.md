@@ -17,6 +17,7 @@ Default to the narrowest guidance that fits the task:
 | --- | --- |
 | Matching an existing codebase | Read the local `tsconfig` shape, module style, and naming patterns before editing |
 | Designing types | Start from domain shapes, model invalid states explicitly, and prefer narrowing over assertions |
+| Choosing return types | Prefer inference by default and annotate only where a boundary needs protection |
 | Crossing runtime boundaries | Validate unknown input at the edge and convert it into trusted internal types |
 | Refactoring legacy TS | Tighten one boundary at a time and keep behavior stable while types improve |
 | Testing TypeScript React code | Use `testing-react-with-vitest` for test specifics |
@@ -55,6 +56,12 @@ Do not use this skill as the primary guide for:
 2. Prefer named domain types when the shape carries business meaning.
 3. Use primitives directly only when extra aliases would hide rather than clarify intent.
 
+### Let Inference Do The Routine Work
+
+1. Prefer inferred return types for most functions, especially local helpers and straightforward module code.
+2. Add explicit return types only when they protect an intentional boundary, prevent accidental API drift, or clarify non-obvious behavior.
+3. Do not turn explicit return annotations into a blanket style rule.
+
 ### Narrow Instead Of Asserting
 
 1. Prefer control-flow narrowing, discriminants, and small type guards over `as`.
@@ -78,10 +85,12 @@ Do not use this skill as the primary guide for:
 ### Type Design
 
 - Prefer discriminated unions over boolean flag combinations.
-- Prefer inferred return types for local functions unless the annotation adds protection or clarity.
-- Add explicit public function return types when they stabilize an important boundary.
+- Prefer inferred return types by default, including for most helpers and straightforward exported functions.
+- Add explicit return types only when they stabilize an important boundary, lock an intended public contract, or prevent a subtle widening regression.
+- Treat mandatory return annotations on every function as a smell unless the repo already enforces that style.
 - Use generics only when the relationship between inputs and outputs is real and reusable.
 - Reach for mapped or conditional types only when simpler named types would be materially worse.
+- Prefer concrete, tool-friendly types over clever type-level machinery when both options express the same runtime truth.
 
 ### Error Handling And Boundaries
 
@@ -106,8 +115,10 @@ Do not use this skill as the primary guide for:
 
 - using `any` as the default fix for type pressure
 - adding generics where a concrete type is clearer
+- annotating every function return type by habit instead of protecting a real boundary
 - encoding impossible states with optional fields and booleans
 - scattering `as SomeType` across call sites instead of fixing the boundary once
+- building abstract type puzzles that make the code harder to read than the runtime behavior it models
 - treating compile-time types as if they validated runtime data
 - rewriting unrelated modules to enforce a preferred TS style
 
@@ -120,7 +131,7 @@ Do not use this skill as the primary guide for:
    - Decide whether the task is mainly about domain modeling, narrowing, runtime input validation, module shape, or incremental cleanup.
 
 3. Apply the smallest sound type improvement.
-   - Prefer a local type guard, union, return-type clarification, or boundary adapter before broader refactors.
+   - Prefer a local type guard, union, inferred return type, or boundary adapter before broader refactors.
 
 4. Keep runtime and compile-time concerns aligned.
    - Validate untrusted data at the edge, then let the internal types stay honest.
