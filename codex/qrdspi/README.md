@@ -71,6 +71,8 @@ If any of those conditions fail, the runner stops and reports why.
 
 Approval-gated stages handle approval inside the launched Codex invocation, not between runner steps.
 
+- Human-gated stages start with an inline checkpoint conversation. They do not prewrite the stage artifact before the first human response.
+- Once a checkpoint is reviewed, the stage updates the artifact to match the reviewed state and continues section by section.
 - `design-discussion` sets the design artifact to `Status: approved` when the human approves the design in-session
 - `structure-outline` sets the structure artifact to `Status: approved` when the human approves the phase structure in-session
 - `plan-implementation` sets the plan artifact to `Status: approved` when the human approves the plan in-session
@@ -102,21 +104,19 @@ When `implement-plan` completes a phase, the runner pauses before continuing.
 
 ## Prompt Template Contract
 
-Each prompt template in `codex/qrdspi/prompts/` is mostly static text plus a small appended variable block from the runner.
+Each prompt template in `codex/qrdspi/prompts/` is intentionally thin. The template names the stage-specific caveats, and the runner appends a small QRDSPI contract instead of restating the whole workflow.
 
-The runner-owned variable block should provide the stage with:
+The runner-owned contract should provide:
 
-- `ProjectRoot`
-- `ProjectKey`
+- `SkillInvocation`
 - `ArtifactRoot`
-- `TopicSlug`
-- `Stage`
-- `TaskPrompt`
-- `CurrentArtifact`
-- `RelatedArtifacts`
-- `ResumeTarget`
+- `OutputArtifact`
+- either `TaskPrompt` for `question` or `InputArtifact` for later stages
+- the stop rule: stop when the stage still needs human input or approval, or when the output artifact remains unresolved
+- the no-chaining rule: do not advance to the next stage inside the same invocation
 
-Stage-specific prompts may add more variables when needed, but the runner should avoid embedding large ad hoc prompt text directly in the script.
+For `research`, `design`, `structure`, and `plan`, the primary handoff is the previous stage artifact. The skill should discover sibling artifacts from the same artifact root when it needs more context rather than receiving the whole artifact set inline.
+`question` is the exception because it starts from the task prompt, and `implement-plan` is the exception because it executes directly from the approved plan artifact.
 
 ## Stop Conditions
 

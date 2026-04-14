@@ -79,7 +79,7 @@ set -euo pipefail
 prompt="\${*: -1}"
 printf '%s\n---\n' "\$prompt" >> "${log_file}"
 
-if [[ "\$prompt" == *"Stage: implement-plan"* ]]; then
+if [[ "\$prompt" == *"SkillInvocation: \\\$implement-plan "* ]]; then
     python3 - <<'PY'
 from pathlib import Path
 plan_path = Path("${artifact_root}/plan--test-flow.md")

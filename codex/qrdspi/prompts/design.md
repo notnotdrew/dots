@@ -1,42 +1,9 @@
 # QRDSPI Design Stage
 
-Use the local skill `design-discussion`.
+Use the runner contract below.
 
-## Objective
-
-Turn the approved research into a concise design artifact that the human can review inside this invocation.
-
-## Artifact Contract
-
-- Load the current question and research artifacts before writing.
-- Create or update `{{ArtifactRoot}}/design--{{TopicSlug}}.md`.
-- Keep the artifact concise enough for section-by-section review in one sitting.
-
-## Completion Signal
-
-This stage is ready for runner continuation only when:
-
-- the design artifact reflects the current discussion, and
-- the human approves it inside this invocation, and
-- the artifact frontmatter is updated to `Status: approved`
-
-## When To Stop
-
-- Stop after each correction until the human approves or leaves the design unresolved.
-- If the design is approved in-session, update the artifact to `Status: approved`, state that it is ready for `$structure-outline`, and stop.
-- If approval is still pending, leave the artifact in a non-approved state and stop.
-- Do not expand into the structure stage in this invocation.
-
-## Runner Variables
-
-```text
-ProjectRoot: {{ProjectRoot}}
-ProjectKey: {{ProjectKey}}
-ArtifactRoot: {{ArtifactRoot}}
-TopicSlug: {{TopicSlug}}
-Stage: design
-TaskPrompt: {{TaskPrompt}}
-CurrentArtifact: {{CurrentArtifact}}
-RelatedArtifacts: {{RelatedArtifacts}}
-ResumeTarget: {{ResumeTarget}}
-```
+Treat the input artifact as the primary design handoff.
+Run the section-by-section checkpoint conversation before the artifact is approved.
+If the first checkpoint is still waiting on review, stop without creating or updating the artifact.
+If the design is approved in-session, persist it with `Status: approved` and stop.
+Do not move into structure work here.

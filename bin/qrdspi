@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly RUNNER_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
+readonly SCRIPT_DIR="$(CDPATH= cd -P -- "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly RUNNER_ROOT="$(CDPATH= cd -P -- "${SCRIPT_DIR}/.." && pwd -P)"
 readonly PROMPTS_DIR="${RUNNER_ROOT}/codex/qrdspi/prompts"
 
 dry_run=false
@@ -172,53 +172,89 @@ stage_prompt_path() {
     esac
 }
 
-current_artifact_for_stage() {
+stage_skill_name() {
+    case "$1" in
+        question) printf 'question-stage\n' ;;
+        research) printf 'research-codebase\n' ;;
+        design) printf 'design-discussion\n' ;;
+        structure) printf 'structure-outline\n' ;;
+        plan) printf 'plan-implementation\n' ;;
+        implement-plan) printf 'implement-plan\n' ;;
+        *) die "unknown stage: $1" ;;
+    esac
+}
+
+stage_input_artifact() {
+    case "$1" in
+        research) artifact_path question ;;
+        design) artifact_path research ;;
+        structure) artifact_path design ;;
+        plan) artifact_path structure ;;
+        implement-plan) artifact_path plan ;;
+        question) printf '\n' ;;
+        *) die "unknown stage: $1" ;;
+    esac
+}
+
+stage_output_artifact() {
     case "$1" in
         implement-plan) artifact_path plan ;;
         *) artifact_path "$1" ;;
     esac
 }
 
-collect_related_artifacts() {
-    local current_artifact="$1"
-    local stage_name
-    local candidate
-    local collected=()
+stage_skill_invocation() {
+    local stage_name="$1"
+    local skill_name
+    local input_artifact
 
-    for stage_name in question research design structure plan; do
-        candidate="$(artifact_path "$stage_name")"
-        if [ -f "$candidate" ] && [ "$candidate" != "$current_artifact" ]; then
-            collected+=("$candidate")
-        fi
-    done
+    skill_name="$(stage_skill_name "$stage_name")"
+    input_artifact="$(stage_input_artifact "$stage_name")"
 
-    if [ "${#collected[@]}" -eq 0 ]; then
-        printf 'none'
+    if [ "$stage_name" = "question" ]; then
+        printf '$%s %q\n' "$skill_name" "$TASK_PROMPT"
         return
     fi
 
-    printf '%s\n' "${collected[@]}"
+    printf '$%s %q\n' "$skill_name" "$input_artifact"
 }
 
-build_runner_variables_block() {
+build_runner_contract_block() {
     local stage_name="$1"
-    local current_artifact="$2"
-    local related_artifacts="$3"
+    local output_artifact="$2"
+    local input_artifact
 
     cat <<EOF
-## Runner Variable Values
+## QRDSPI Runner Contract
 
 \`\`\`text
-ProjectRoot: ${PROJECT_ROOT}
-ProjectKey: ${PROJECT_KEY}
+SkillInvocation: $(stage_skill_invocation "$stage_name")
 ArtifactRoot: ${ARTIFACT_ROOT}
-TopicSlug: ${TOPIC_SLUG}
-Stage: ${stage_name}
-TaskPrompt: ${TASK_PROMPT}
-CurrentArtifact: ${current_artifact}
-RelatedArtifacts: ${related_artifacts}
-ResumeTarget: ${RESUME_TARGET}
+OutputArtifact: ${output_artifact}
+EOF
+
+    if [ "$stage_name" = "question" ]; then
+        printf 'TaskPrompt: %s\n' "$TASK_PROMPT"
+    else
+        input_artifact="$(stage_input_artifact "$stage_name")"
+        printf 'InputArtifact: %s\n' "$input_artifact"
+    fi
+
+    cat <<EOF
 \`\`\`
+
+EOF
+
+    if [ "$stage_name" = "question" ]; then
+        printf -- '- Task prompt: `%s`\n' "$TASK_PROMPT"
+    else
+        printf -- '- Input artifact: `%s`\n' "$input_artifact"
+    fi
+
+    cat <<EOF
+- Let the skill discover sibling artifacts from the same artifact root when it needs more context.
+- Stop when human input or approval is still needed, or when the output artifact remains unresolved.
+- Do not advance to the next stage.
 EOF
 }
 
@@ -243,14 +279,13 @@ EOF
 
 build_prompt() {
     local stage_name="$1"
-    local current_artifact="$2"
-    local related_artifacts="$3"
-    local prompt_file
+    local output_artifact="$2"
 
+    local prompt_file
     prompt_file="$(stage_prompt_path "$stage_name")"
     cat "$prompt_file"
     printf '\n\n'
-    build_runner_variables_block "$stage_name" "$current_artifact" "$related_artifacts"
+    build_runner_contract_block "$stage_name" "$output_artifact"
 }
 
 review_prompt_path() {
@@ -263,8 +298,8 @@ review_prompt_path() {
 
 build_review_prompt() {
     local review_action="$1"
-    local prompt_file
 
+    local prompt_file
     prompt_file="$(review_prompt_path "$review_action")"
     cat "$prompt_file"
     printf '\n\n'
@@ -531,8 +566,7 @@ determine_next_stage() {
 
 print_dry_run() {
     local stage_name="$1"
-    local current_artifact="$2"
-    local related_artifacts="$3"
+    local output_artifact="$2"
     local prompt_file
 
     prompt_file="$(stage_prompt_path "$stage_name")"
@@ -545,14 +579,13 @@ ArtifactRoot: ${ARTIFACT_ROOT}
 TopicSlug: ${TOPIC_SLUG}
 SelectedStage: ${stage_name}
 PromptTemplate: ${prompt_file}
-CurrentArtifact: ${current_artifact}
-RelatedArtifacts:
-${related_artifacts}
-LaunchCommand: codex --cd ${PROJECT_ROOT} '<contents of ${prompt_file} plus appended runner variables>'
+SkillInvocation: $(stage_skill_invocation "$stage_name")
+OutputArtifact: ${output_artifact}
+LaunchCommand: codex --cd ${PROJECT_ROOT} '<contents of ${prompt_file} plus appended QRDSPI runner contract>'
 EOF
 
     printf '\n'
-    build_runner_variables_block "$stage_name" "$current_artifact" "$related_artifacts"
+    build_runner_contract_block "$stage_name" "$output_artifact"
 }
 
 launch_codex_prompt() {
@@ -566,11 +599,10 @@ launch_codex_prompt() {
 
 launch_stage() {
     local stage_name="$1"
-    local current_artifact="$2"
-    local related_artifacts="$3"
+    local output_artifact="$2"
     local prompt
 
-    prompt="$(build_prompt "$stage_name" "$current_artifact" "$related_artifacts")"
+    prompt="$(build_prompt "$stage_name" "$output_artifact")"
     launch_codex_prompt "$stage_name" "$prompt"
 }
 
@@ -675,8 +707,7 @@ esac
 
 while true; do
     local_stage=""
-    current_artifact=""
-    related_artifacts=""
+    output_artifact=""
     completed_phases_before=0
     completed_phases_after=0
 
@@ -687,11 +718,10 @@ while true; do
         exit 0
     fi
 
-    current_artifact="$(current_artifact_for_stage "$NEXT_STAGE")"
-    related_artifacts="$(collect_related_artifacts "$current_artifact")"
+    output_artifact="$(stage_output_artifact "$NEXT_STAGE")"
 
     if "$dry_run"; then
-        print_dry_run "$NEXT_STAGE" "$current_artifact" "$related_artifacts"
+        print_dry_run "$NEXT_STAGE" "$output_artifact"
         exit 0
     fi
 
@@ -701,7 +731,7 @@ while true; do
         completed_phases_before="$(count_completed_phases "$(artifact_path plan)" || printf '0')"
     fi
 
-    launch_stage "$local_stage" "$current_artifact" "$related_artifacts"
+    launch_stage "$local_stage" "$output_artifact"
 
     if [ "$local_stage" = "implement-plan" ]; then
         completed_phases_after="$(count_completed_phases "$(artifact_path plan)" || printf '0')"

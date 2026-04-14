@@ -91,8 +91,33 @@ run_resume_url_test() {
     trap - RETURN
 }
 
+run_symlinked_runner_path_test() {
+    local temp_dir
+    local repo_dir
+    local fake_bin
+    local output
+
+    temp_dir="$(mktemp -d)"
+    trap 'rm -rf "$temp_dir"' RETURN
+    repo_dir="${temp_dir}/repo"
+    fake_bin="${temp_dir}/bin"
+    mkdir -p "$repo_dir"
+    ln -s "${ROOT_DIR}/bin" "$fake_bin"
+
+    output="$(
+        cd "$repo_dir" &&
+        "${fake_bin}/qrdspi" --dry-run start "Design path test"
+    )"
+
+    assert_contains "$output" "PromptTemplate: ${ROOT_DIR}/codex/qrdspi/prompts/question.md"
+
+    rm -rf "$temp_dir"
+    trap - RETURN
+}
+
 run_start_shorthand_test
 run_explicit_start_url_test
 run_resume_url_test
+run_symlinked_runner_path_test
 
 echo "jira-reference-parsing.sh: PASS"
