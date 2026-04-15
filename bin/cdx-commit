@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="$(basename "$0")"
+
+dry_run=false
+
+die() {
+  printf '%s: error: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: cdx-commit [--dry-run]
+
+Launch Codex in the current Git repository and ask it to commit exactly the
+currently staged changes.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      die "unexpected argument: $1"
+      ;;
+  esac
+done
+
+command -v git >/dev/null 2>&1 || die "git is not available in PATH"
+command -v codex >/dev/null 2>&1 || die "codex is not available in PATH"
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a Git repository"
+
+if git diff --cached --quiet; then
+  die "no staged changes to commit"
+fi
+
+readonly repo_root
+
+prompt=$(cat <<'EOF'
+Commit the currently staged Git changes in this repository.
+
+Requirements:
+- Inspect the staged diff before committing.
+- Create one commit for exactly the staged changes.
+- Do not intentionally stage, unstage, or edit files as part of this task.
+- Leave unstaged and untracked files untouched.
+- If `git commit` triggers hooks that modify files automatically, treat that as expected repository behavior, not a rule violation.
+- Write a clear commit message based on the staged changes.
+- After committing, report the commit SHA and subject.
+EOF
+)
+
+printf 'Launching Codex from %s\n' "$repo_root"
+
+if [[ "$dry_run" == true ]]; then
+  printf '[dry-run] codex --cd %q %q\n' "$repo_root" "$prompt"
+  exit 0
+fi
+
+codex --cd "$repo_root" "$prompt"
