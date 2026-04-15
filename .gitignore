@@ -1,6 +1,8 @@
 codex/.tmp/
 codex/artifacts
 codex/auth.json
+codex/cache/
+codex/models_cache.json
 codex/history*
 codex/installation_id
 codex/log*

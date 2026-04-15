@@ -7,6 +7,8 @@ readonly PROMPTS_DIR="${RUNNER_ROOT}/codex/qrdspi/prompts"
 
 dry_run=false
 run_once=false
+EXECUTION_STOP_STATUS=""
+EXECUTION_STOP_PHASE_HEADING=""
 
 die() {
     echo "error: $*" >&2
@@ -395,11 +397,21 @@ EOF
 
 build_review_variables_block() {
     local review_action="$1"
+    local skill_invocation
+
+    skill_invocation="$(review_skill_invocation "$review_action" || true)"
 
     cat <<EOF
 ## Runner Variable Values
 
 \`\`\`text
+EOF
+
+    if [ -n "$skill_invocation" ]; then
+        printf 'SkillInvocation: %s\n' "$skill_invocation"
+    fi
+
+    cat <<EOF
 ProjectRoot: ${PROJECT_ROOT}
 ProjectKey: ${PROJECT_KEY}
 ArtifactRoot: ${ARTIFACT_ROOT}
@@ -410,6 +422,14 @@ ReviewAction: ${review_action}
 ResumeTarget: ${RESUME_TARGET}
 \`\`\`
 EOF
+}
+
+review_skill_invocation() {
+    case "$1" in
+        approve) printf '$writing-git-commits\n' ;;
+        request-changes) return 0 ;;
+        *) die "unknown review action: $1" ;;
+    esac
 }
 
 build_prompt() {
@@ -521,6 +541,14 @@ git_has_worktree_changes() {
     [ -n "$(git -C "$PROJECT_ROOT" status --short --untracked-files=all 2>/dev/null)" ]
 }
 
+current_date_iso() {
+    date '+%Y-%m-%d'
+}
+
+string_has_non_whitespace() {
+    printf '%s' "$1" | grep -q '[^[:space:]]'
+}
+
 print_review_diff() {
     echo
     echo "Post-phase review for ${PROJECT_ROOT}"
@@ -559,6 +587,306 @@ prompt_review_action() {
                 ;;
         esac
     done
+}
+
+phase_section_body() {
+    local plan_artifact="$1"
+    local phase_heading="$2"
+    local section_heading="$3"
+
+    [ -f "$plan_artifact" ] || return 1
+
+    awk -v phase_heading="$phase_heading" -v section_heading="$section_heading" '
+        $0 == phase_heading {
+            in_target_phase = 1
+            next
+        }
+
+        in_target_phase && /^## Phase [0-9]+:/ {
+            exit
+        }
+
+        in_target_phase && $0 == "### " section_heading {
+            in_target_section = 1
+            next
+        }
+
+        in_target_phase && /^### / {
+            if (in_target_section == 1) {
+                exit
+            }
+
+            next
+        }
+
+        in_target_phase && in_target_section == 1 {
+            print
+        }
+    ' "$plan_artifact"
+}
+
+print_manual_verification_checkpoint() {
+    local phase_heading="$1"
+    local checklist="$2"
+    local current_result="$3"
+
+    echo
+    echo "${phase_heading} is waiting for manual verification."
+    echo
+    echo "Manual verification steps:"
+
+    if string_has_non_whitespace "$checklist"; then
+        printf '%s\n' "$checklist"
+    else
+        echo "- No manual verification steps are recorded in the plan artifact."
+    fi
+
+    if string_has_non_whitespace "$current_result"; then
+        echo
+        echo "Current manual verification result:"
+        printf '%s\n' "$current_result"
+    fi
+}
+
+prompt_manual_verification_action() {
+    local choice
+
+    while true; do
+        printf '\nManual verification action:\n' >&2
+        printf '  1. Mark complete and continue\n' >&2
+        printf '  2. Launch Codex for assistance\n' >&2
+        printf '  q. Stop here\n' >&2
+        printf '> ' >&2
+
+        if ! IFS= read -r choice; then
+            return 1
+        fi
+
+        case "$choice" in
+            1|complete|Complete)
+                printf 'complete\n'
+                return 0
+                ;;
+            2|assist|Assist|help|Help)
+                printf 'assist\n'
+                return 0
+                ;;
+            q|Q|quit|Quit|stop|Stop)
+                printf 'stop\n'
+                return 0
+                ;;
+            *)
+                echo "Enter 1, 2, or q." >&2
+                ;;
+        esac
+    done
+}
+
+mark_phase_manual_verification_complete() {
+    local plan_artifact="$1"
+    local phase_heading="$2"
+    local completed_on="$3"
+    local temp_file
+
+    temp_file="$(mktemp "${TMPDIR:-/tmp}/qrdspi-plan.XXXXXX")"
+
+    awk -v phase_heading="$phase_heading" -v completed_on="$completed_on" '
+        function flush_execution_status() {
+            if (in_execution_status == 1 && updated_written == 0) {
+                print "Updated: " completed_on
+            }
+
+            in_execution_status = 0
+            updated_written = 0
+        }
+
+        function print_manual_verification_result() {
+            print "### Manual Verification Result"
+            print ""
+            print "- Completed on " completed_on " after the human confirmed the phase manual verification checklist in the runner."
+            manual_result_written = 1
+        }
+
+        $0 == phase_heading {
+            phase_found = 1
+            in_target_phase = 1
+            print
+            next
+        }
+
+        in_target_phase && /^## Phase [0-9]+:/ {
+            flush_execution_status()
+            in_target_phase = 0
+            in_manual_result = 0
+            print
+            next
+        }
+
+        in_target_phase && $0 == "### Execution Status" {
+            flush_execution_status()
+            in_execution_status = 1
+            print
+            next
+        }
+
+        in_target_phase && $0 == "### Manual Verification Result" {
+            flush_execution_status()
+            in_manual_result = 1
+            print_manual_verification_result()
+            next
+        }
+
+        in_target_phase && in_manual_result == 1 {
+            if (/^### / || /^## Phase [0-9]+:/) {
+                in_manual_result = 0
+
+                if ($0 ~ /^## Phase [0-9]+:/) {
+                    in_target_phase = 0
+                }
+
+                print
+            }
+
+            next
+        }
+
+        in_target_phase && in_execution_status == 1 && /^Status:[[:space:]]*waiting-for-manual-verification$/ {
+            print "Status: completed"
+            next
+        }
+
+        in_target_phase && in_execution_status == 1 && /^Updated:/ {
+            print "Updated: " completed_on
+            updated_written = 1
+            next
+        }
+
+        in_target_phase && in_execution_status == 1 && /^### / {
+            flush_execution_status()
+            print
+            next
+        }
+
+        {
+            print
+        }
+
+        END {
+            flush_execution_status()
+
+            if (phase_found != 1) {
+                exit 2
+            }
+        }
+    ' "$plan_artifact" > "$temp_file" || {
+        rm -f "$temp_file"
+        return 1
+    }
+
+    mv "$temp_file" "$plan_artifact"
+}
+
+manual_verification_prompt_path() {
+    printf '%s/manual-verification-assistance.md\n' "$PROMPTS_DIR"
+}
+
+build_manual_verification_variables_block() {
+    local phase_heading="$1"
+    local checklist="$2"
+    local current_result="$3"
+
+    cat <<EOF
+## Runner Variables
+
+\`\`\`text
+ProjectRoot: ${PROJECT_ROOT}
+ProjectKey: ${PROJECT_KEY}
+ArtifactRoot: ${ARTIFACT_ROOT}
+TopicSlug: ${TOPIC_SLUG}
+TaskPrompt: ${TASK_PROMPT}
+PlanArtifact: $(artifact_path plan)
+ResumeTarget: ${RESUME_TARGET}
+PhaseHeading: ${phase_heading}
+ManualVerificationChecklist:
+EOF
+
+    if string_has_non_whitespace "$checklist"; then
+        printf '%s\n' "$checklist"
+    else
+        echo "- No manual verification steps are recorded in the plan artifact."
+    fi
+
+    echo "CurrentManualVerificationResult:"
+
+    if string_has_non_whitespace "$current_result"; then
+        printf '%s\n' "$current_result"
+    else
+        echo "- None recorded."
+    fi
+
+    cat <<'EOF'
+```
+EOF
+}
+
+build_manual_verification_prompt() {
+    local phase_heading="$1"
+    local checklist="$2"
+    local current_result="$3"
+    local prompt_file
+
+    prompt_file="$(manual_verification_prompt_path)"
+    cat "$prompt_file"
+    printf '\n\n'
+    build_manual_verification_variables_block "$phase_heading" "$checklist" "$current_result"
+}
+
+launch_manual_verification_assistance() {
+    local phase_heading="$1"
+    local checklist="$2"
+    local current_result="$3"
+    local prompt
+
+    prompt="$(build_manual_verification_prompt "$phase_heading" "$checklist" "$current_result")"
+    launch_codex_prompt "manual verification assistance" "$prompt"
+}
+
+handle_manual_verification_checkpoint() {
+    local plan_artifact
+    local phase_heading
+    local checklist
+    local current_result
+    local action
+    local completed_on
+
+    plan_artifact="$(artifact_path plan)"
+    phase_heading="$EXECUTION_STOP_PHASE_HEADING"
+    checklist="$(phase_section_body "$plan_artifact" "$phase_heading" "Manual Verification" || true)"
+    current_result="$(phase_section_body "$plan_artifact" "$phase_heading" "Manual Verification Result" || true)"
+
+    print_manual_verification_checkpoint "$phase_heading" "$checklist" "$current_result"
+
+    action="$(prompt_manual_verification_action)" || return 1
+
+    case "$action" in
+        complete)
+            completed_on="$(current_date_iso)"
+            mark_phase_manual_verification_complete "$plan_artifact" "$phase_heading" "$completed_on" \
+                || die "failed to mark manual verification complete in ${plan_artifact}"
+            echo "Marked ${phase_heading} manual verification complete."
+            return 0
+            ;;
+        assist)
+            launch_manual_verification_assistance "$phase_heading" "$checklist" "$current_result"
+            return 0
+            ;;
+        stop)
+            return 1
+            ;;
+        *)
+            die "unsupported manual verification action: ${action}"
+            ;;
+    esac
 }
 
 phase_status_table() {
@@ -617,6 +945,8 @@ determine_execution_stage() {
     local phase_heading
     local phase_status
 
+    EXECUTION_STOP_STATUS=""
+    EXECUTION_STOP_PHASE_HEADING=""
     plan_artifact="$(artifact_path plan)"
     [ -f "$plan_artifact" ] || die "approved plan artifact is missing: $plan_artifact"
 
@@ -634,6 +964,8 @@ determine_execution_stage() {
                 return
                 ;;
             blocked|waiting-for-manual-verification)
+                EXECUTION_STOP_STATUS="$phase_status"
+                EXECUTION_STOP_PHASE_HEADING="$phase_heading"
                 NEXT_STAGE=""
                 STOP_REASON="${phase_heading} is ${phase_status}; resolve that execution checkpoint before continuing"
                 return
@@ -659,6 +991,8 @@ determine_execution_stage() {
 determine_next_stage() {
     NEXT_STAGE=""
     STOP_REASON=""
+    EXECUTION_STOP_STATUS=""
+    EXECUTION_STOP_PHASE_HEADING=""
 
     if [ "$MODE" = "start" ]; then
         NEXT_STAGE="question"
@@ -874,6 +1208,12 @@ while true; do
     determine_next_stage
 
     if [ -z "$NEXT_STAGE" ]; then
+        if [ "$EXECUTION_STOP_STATUS" = "waiting-for-manual-verification" ] && ! "$dry_run"; then
+            if handle_manual_verification_checkpoint; then
+                continue
+            fi
+        fi
+
         echo "Stopped: ${STOP_REASON}"
         exit 0
     fi
@@ -907,6 +1247,12 @@ while true; do
     determine_next_stage
 
     if [ -z "$NEXT_STAGE" ]; then
+        if [ "$EXECUTION_STOP_STATUS" = "waiting-for-manual-verification" ] && ! "$dry_run"; then
+            if handle_manual_verification_checkpoint; then
+                continue
+            fi
+        fi
+
         echo "Stopped: ${STOP_REASON}"
         exit 0
     fi
