@@ -136,6 +136,7 @@ run_approve_path_test() {
     assert_contains "$output" "git diff --no-ext-diff --submodule=diff"
     assert_contains "$output" "Launching post-phase approval"
     assert_file_contains "$log_file" "ReviewAction: approve"
+    assert_file_contains "$log_file" 'SkillInvocation: $writing-git-commits'
 
     commit_count="$(git -C "$repo_dir" rev-list --count HEAD)"
     [ "$commit_count" = "2" ] || fail "expected 2 commits after approval, got ${commit_count}"
@@ -170,6 +171,7 @@ run_request_changes_path_test() {
     assert_contains "$output" "Launching post-phase approval"
     assert_file_contains "$log_file" "ReviewAction: request-changes"
     assert_file_contains "$log_file" "ReviewAction: approve"
+    assert_file_contains "$log_file" 'SkillInvocation: $writing-git-commits'
     assert_file_contains "${repo_dir}/phase.txt" "requested change"
 
     rm -rf "$temp_dir"

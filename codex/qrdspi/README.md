@@ -28,6 +28,7 @@ The runner is intentionally thin.
 - `resume` resolves the current workflow from the existing artifact root or artifact file and advances only from explicit artifact presence plus approval state.
 - `resume` without an argument lists artifact roots under `~/.codex/artifacts`, lets you choose one interactively, and resumes that workflow.
 - Completed implementation phases still pass through a post-phase review gate before the runner can continue.
+- When execution is `Status: waiting-for-manual-verification`, `resume` prints that phase's manual verification checklist and lets the human mark it complete, stop, or launch Codex for checkpoint assistance.
 
 ## Canonical Artifact Root
 
@@ -109,6 +110,7 @@ When multiple artifacts exist, the runner trusts the furthest approved stage ins
 - Inside `Execution Status`, `Status: completed` is the only execution state that lets the runner consider the next phase.
 - `Status: blocked` and `Status: waiting-for-manual-verification` both stop the runner.
 - It stops after one phase checkpoint instead of rolling directly into the next phase inside the same invocation.
+- For `waiting-for-manual-verification`, the runner surfaces the phase's `### Manual Verification` section and asks whether to mark that checkpoint complete, stop, or launch Codex to help resolve it.
 
 ## Post-Phase Review Gate
 
@@ -145,5 +147,7 @@ Stop the runner when:
 - the expected artifact file was not created or updated
 - more than one next stage could apply
 - execution records a blocker, unresolved manual verification, or any execution checkpoint whose `Status:` is not `completed`
+
+For manual-verification stops specifically, the runner should show the recorded checklist so the human can resolve the checkpoint in-session instead of being left with only a generic stop reason.
 
 This contract keeps orchestration deterministic and keeps human judgment inside stage invocations.
