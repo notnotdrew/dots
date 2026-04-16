@@ -53,3 +53,19 @@ trust_level = "trusted"
 
 [tui]
 status_line = ["project-root", "git-branch", "model-with-reasoning", "context-used", "total-output-tokens", "total-input-tokens", "used-tokens", "context-window-size"]
+
+[[skills.config]]
+path = "/Users/drewprice/dots/codex/skills/.system/imagegen/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/drewprice/dots/codex/skills/.system/plugin-creator/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/drewprice/dots/codex/skills/.system/skill-creator/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/drewprice/dots/codex/skills/.system/skill-installer/SKILL.md"
+enabled = false
