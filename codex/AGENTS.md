@@ -1,6 +1,6 @@
-# Personal Codex Guidance for Drew Price
+# Personal Codex Guidance
 
-Global defaults for Codex. Repository-local `AGENTS.md` files may add or override rules for their own scope.
+Global Codex defaults. Repository-local `AGENTS.md` files may add to or override them for their own scope.
 
 ## Communication
 
@@ -13,11 +13,11 @@ Global defaults for Codex. Repository-local `AGENTS.md` files may add or overrid
 
 - ALWAYS match the surrounding style and conventions of the file being edited.
 - ALWAYS validate assumptions with tests, assertions, or direct inspection before relying on them.
-- ALWAYS prefer test-first changes when the behavior can be captured safely with automated tests.
+- ALWAYS prefer test-first changes when behavior can be captured safely with automated tests.
 - ALWAYS consider security implications for non-trivial changes.
 - NEVER refactor unrelated code without explicit permission.
 - NEVER make cosmetic-only changes without explicit permission.
-- NEVER introduce style churn or mixed syntax variants within the same file or module.
+- NEVER introduce style churn or mixed syntax variants in the same file or module.
 - NEVER leave TODOs, placeholders, or partially implemented paths behind.
 
 ## Testing
@@ -34,25 +34,6 @@ Global defaults for Codex. Repository-local `AGENTS.md` files may add or overrid
 ## Skills
 
 - ALWAYS use the most relevant local skill when the task clearly matches it.
-- For runner-driven QRDSPI work, follow `codex/qrdspi/README.md` as the stage contract and prefer `bin/qrdspi` once that entrypoint exists.
-- Use `coding-workflow` as the default entrypoint for substantial implementation work, multi-file changes, or requests that need research, design, planning, and execution stages.
-- Use `developing-typescript` for `.ts` and `.tsx` authoring, refactoring, type design, narrowing, and runtime-boundary decisions.
-- Use `practicing-tdd` for test-first implementation work.
-- Use `review-code` after meaningful implementation or refactoring work.
-- Use `simplify-code` after implementation when the result should be reduced without changing behavior.
-- Use `thinking-patterns` for structured reasoning, comparisons, verification, and explicit reasoning-pattern selection when the approach is not obvious.
-- Use `question-stage` before broad exploration when requirements are still fuzzy.
-- Use `research-codebase` for documentation-first codebase exploration.
-- Use `design-discussion`, `structure-outline`, `plan-implementation`, and `implement-plan` for staged work.
-- Use `writing-documentation` for `AGENTS.md`, README, ADR, onboarding, and architecture docs.
-- Use `writing-git-commits` for commit messages.
-- Use `developing-bash` for shell and Bash scripting tasks.
-
-## Artifacts
-
-- Use `artifact-management` when research, design, structure, or plan work should persist beyond the current chat.
-- For QRDSPI staged work, prefer `~/.codex/artifacts/<project-root-or-repo>/<feature>/` unless an existing artifact root already applies.
-- For non-QRDSPI persisted work, repo-local `.codex/artifacts/<project-slug>/` remains the fallback when no existing artifact root applies.
 
 ## Git
 
