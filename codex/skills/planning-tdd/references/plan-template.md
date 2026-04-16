@@ -43,6 +43,14 @@
 
 **Structural context**: [Relevant files, modules, and contracts with `file:line` references]
 
+If this cycle is a pure removal with no durable contract worth specifying, replace the RED section with:
+
+**No new automated test**
+
+- [Why an absence test would be brittle or non-durable]
+- [What existing coverage still protects nearby behavior]
+- [What manual or inspection-based verification will be used instead]
+
 ### Automated Testing
 
 - [ ] [Focused test description] - `path/to/test`

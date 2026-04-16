@@ -30,9 +30,13 @@ Use this skill when the job is React tests on Vitest with React Testing Library.
 - large snapshots instead of specific behavior checks
 - CSS or attribute assertions when a semantic matcher would prove the behavior
 - `waitFor` when a synchronous assertion or `findBy*` is enough
+- adding a test whose only value is proving an intentionally removed control is still absent
 
 ## Check
 
 1. Does the test read like a user flow?
 2. Is the real boundary the only thing being stubbed?
 3. Are the assertions semantic and exact?
+4. Will this test still make sense after future intentional UI changes?
+
+When removing UI, only add or keep a test if it protects a real product contract. Do not add a long-term `queryBy*` absence test just to prove a deleted button stays deleted.

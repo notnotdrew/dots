@@ -6,6 +6,7 @@ description: Produces implementation plans where tests are the primary unit of p
 # Planning TDD
 
 Use this skill when the user wants a plan whose unit of progress is a failing test, not an implementation task.
+If part of the work is a pure removal and the only possible new test would assert that deleted UI or code remains absent, plan that slice without inventing a brittle RED step.
 
 Prefer other planning skills when scope is still fuzzy or the user wants a normal implementation plan.
 
@@ -19,6 +20,7 @@ Prefer other planning skills when scope is still fuzzy or the user wants a norma
 ## Rules
 
 - Plan tests, not code.
+- For pure removals, explicitly say when no new automated test is warranted.
 - Ground every claim in inspected files or explicit requirements.
 - For each cycle, name the exact RED test, the expected failure, and the verified structural context.
 - Keep phases independently verifiable with both automated and manual checks.
