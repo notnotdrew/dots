@@ -1,65 +1,41 @@
 ---
 name: managing-jira
-description: Loads Jira tickets into a compact normalized summary for downstream scoping or planning. Use when the input references Jira issue keys such as `ABC-123` and the next skill needs the ticket's summary, description, comments, or linked issues without turning that ticket into a plan.
+description: Summarizes Jira tickets for downstream scoping or planning.
 ---
 
 # Managing Jira
 
-## Quick Start
+Use this skill when the input includes Jira issue keys and the next step needs ticket context, not a plan.
 
-Use this skill when a workflow starts from a Jira ticket instead of a local artifact.
+## Workflow
 
-Verify authentication first:
+1. Verify access with `jira me`.
+   If authentication fails, stop and tell the user Jira access needs to be configured.
+2. Load the primary ticket with `jira issue view ISSUE-KEY --comments 5`.
+3. Read only the comments and linked issues that change scope, sequencing, or dependencies.
+4. Return a compact summary.
+   Include key, summary, status, type, description summary, meaningful recent comments, and linked issues that matter.
+5. Stay descriptive.
+   Do not recommend an implementation or turn the ticket into a plan.
+6. For persisted QRDSPI flows, pass the ticket key through `SourceInputs`.
 
-```bash
-jira me
-```
-
-If authentication fails, stop and tell the user they need to configure Jira access before the ticket can be loaded.
-
-## Instructions
-
-1. Detect whether the input contains one or more Jira issue keys such as `ABC-123`.
-   - If not, do not force this skill into the workflow.
-
-2. Load the primary ticket before downstream scoping or planning.
-   - Use `jira issue view ISSUE-KEY --comments 5` for the main ticket.
-   - Read enough comments to understand recent clarifications or boundary changes.
-   - Inspect linked issues when they materially change scope, sequencing, or dependencies.
-
-3. Normalize the result into a compact summary.
-   - Include: key, summary, status, type, description summary, meaningful recent comments, and linked issues that affect the work.
-   - Omit noise such as repetitive status chatter or unrelated linked tickets.
-
-4. Stay descriptive.
-   - Do not recommend an implementation.
-   - Do not expand the ticket into a plan.
-   - Do not restate every field from Jira when a concise summary will do.
-
-5. Hand off cleanly.
-   - Return the normalized ticket summary in plain language.
-   - Name open ambiguities only when the ticket itself is unclear.
-   - If the Jira ticket should feed a persisted QRDSPI artifact, pass the ticket key through `SourceInputs`.
-
-## Normalized Output
-
-Use this shape:
+## Output
 
 ```markdown
 ## Jira Summary
 
 - Ticket: ABC-123
-- Summary: [one sentence]
+- Summary: [brief summary]
 - Status: [status]
 - Type: [issue type]
 
 ## Description Summary
 
-[2-4 sentences covering the actual work request and constraints]
+[brief summary of request and constraints]
 
 ## Recent Clarifications
 
-- [comment-driven clarification that changes scope or expectations]
+- [only if it changes scope or expectations]
 
 ## Linked Issues That Matter
 
@@ -67,12 +43,12 @@ Use this shape:
 
 ## Remaining Ambiguities
 
-- [only if the ticket leaves something materially unclear]
+- [only if needed]
 ```
 
-## Guidelines
+## Rules
 
-- Prefer one primary ticket plus only the linked issues that actually matter.
-- Keep the summary short enough for another skill to consume directly.
-- If the ticket clearly lacks essential detail, say so plainly instead of guessing.
-- Use Jira as an input source, not as a replacement for local artifact management.
+- Do not force this skill when no Jira key is present.
+- Ignore repetitive status chatter and unrelated linked tickets.
+- Keep the summary short enough for the next skill to consume directly.
+- If essential detail is missing, say so plainly instead of guessing.

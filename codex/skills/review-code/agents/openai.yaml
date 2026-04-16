@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Code"
-  short_description: "Pragmatic review for changed code"
-  default_prompt: "Review these code changes for bugs, maintainability issues, and low-value tests"
+  short_description: "Find real issues in changed code"
+  default_prompt: "Review these code changes for concrete bugs, maintainability risks, and low-value tests"

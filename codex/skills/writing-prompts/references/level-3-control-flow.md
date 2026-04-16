@@ -1,12 +1,16 @@
 # Level 3: Control Flow Prompt
 
-Adds validation, branching logic, and loops to the workflow.
+Use when runtime conditions change execution:
 
-Use this level when:
+- missing prerequisites should stop the run
+- different conditions need different paths
+- the same step repeats
 
-- the prompt must stop early on missing prerequisites
-- different paths are taken based on runtime conditions
-- the same operation repeats over a list of items
+Keep:
+
+- Level 2 structure
+- explicit stop conditions
+- explicit branches or loops
 
 Example:
 
@@ -49,7 +53,7 @@ Patterns:
 - conditionals: "If X, do Y. Otherwise, do Z."
 - loops: mark repeated logic with named tags such as `<image-loop>`
 
-Level up to Level 4 when:
+Use Level 4 if:
 
 - multiple agents should work in parallel
 - sub-agents need specialized prompts

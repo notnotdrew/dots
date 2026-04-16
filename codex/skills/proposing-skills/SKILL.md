@@ -5,138 +5,46 @@ description: Audits a target codebase, reviews the current conversation for recu
 
 # Proposing Skills
 
-Use this skill to recommend new Codex skills based on a real codebase, the active conversation, and the existing Claude skill catalog.
+Recommend new Codex skills from evidence, not intuition.
 
-Do not propose skills from memory or vibes. Ground every recommendation in:
+Ground every proposal in four sources:
 
-1. the target codebase's actual stack and workflows
-2. the current local Codex skill inventory
-3. recurring workflow needs visible in the current conversation
+1. the target repo
+2. the current conversation
+3. the local Codex skill inventory
 4. matching Claude skills in `~/bobfiles/claude/skills/`
-
-## Quick Start
-
-1. Audit the target codebase.
-   - Detect languages, frameworks, package managers, test tools, and notable CLIs.
-   - Read the most relevant config files directly before making strong claims.
-
-2. Audit the current local Codex skills.
-   - List current skill names and descriptions from the active local skill tree.
-   - Treat close equivalents as already represented unless the gap is material.
-
-3. Audit `~/bobfiles/claude/skills`.
-   - Look for skills that clearly match the detected stack or workflows.
-   - Prefer direct analogs such as `testing-react-with-vitest` for React + Vitest codebases.
-
-4. Audit the conversation.
-   - Look for repeated asks, recurring friction, or workflow patterns that suggest a reusable skill.
-   - Treat conversation evidence as a valid source even when the repo itself is thin, as long as the need is concrete.
-
-5. Compare and classify.
-   - `represented`: already covered by an existing Codex skill
-   - `adjacent`: partially covered, but the Codex skill is broader or differently scoped
-   - `missing`: useful Claude analog exists and no meaningful Codex equivalent is present
-
-6. Propose only the missing skills.
-   - For each proposal, explain the stack signal, the Claude source skill, and why current Codex skills do not already cover it.
 
 ## Workflow
 
-### 1. Audit the codebase first
+1. Audit the repo first.
+   Read the files that define the stack and workflow: source extensions, key configs, scripts, docs, and common tooling.
 
-Start with the repository, not the Claude catalog.
+2. Audit the conversation.
+   Look for repeated requests, recurring friction, or stable workflow preferences. Ignore one-off curiosity.
 
-Inspect signals such as:
+3. Inventory local Codex skills.
+   Capture each skill's job-to-be-done. Treat close equivalents as already covered.
 
-- language files: `.ts`, `.tsx`, `.js`, `.rb`, `.py`, `.ex`, `.sh`
-- project configs: `package.json`, `tsconfig.json`, `vite.config.*`, `vitest.config.*`, `jest.config.*`, `mix.exs`, `Gemfile`, `pyproject.toml`, `go.mod`, `Cargo.toml`
-- framework dependencies: React, Next.js, Phoenix, Rails, MUI, Playwright, Vitest, ExUnit
-- workflow clues in docs, scripts, and command directories
+4. Search Claude skills selectively.
+   Look only for analogs that match the observed stack or workflow. Ignore unrelated skills.
 
-If the repo is mostly configuration or dotfiles, say so plainly and propose only skills that still match the observed workflows.
+5. Classify each candidate.
+   - `represented`: already covered locally
+   - `adjacent`: overlap exists, but scope differs
+   - `missing`: credible need, relevant Claude analog, no meaningful local equivalent
 
-### 2. Audit the conversation
+6. Propose only `missing` skills.
+   Prefer porting and adapting a Claude analog over inventing a new workflow.
 
-Review the active conversation before proposing anything.
+## Threshold
 
-Look for patterns such as:
+Recommend a new skill only when all three are true:
 
-- the same kind of request appearing more than once
-- repeated requests to transform one workflow into a reusable asset
-- recurring evaluation criteria, output formats, or review styles
-- repeated stack-specific needs that are clearer from the conversation than from the repo
+- the repo or conversation shows a real need
+- a Claude analog exists
+- current Codex skills do not already cover the job well enough
 
-Good conversation-derived signals:
-
-- multiple turns about creating or refining Codex skills
-- repeated requests to compare one workflow system against another
-- a persistent preference for a specific testing, planning, or review style
-
-Weak signals:
-
-- one-off curiosity
-- broad statements without repeated use
-- generic requests already covered by an existing local skill
-
-Use conversation evidence to strengthen or surface proposals, but do not let it override a clear `represented` match in the local Codex skills.
-
-### 3. Inventory the current Codex skills
-
-Read the current local skill tree and extract each skill's:
-
-- name
-- description
-- rough job-to-be-done
-
-Be strict about duplicates. A new proposal needs a real gap, not a sharper title for the same workflow.
-
-Examples:
-
-- `research-codebase` is adjacent to research-oriented skills in Claude, so that alone does not justify another generic research skill.
-- `writing-git-commits` is already represented if the Claude analog is also about commit messages.
-
-### 4. Search Claude skills selectively
-
-Search `~/bobfiles/claude/skills/` for skills tied to the detected stack, tooling, or workflows.
-
-Good matches:
-
-- React + Vitest -> `testing-react-with-vitest`
-- `.ts` / `.tsx` heavy repo -> `developing-typescript`
-- shell-heavy repo -> `developing-bash`
-- `jq` use in scripts or docs -> `using-jq`
-- Elixir/Phoenix repo -> `developing-elixir`, `testing-elixir`
-- MUI dependencies -> `mui`
-
-Ignore unrelated Claude skills just because they exist.
-
-When conversation evidence is stronger than repo evidence, search for Claude skills matching that workflow too, not just the codebase stack.
-
-### 5. Apply a recommendation threshold
-
-Recommend a new Codex skill only when all of the following are true:
-
-- the codebase or the conversation shows a credible need for it
-- a relevant Claude skill exists and can serve as a source analog
-- the current Codex skills do not already cover the same job well enough
-
-If nothing clears that bar, say that no new skill should be created yet.
-
-### 6. Prefer translation over invention
-
-When a Claude analog exists, propose porting that skill into Codex-native form instead of inventing a new workflow from scratch.
-
-Preserve:
-
-- the core workflow
-- the judgment and constraints
-- the useful examples or reference split
-
-Adapt:
-
-- Claude-specific tools or agent mechanics
-- references to Claude-only commands
-- output conventions that do not fit Codex
+If that bar is not met, say no new skill should be created yet.
 
 ## Output Format
 
@@ -166,32 +74,15 @@ Use this structure when reporting findings:
 ### `skill-name`
 
 Source analog: `~/bobfiles/claude/skills/...`
-
-Why it matches:
-- [repo evidence and/or conversation evidence]
-
-Why it is not already represented:
-- [comparison against current Codex skills]
-
-Port recommendation:
-- [straight port, narrow adaptation, or skip]
+Why it matches: [repo evidence and/or conversation evidence]
+Why it is not already represented: [comparison against current Codex skills]
+Port recommendation: [straight port, narrow adaptation, or skip]
 ```
-
-## Example
-
-If the codebase contains `vite.config.ts`, `vitest.config.ts`, React components, and React Testing Library dependencies, then `testing-react-with-vitest` is a strong candidate unless an equivalent Codex testing skill already exists.
-
-If the local Codex skills only cover planning, codebase research, and commit writing, then that testing skill should usually be proposed as `missing`, not `adjacent`.
-
-If the conversation repeatedly asks for ways to inspect the current skill inventory, compare it against `~/bobfiles/claude`, and identify worthwhile ports, that is evidence for a proposal even if the repository itself is mostly dotfiles.
 
 ## Guidelines
 
 - Base recommendations on files you actually inspected
-- Base conversation-derived recommendations on patterns that are visible in the current thread
-- Prefer a short list of strong proposals over a long list of weak ones
-- Name the existing Codex skill whenever you claim something is already represented
-- Call out uncertainty when the stack signal is weak
-- Call out uncertainty when the conversation signal is thin or one-off
-- Do not silently collapse `adjacent` into `missing`
-- If the user asks for the next step, propose the order in which the missing skills should be ported
+- Prefer a short list of strong proposals
+- Name the existing Codex skill when claiming `represented`
+- Call out weak signals or uncertainty
+- Do not silently turn `adjacent` into `missing`

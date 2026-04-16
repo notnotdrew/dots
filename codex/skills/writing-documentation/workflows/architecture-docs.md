@@ -1,74 +1,30 @@
 # Architecture Documentation Workflow
 
-Write system overviews, ADRs, design docs, and module interaction documents that serve both human developers and LLMs.
+Use for ADRs, design docs, system overviews, and interaction docs.
 
-## Inputs
-
-One or more of:
-
-- codebase path or module names to document
-- natural language description of the system or decision
-- specific doc type requested such as ADR, design doc, or system overview
-
-## Output Placement
-
-Architecture docs are standalone markdown files placed in a project-appropriate location:
+## Place It
 
 - ADRs: `docs/adr/` or `adr/`
 - design docs: `docs/design/` or `docs/`
-- system overviews: `docs/architecture.md` or `docs/`
-- module interaction docs: `docs/`
+- system overviews and interaction docs: `docs/`
 
-## Doc Type Detection
+## Choose the Doc
 
-| Request Contains | Doc Type | Template |
-| --- | --- | --- |
-| "ADR", "decision record", "why we chose" | ADR | ADR template |
-| "design doc", "proposal", "RFC" | Design doc | Design doc template |
-| "system overview", "architecture", "how the system works" | System overview | System overview template |
-| "how X talks to Y", "module interactions", "data flow" | Module interactions | Module interactions template |
+- decision and rationale: ADR
+- planned change: design doc
+- current system map: system overview
+- contract between modules: interaction doc
 
-## Procedure
+## Write
 
-### Step 1: Gather Context
-
-Use the codebase and existing docs to understand the system:
-
-1. read the project structure
-2. identify the relevant modules and components
-3. trace data flow between components
-4. find existing architecture docs to match the house style
-
-### Step 2: Select Template
-
-Choose the appropriate template from the sections below.
-
-### Step 3: Write the Document
-
-Apply these principles throughout:
-
-From `references/ousterhout-principles.md`:
-
-- document cross-module interactions
-- separate interface from implementation details
-- explain the why behind decisions
-- provide high-level intuition before low-level detail
-
-From `references/llm-doc-patterns.md`:
-
-- use explicit, keyword-rich headings
-- front-load context in each section
-- keep sections self-contained
-- use fully qualified module names on first reference
-- state dependencies and relationships explicitly
-
-### Step 4: Validate
-
-Run the quality checklist at the bottom of this file before finishing.
+1. Read the code and existing docs first.
+2. Name the document for the thing being explained, not a vague category.
+3. Start with context and scope.
+4. Make boundaries, dependencies, and data flow explicit.
+5. Explain why a choice was made before describing mechanics.
+6. Keep sections self-contained so they still work when extracted.
 
 ## ADR Template
-
-Architecture Decision Records capture the why behind significant technical choices.
 
 ```markdown
 # ADR-NNN: [Decision Title in Present Tense]
@@ -107,14 +63,6 @@ requirements, and forces at play.]
 ### [Alternative B]
 [Brief description. Why it was rejected.]
 ```
-
-ADR rules:
-
-- one decision per ADR
-- title the decision, not the problem
-- context must stand alone
-- number sequentially and never reuse numbers
-- deprecated ADRs link to their replacement
 
 ## Design Doc Template
 
@@ -240,19 +188,9 @@ ADR rules:
 - If Module A returns unexpected data: [consequence]
 ```
 
-## Post-Processing
+## Check
 
-Architecture docs do not need a prose-rewrite pass. Prioritize precision, explicit structure, and clear rationale.
-
-## Quality Checklist
-
-- [ ] The document stands alone for a reader unfamiliar with the project
-- [ ] Module references use fully qualified names on first use
-- [ ] Cross-module interactions are explicit
-- [ ] Interface descriptions separate what from how
-- [ ] The why is documented for every significant choice
-- [ ] Headings are specific and keyword-rich
-- [ ] Each section remains understandable when extracted
-- [ ] Tables or text diagrams clarify relationships when useful
-- [ ] No ambiguous pronouns cross section boundaries
-- [ ] The document follows the selected template
+- The doc stands alone for a reader who has not read the code.
+- The key modules, boundaries, and data flow are explicit.
+- Significant choices include rationale, not just outcome.
+- The template matches the request and stays tight.

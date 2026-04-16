@@ -5,102 +5,39 @@ description: Applies Swiss and International Typographic Style principles to cre
 
 # Applying Swiss Design
 
-Apply Swiss design as a discipline of clarity, not as decoration.
+Swiss design is clarity through reduction.
 
-Core rule: every element must earn its place. Remove until removing more would harm understanding.
+Core rule: every element must earn its place. Remove until the next removal would harm comprehension.
 
-## Quick Start
+## Workflow
 
-Before finalizing output, run the Swiss test:
+1. Reduce.
+   Remove decoration, duplicate labels, obvious helper text, and visual treatments that do not change meaning.
+2. Establish a grid.
+   Use a consistent base unit, usually `8px`. Reuse a small number of alignment points. Avoid one-off spacing exceptions.
+3. Create hierarchy.
+   Keep three levels when possible: primary, secondary, tertiary. Use one strong lever first: size, weight, or position.
+4. Apply typography.
+   Prefer one type family, a small scale, and regular plus bold. Let type and whitespace carry the structure before color or ornament.
 
-1. Reduction: can anything be removed without losing meaning?
-2. Grid: does alignment create rhythm and relationship?
-3. Hierarchy: is the reading order obvious?
-4. Typography: is type doing the structural work instead of decoration?
+## Rules
 
-If any answer is no, revise before shipping.
+- Preserve established product and design-system patterns.
+- Remove decoration before changing structure users rely on.
+- If color is carrying hierarchy, fix spacing and type first.
+- If the layout fails in grayscale, the hierarchy is weak.
 
-## Instructions
+## Quick Examples
 
-Apply these four principles in order:
+- Busy card: remove borders, icons, and helper text that do not affect understanding; rebuild spacing on the grid.
+- Noisy CLI output: remove banners; align columns; make errors the first readable object.
+- Bloated docs: cut padded intro copy; tighten heading levels; let examples lead.
 
-### Step 1: Reduce
+## Swiss Test
 
-Strip the output to essentials. For each element, ask: "If I remove this, what do users lose?"
+Before shipping, check:
 
-- nothing or beauty: remove it
-- required comprehension or task success: keep it
-
-Read [references/reduction.md](references/reduction.md) when you need detailed reduction guidance.
-
-### Step 2: Establish Grid
-
-Create mathematical structure using a base unit, usually `8px`.
-
-- derive spacing from multiples of the base unit
-- minimize alignment points
-- avoid one-off spacing exceptions
-
-Read [references/grid.md](references/grid.md) when you need detailed grid guidance.
-
-### Step 3: Create Hierarchy
-
-Define a clear reading order with exactly three levels when possible:
-
-- primary: the main action or message
-- secondary: supporting content
-- tertiary: metadata or auxiliary information
-
-Prefer one strong hierarchy lever at a time: size, weight, or position.
-
-Read [references/hierarchy.md](references/hierarchy.md) when you need detailed hierarchy guidance.
-
-### Step 4: Apply Typography
-
-Use type as structure.
-
-- prefer one typeface family
-- prefer regular and bold before adding more weights
-- keep the scale small and consistent
-- let typography and whitespace do the work before adding decoration
-
-Read [references/typography.md](references/typography.md) when you need detailed typography guidance.
-
-## Operating Rules
-
-- Preserve established product and design-system patterns when working in an existing codebase.
-- Remove decoration before changing structure that users rely on.
-- If color is carrying hierarchy that typography should carry, fix the structure first.
-- If the layout only works in full color, the hierarchy is weak.
-
-## Examples
-
-**Input:** "This card feels busy."
-
-**Action:** Remove decorative borders, icons, and helper text that do not affect comprehension. Rebuild spacing and alignment on a consistent unit.
-
-**Input:** "Make this CLI output easier to scan."
-
-**Action:** Replace banners and ornament with whitespace, aligned columns, and a clear error-first reading order.
-
-**Input:** "Clean up this docs page."
-
-**Action:** Remove padded intro copy, tighten heading levels, and let code examples or concrete instructions lead.
-
-## Common Failures
-
-- decoration creep: adding gradients, shadows, icons, or flourishes that do not improve comprehension
-- hierarchy collapse: too many emphasized elements or too many font sizes
-- grid abandonment: one-off spacing and alignment exceptions
-- color as crutch: relying on color to express structure that should survive grayscale
-
-## Success Criteria
-
-Swiss design application is complete when:
-
-- every element serves comprehension
-- spacing derives from a consistent base unit
-- the reading order is obvious
-- typography creates most of the structure
-- the Swiss test passes
-- the output still works in grayscale
+1. Can anything else be removed?
+2. Is alignment consistent?
+3. Is the reading order obvious?
+4. Would this still work without color?

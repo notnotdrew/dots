@@ -1,12 +1,17 @@
 # Level 2: Workflow Prompt
 
-Sequential execution using the Input -> Workflow -> Output pattern. This is the default level for reusable prompts.
+Use when the task is reusable and sequential:
 
-Use this level when:
+- steps happen in order
+- inputs may vary
+- output shape matters
 
-- the task needs multiple steps in order
-- inputs may vary between runs
-- you want a predictable report or artifact
+Keep:
+
+- purpose
+- variables
+- workflow
+- report when the output must be structured
 
 Example:
 
@@ -43,14 +48,7 @@ PLAN_OUTPUT_DIRECTORY: `specs/`
 Provide the output file path and a short summary of scope.
 ```
 
-Characteristics:
-
-- variables for dynamic and static inputs
-- explicit workflow
-- report section
-- optional metadata when the target system supports it
-
-Level up to Level 3 when:
+Use Level 3 if:
 
 - you need conditionals
 - you need loops

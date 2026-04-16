@@ -1,4 +1,4 @@
 interface:
   display_name: "Writing for Humans"
   short_description: "Rewrite drafts into concise human prose"
-  default_prompt: "Use $writing-for-humans to rewrite this draft into concise, scannable prose for human readers"
+  default_prompt: "Use $writing-for-humans to rewrite this draft into concise, scannable prose. Return only the rewrite."

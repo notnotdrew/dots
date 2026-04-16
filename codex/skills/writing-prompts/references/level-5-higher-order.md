@@ -1,12 +1,16 @@
 # Level 5: Higher-Order Prompt
 
-The prompt accepts another prompt, plan, or artifact as input. The workflow stays stable while the input varies.
+Use when the prompt should execute against another artifact:
 
-Use this level when:
+- planner and executor should be separate
+- the same executor should accept many plans or specs
+- the artifact between steps should be reviewable
 
-- planning and execution should be decoupled
-- the same executor should work from different plans
-- you want modular prompt chains
+Keep:
+
+- artifact input
+- stable execution workflow
+- report against the artifact
 
 Example:
 
@@ -36,12 +40,6 @@ PATH_TO_PLAN: $ARGUMENTS
 - List the files changed.
 ```
 
-Why this is useful:
-
-- the planner and executor become independent
-- execution infrastructure is reusable
-- the artifact between steps becomes inspectable and reviewable
-
-Level up to Level 6 when:
+Use Level 6 if:
 
 - you want a prompt that generates new prompts in a standard format

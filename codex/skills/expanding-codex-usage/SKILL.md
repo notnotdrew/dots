@@ -5,119 +5,48 @@ description: Helps turn low-leverage Codex interactions into stronger collaborat
 
 # Expanding Codex Usage
 
-Use this skill when the user is underusing Codex, asking how to collaborate better, or repeating a manual pattern that should become a reusable workflow in their global Codex setup.
+Use this skill when the user asks how to collaborate with Codex more effectively or repeats a manual pattern that should become reusable.
 
-## Quick Start
+Core rule: move the work up one level of leverage, not three.
 
-This skill is for moving the interaction up one level of leverage without inflating scope.
+## Workflow
 
-Typical triggers:
+1. Diagnose the real task.
+   Decide whether the next step is `answer`, `inspect`, `implement`, `review`, `automate`, or `codify`.
+2. Pick the next stronger mode.
+   Prefer the lowest level that improves leverage.
+3. Act.
+   Do the next safe step instead of staying abstract.
+4. Codify only if the pattern is recurring.
 
-- "How should I use you for this?"
-- "I think I'm underusing you."
-- "What's the highest leverage way to handle this?"
-- "I keep doing this manually."
-- "Should this become a skill, agent, command, or plugin?"
+## Leverage Ladder
 
-Default behavior:
+1. `answer`: one-off guidance
+2. `inspect`: read code, config, logs, or environment first
+3. `implement`: make the change and verify it
+4. `review`: prioritize bugs, regressions, and missing tests
+5. `automate`: package a repeated sequence
+6. `codify`: create a skill, agent, command, or plugin
 
-1. Identify the real task shape.
-2. Recommend the next stronger collaboration mode.
-3. Execute the next safe step instead of staying abstract.
-4. Suggest a reusable asset only if the pattern is recurring.
+## Asset Choice
 
-## Instructions
+- `skill`: reusable instructions or judgment
+- `agent`: bounded role or context isolation
+- `command`: repeatable entrypoint
+- `plugin`: durable tool integration
 
-### 1. Diagnose the current ask
-
-Identify:
-
-- what the user asked for
-- what they actually need
-- what is manual, vague, or repetitive
-- whether the next move should be explanation, inspection, implementation, review, automation, or codification
-
-### 2. Recommend the next stronger mode
-
-Move the user up one step at a time. Prefer the lowest level that creates durable leverage.
-
-1. **Answer**
-   Use for one-off questions and lightweight guidance.
-2. **Inspect**
-   Use when the real problem is hidden in code, config, logs, or environment structure.
-3. **Implement**
-   Use when the goal is clear and momentum matters more than discussion.
-4. **Review**
-   Use when bugs, regressions, tradeoffs, or missing tests matter more than speed.
-5. **Automate**
-   Use when the same sequence of steps will likely happen again soon.
-6. **Codify**
-   Use when a workflow is recurring enough to deserve a skill, agent, command, or plugin.
-
-### 3. Execute the recommendation
-
-Do not stop at advice if a safe next action is available. Move into reading, editing, reviewing, testing, scripting, or scaffolding.
-
-### 4. Capture reusable leverage
-
-If the work exposed a stable pattern, propose one small durable follow-up:
-
-- a new skill
-- a sharper agent definition
-- a command wrapper
-- a small script or plugin
-
-Do not codify one-off work.
-
-## Choose The Asset
-
-When the workflow should become reusable, choose the lightest asset that fits.
-
-- **Skill**
-  Use for reusable instructions, judgment, checklists, references, and decision trees.
-- **Agent**
-  Use when a bounded subtask benefits from role separation, narrower tools, or context isolation.
-- **Command**
-  Use for a repeatable entrypoint that packages a common request shape.
-- **Plugin**
-  Use only when the workflow needs durable tool integration or capabilities that prompts alone cannot provide.
-
-Default to a skill first unless delegation or tool integration is the real bottleneck.
+Default to the lightest asset that fits. Usually that is a skill.
 
 ## Response Shape
 
-When the user asks how to use Codex better, respond in this order:
-
-1. Name the current task shape.
-2. Recommend the higher-leverage way to handle it.
+1. Name the task shape.
+2. Recommend the next higher-leverage mode.
 3. State the next concrete action.
-4. Offer one stretch option if there is an obvious durable upgrade.
+4. Offer one durable upgrade only if it is clearly recurring.
 
-Keep the recommendation tied to the current environment and actual task. Avoid generic "you could also" advice.
+## Guardrails
 
-Example:
-
-> This is an inspection task, not a Q&A task.
-> Better use of Codex: inspect the relevant config and tooling first, then decide what to change.
-> Next step: read the files that define the current flow and summarize the constraints.
-> Stretch option: if this keeps recurring, package the workflow as a skill in your global Codex setup.
-
-## Guidelines
-
-- Meet the user where they are, then push one level further.
-- Prefer concrete execution over abstract advice.
-- Suggest stronger workflows without exploding scope.
-- Codify only after a pattern is visible.
-- Keep recommendations specific to the real codebase, config, and environment.
-
-## Anti-Patterns
-
-- giving generic workflow advice without acting
-- proposing automation before the workflow is understood
-- creating a new asset for a one-off problem
-- choosing a plugin when a skill, command, or script would do
-- pushing the user several steps beyond their current intent
-
-## Examples
-
-For prompt patterns and concrete examples, read [references/examples.md](references/examples.md).
+- Stay specific to the current codebase and task.
+- Prefer execution over generic advice.
+- Do not automate an unclear workflow.
+- Do not codify one-off work.

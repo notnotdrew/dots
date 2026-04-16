@@ -1,12 +1,16 @@
 # Level 6: Template Meta-Prompt
 
-A prompt that creates other prompts in a specified format.
+Use when the job is prompt generation at scale:
 
-Use this level when:
+- the output prompt must follow a fixed template
+- different requests should produce the same shape
+- consistency matters more than flexibility
 
-- you need prompt creation to scale
-- the team should produce prompts with a consistent structure
-- a repeatable prompt template already exists
+Keep:
+
+- input request
+- level-selection rule
+- exact output template
 
 Example:
 
@@ -50,13 +54,13 @@ argument-hint: [<arg1>] [<arg2>]
 ```
 ````
 
-The differentiator at this level is the template itself. Be explicit about:
+Be explicit about:
 
 - the exact sections to generate
 - placeholder syntax
 - which parts should be derived from the user's request
 
-Level up to Level 7 when:
+Use Level 7 if:
 
 - the prompt should accumulate knowledge over time
 - you want an expert family with Plan, Build, and Improve loops

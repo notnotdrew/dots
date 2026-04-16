@@ -1,65 +1,24 @@
 # Phase 5: Prune Redundant
 
-Identify instructions that should be deleted or rewritten because they add little or no value.
+Remove guidance that does not change behavior.
 
-## Inputs
-
-- New root and `guidelines/` files
-- Original source files
-- [references/deletion-criteria.md](../references/deletion-criteria.md)
+Use [references/deletion-criteria.md](../references/deletion-criteria.md). Every deletion still needs user approval.
 
 ## Procedure
 
-### 1. Scan For Deletion Candidates
+1. Scan for rules that are:
+   - agent defaults
+   - too vague
+   - overly obvious
+   - duplicated by tooling or CI
+   - outdated
+   - aspirational
+2. Present candidates with location, reason, and a delete or rewrite recommendation.
+3. Apply only approved deletions or rewrites.
+4. Re-verify links, root size, self-containment, and contradiction status.
 
-Check each instruction against these categories:
-- agent default
-- too vague
-- overly obvious
-- duplicates built-in behavior
-- outdated
-- aspirational
+## Output
 
-Decision rule:
-- if removing the instruction would not change behavior, flag it
-- if removing it would change behavior, keep it
-
-### 2. Present Candidates
-
-Group candidates by category and present:
-- the quoted instruction
-- its location
-- why it is weak or redundant
-- a recommendation to delete or rewrite
-
-Also flag original source files that are now fully represented by the new structure.
-
-### 3. Get User Decisions
-
-For each candidate, the user can:
-- delete it
-- rewrite it
-- keep it
-
-### 4. Apply Approved Changes
-
-- delete approved items
-- rewrite items that need stronger wording
-- keep explicitly retained items
-- delete or archive redundant source files only with approval
-
-### 5. Re-Verify
-
-After pruning:
-1. root file remains concise
-2. all links resolve
-3. no contradictions remain
-4. every remaining instruction is actionable
-5. no instruction was lost without approval
-6. each file is self-contained
-
-## Outputs
-
-- updated root and guideline files
-- list of deleted, rewritten, and retained items
-- before and after line counts
+- Updated files
+- List of deleted, rewritten, and retained items
+- Before and after line counts
