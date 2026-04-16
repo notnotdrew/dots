@@ -6,6 +6,7 @@ codex/models_cache.json
 codex/history*
 codex/installation_id
 codex/log*
+codex/rules/
 codex/session*
 codex/shell_snapshots/
 codex/skills/.system/
