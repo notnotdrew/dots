@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Codex Skills"
+  short_description: "Create, improve, and audit Codex skills"
+  default_prompt: "Help me create or improve a Codex skill"

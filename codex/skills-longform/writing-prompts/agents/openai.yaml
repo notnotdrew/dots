@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Prompts"
+  short_description: "Write reusable prompts and prompt templates"
+  default_prompt: "Use writing prompts to create or refine a reusable prompt, command, or workflow prompt"

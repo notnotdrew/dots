@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Git Commits"
+  short_description: "Draft clear commit messages from real changes"
+  default_prompt: "Use writing git commits to draft a clear commit message from the current repository changes"

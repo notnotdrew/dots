@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing React With Vitest"
+  short_description: "Write React tests with Vitest and Testing Library"
+  default_prompt: "Use testing React with Vitest to write or improve React tests with Vitest and Testing Library"

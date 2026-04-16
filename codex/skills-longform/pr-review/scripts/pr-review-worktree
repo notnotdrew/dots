@@ -1,0 +1,125 @@
+#!/bin/sh
+
+# Create and clean up temporary Git worktrees for pull request review.
+#
+# Usage:
+#   pr-review-worktree setup <PR-ID-or-URL>
+#   pr-review-worktree cleanup <path>
+
+set -eu
+
+REVIEW_PREFIX="/tmp/pr-review-"
+CLONE_PREFIX="/tmp/pr-review-base-"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+
+die() {
+    echo "error: $1" >&2
+    exit 1
+}
+
+resolve_base_repo() {
+    if [ -n "${OWNER:-}" ] && [ -n "${REPO:-}" ]; then
+        BASE_REPO=""
+        if git rev-parse --git-dir >/dev/null 2>&1; then
+            current_remote=$(git remote get-url origin 2>/dev/null || true)
+            case "$current_remote" in
+                *github.com[:/]"${OWNER}/${REPO}"*) BASE_REPO="." ;;
+            esac
+        fi
+
+        if [ -z "$BASE_REPO" ]; then
+            BASE_REPO="${CLONE_PREFIX}${OWNER}-${REPO}"
+            if [ ! -d "$BASE_REPO" ]; then
+                echo "Cloning ${OWNER}/${REPO} (bare, blobless)..." >&2
+                gh repo clone "${OWNER}/${REPO}" "$BASE_REPO" -- --bare --filter=blob:none >&2 \
+                    || die "failed to clone ${OWNER}/${REPO}"
+            fi
+        fi
+
+        worktree_path="${REVIEW_PREFIX}${OWNER}-${REPO}-${PR_NUMBER}"
+    else
+        git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a Git repository"
+        BASE_REPO="."
+        worktree_path="${REVIEW_PREFIX}${PR_NUMBER}"
+    fi
+}
+
+cmd_setup() {
+    command -v gh >/dev/null 2>&1 || die "gh CLI is required but not found"
+
+    parsed=$("${SCRIPT_DIR}/gh-pr-parse" "$1") || die "failed to parse PR reference: $1"
+    eval "$parsed"
+
+    resolve_base_repo
+
+    if [ -d "$worktree_path" ]; then
+        echo "Removing stale worktree for PR #${PR_NUMBER}..." >&2
+        git -C "$BASE_REPO" worktree remove --force "$worktree_path" 2>/dev/null || true
+        git -C "$BASE_REPO" worktree prune
+    fi
+
+    echo "Fetching PR #${PR_NUMBER}..." >&2
+    git -C "$BASE_REPO" fetch origin "pull/${PR_NUMBER}/head" >&2 \
+        || die "failed to fetch PR #${PR_NUMBER}"
+
+    git -C "$BASE_REPO" worktree add --detach "$worktree_path" FETCH_HEAD >&2 \
+        || die "failed to create worktree at $worktree_path"
+
+    echo "REVIEW_DIR=$worktree_path OWNER=${OWNER:-} REPO=${REPO:-} PR_NUMBER=$PR_NUMBER"
+}
+
+cmd_cleanup() {
+    path="$1"
+
+    case "$path" in
+        "${REVIEW_PREFIX}"*) ;;
+        *) die "refusing to remove path outside ${REVIEW_PREFIX}: $path" ;;
+    esac
+
+    if [ ! -d "$path" ]; then
+        echo "Worktree already removed: $path" >&2
+        for base in "${CLONE_PREFIX}"*; do
+            if [ -d "$base" ]; then
+                git -C "$base" worktree prune 2>/dev/null || true
+            fi
+        done
+        git worktree prune 2>/dev/null || true
+        return 0
+    fi
+
+    echo "Removing review worktree: $path" >&2
+    git worktree remove --force "$path" >&2 \
+        || {
+            removed=false
+            for base in "${CLONE_PREFIX}"*; do
+                if [ -d "$base" ] && git -C "$base" worktree remove --force "$path" 2>/dev/null; then
+                    removed=true
+                    break
+                fi
+            done
+            "$removed" || die "failed to remove worktree at $path"
+        }
+    git worktree prune 2>/dev/null || true
+}
+
+if [ $# -lt 1 ]; then
+    echo "Usage: pr-review-worktree <setup|cleanup> <arg>" >&2
+    exit 1
+fi
+
+command="$1"
+shift
+
+case "$command" in
+    setup)
+        [ $# -ge 1 ] || die "usage: pr-review-worktree setup <PR-ID-or-URL>"
+        cmd_setup "$1"
+        ;;
+    cleanup)
+        [ $# -ge 1 ] || die "usage: pr-review-worktree cleanup <path>"
+        cmd_cleanup "$1"
+        ;;
+    *)
+        die "unknown command: $command (expected setup or cleanup)"
+        ;;
+esac

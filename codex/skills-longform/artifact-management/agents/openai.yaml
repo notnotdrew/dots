@@ -1,0 +1,4 @@
+interface:
+  display_name: "Artifact Management"
+  short_description: "Locate and manage workflow artifacts"
+  default_prompt: "Use artifact management to find, create, or update the right workflow artifacts for this task"

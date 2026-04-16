@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Product Briefs"
+  short_description: "Write product briefs with thesis, metrics, and scenarios"
+  default_prompt: "Use writing product briefs to define a product vision, one-pager, or north star scenario set"

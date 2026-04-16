@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Review"
+  short_description: "Review GitHub pull requests with PERFECT"
+  default_prompt: "Review this GitHub pull request using the PERFECT methodology"

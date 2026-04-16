@@ -1,0 +1,6 @@
+interface:
+  display_name: "Skill Installer"
+  short_description: "Install curated skills from openai/skills or other repos"
+  icon_small: "./assets/skill-installer-small.svg"
+  icon_large: "./assets/skill-installer.png"
+  default_prompt: "Use the skill installer to list or install skills from a curated source or GitHub repo"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Question Stage"
+  short_description: "Ask the key questions before research or build"
+  default_prompt: "Use question stage to identify the smallest set of clarifying questions that will change what gets researched or built"

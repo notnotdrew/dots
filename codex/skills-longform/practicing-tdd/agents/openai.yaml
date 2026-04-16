@@ -1,0 +1,4 @@
+interface:
+  display_name: "Practicing TDD"
+  short_description: "Implement with a strict red-green-refactor loop"
+  default_prompt: "Use practicing TDD to implement this change one failing test at a time"

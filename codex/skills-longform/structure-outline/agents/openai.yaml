@@ -1,0 +1,4 @@
+interface:
+  display_name: "Structure Outline"
+  short_description: "Break design into safe, reviewable phases"
+  default_prompt: "Use structure outline to turn this design into a phased outline with safe stopping points"

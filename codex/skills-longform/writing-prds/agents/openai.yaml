@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing PRDs"
+  short_description: "Turn product briefs into actionable PRDs"
+  default_prompt: "Use $writing-prds to turn this product brief into a Product Requirements Document with high-level requirements, a use case compendium, and Milestone 1 scope."

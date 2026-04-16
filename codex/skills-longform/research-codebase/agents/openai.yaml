@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Codebase"
+  short_description: "Map how the current codebase works"
+  default_prompt: "Use research codebase to document how this part of the codebase works today before proposing changes"

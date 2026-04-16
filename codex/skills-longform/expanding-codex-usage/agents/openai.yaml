@@ -1,0 +1,4 @@
+interface:
+  display_name: "Expand Codex Usage"
+  short_description: "Stretch how you collaborate with Codex"
+  default_prompt: "Help me use Codex more effectively on this task"
