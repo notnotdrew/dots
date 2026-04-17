@@ -27,4 +27,3 @@ This is a router. Choose the earliest unresolved stage. For small, explicit chan
 - Do not plan while scope or design is unsettled.
 - Do not keep planning once an approved phase is ready to implement.
 - Use `practicing-tdd` during execution when meaningful automated tests exist.
-- For QRDSPI work, follow `codex/qrdspi/README.md` and prefer `bin/qrdspi` when available.
