@@ -29,6 +29,7 @@ Use this skill when the job is React tests on Vitest with React Testing Library.
 - asserting through `container.querySelector`
 - large snapshots instead of specific behavior checks
 - CSS or attribute assertions when a semantic matcher would prove the behavior
+- exact helper copy assertions when the real contract is that a control, option, or state is present
 - `waitFor` when a synchronous assertion or `findBy*` is enough
 - adding a test whose only value is proving an intentionally removed control is still absent
 
@@ -38,5 +39,8 @@ Use this skill when the job is React tests on Vitest with React Testing Library.
 2. Is the real boundary the only thing being stubbed?
 3. Are the assertions semantic and exact?
 4. Will this test still make sense after future intentional UI changes?
+5. Would a harmless copy edit break this test for no product reason?
 
 When removing UI, only add or keep a test if it protects a real product contract. Do not add a long-term `queryBy*` absence test just to prove a deleted button stays deleted.
+
+When text is not itself the contract, assert the durable behavior around it instead. Prefer checking that the labeled control exists, has the expected default value, exposes the relevant options, or changes state correctly over checking exact helper prose.
