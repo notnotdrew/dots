@@ -44,7 +44,7 @@ Keep it short. This is a skeleton, not a plan.
    Deliver a concise phased outline and stop for approval before detailed planning.
 
 5. Revise until approved.
-   Reorder, split, or merge phases as needed. In runner-driven QRDSPI mode, set the structure artifact frontmatter to `Status: approved` only after explicit approval in the current invocation.
+   Reorder, split, or merge phases as needed. In staged QRDSPI work, set the structure artifact frontmatter to `Status: approved` only after explicit human approval.
 
 6. Persist only when needed.
    In staged workflows, use `artifact-management` and the `structure--<topic-slug>.md` prefix. For one-off outlining, inline output is enough unless the user asks for a file.

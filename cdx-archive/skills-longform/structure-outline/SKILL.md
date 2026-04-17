@@ -12,7 +12,7 @@ Use this skill after design alignment is complete and before detailed implementa
 This skill is about structure and sequencing. Keep the outline short, reviewable, and roughly two pages or less: a skeleton, not a plan.
 If the user has not provided an approved design document or equivalent alignment artifact, stop and send them back to `$design-discussion` before outlining phases.
 Treat the approved design document as the source of truth. The phase names and ordering produced here should be stable inputs for `$plan-implementation`.
-In runner-driven QRDSPI mode, approval happens inside the current invocation. When the human approves the phase structure, update the structure artifact frontmatter to `Status: approved`, then stop so the runner can continue safely.
+In staged QRDSPI work, keep the structure artifact non-approved until the human explicitly approves the phase structure. Then update the frontmatter to `Status: approved`.
 When the workflow is persisted, use `artifact-management` so the structure artifact becomes the canonical phase artifact consumed by planning.
 
 ## Choose Your Approach
@@ -66,7 +66,7 @@ Split phases at shared interfaces, data migrations, or rollout boundaries so eac
    - Split or merge phases if the user wants different granularity.
    - Update the outline when scope or assumptions change.
    - After each revision, stop and wait for approval before expanding into detailed planning.
-   - In runner-driven QRDSPI mode, set the structure artifact to `Status: approved` only after the human approves inside the invocation.
+   - In staged QRDSPI work, set the structure artifact to `Status: approved` only after the human explicitly approves it.
 
 6. Persist only when needed.
    - In a staged workflow, persist the structure artifact by default through `artifact-management` using the `structure--<topic-slug>.md` prefix, and return the path you updated.

@@ -10,8 +10,7 @@ Use this after `$design-discussion` and `$structure-outline`.
 Treat the approved design and approved structure artifact as fixed inputs. Expand each approved phase into concrete changes, verified references, automated checks, and a manual checkpoint that must pass before the next phase starts.
 
 Use `artifact-management` to find existing artifacts before asking for them again. If the request starts from Jira, load that through `managing-jira` as context only.
-
-In runner-driven QRDSPI mode, leave the plan unapproved until the human approves it inside the current invocation. Then set `Status: approved` and stop.
+In staged QRDSPI work, leave the plan unapproved until the human explicitly approves it. Then set `Status: approved`.
 
 See [references/plan-template.md](references/plan-template.md) for the exact shape.
 
@@ -34,4 +33,4 @@ See [references/plan-template.md](references/plan-template.md) for the exact sha
 3. Refresh the important code references cited by those artifacts.
 4. Expand each approved phase without changing its sequence or scope.
 5. Validate the plan for completeness, checkpoints, and closed scope.
-6. Persist the result, and in QRDSPI mode mark it approved only after human approval.
+6. Persist the result, and in staged QRDSPI work mark it approved only after human approval.

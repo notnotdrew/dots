@@ -17,7 +17,7 @@ Use this skill when the input includes Jira issue keys and the next step needs t
    Include key, summary, status, type, description summary, meaningful recent comments, and linked issues that matter.
 5. Stay descriptive.
    Do not recommend an implementation or turn the ticket into a plan.
-6. For persisted QRDSPI flows, pass the ticket key through `SourceInputs`.
+6. For persisted staged workflows, pass the ticket key through `SourceInputs`.
 
 ## Output
 

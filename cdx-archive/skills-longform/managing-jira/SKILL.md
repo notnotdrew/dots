@@ -39,7 +39,7 @@ If authentication fails, stop and tell the user they need to configure Jira acce
 5. Hand off cleanly.
    - Return the normalized ticket summary in plain language.
    - Name open ambiguities only when the ticket itself is unclear.
-   - If the Jira ticket should feed a persisted QRDSPI artifact, pass the ticket key through `SourceInputs`.
+   - If the Jira ticket should feed a persisted staged workflow artifact, pass the ticket key through `SourceInputs`.
 
 ## Normalized Output
 

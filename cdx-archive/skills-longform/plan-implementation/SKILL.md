@@ -9,7 +9,7 @@ description: Produces a detailed implementation plan from approved planning arti
 
 Use this skill after `$design-discussion` and `$structure-outline`. Treat the approved design document and approved structure artifact as fixed inputs, then expand each approved phase into concrete file changes, verified `file:line` references, completion criteria, automated checks, and manual verification checkpoints.
 If the input starts from a Jira ticket, use `managing-jira` first, then use `artifact-management` to locate any existing question, research, design, or structure artifacts before drafting the plan.
-In runner-driven QRDSPI mode, the human approves the plan inside the current invocation. When that happens, update the plan artifact frontmatter to `Status: approved`, keep that approved status during later execution checkpoints, and stop so the runner can decide whether to launch execution.
+In staged QRDSPI work, leave the plan artifact non-approved until the human explicitly approves it. When that happens, update the frontmatter to `Status: approved` and keep that approved status during later execution checkpoints.
 
 For the detailed plan format, see [references/plan-template.md](references/plan-template.md).
 
@@ -27,7 +27,7 @@ For the detailed plan format, see [references/plan-template.md](references/plan-
 10. Require the final plan to have no unresolved questions, TODO markers, or placeholders.
 11. Stop if essential information is missing or conflicts with the approved artifacts.
 12. In a staged workflow, persist the plan artifact by default through `artifact-management` and return the path you updated.
-13. In runner-driven QRDSPI mode, leave the plan artifact non-approved until the human approves inside the invocation, then set `Status: approved`.
+13. In staged QRDSPI work, leave the plan artifact non-approved until the human explicitly approves it, then set `Status: approved`.
 
 ## Advanced Features
 
@@ -69,7 +69,7 @@ For the detailed plan format, see [references/plan-template.md](references/plan-
 
 6. Persist the result.
    - In a staged workflow, update or create the plan artifact through `artifact-management`.
-   - In runner-driven QRDSPI mode, set the plan artifact to `Status: approved` only when the human approves inside the invocation.
+   - In staged QRDSPI work, set the plan artifact to `Status: approved` only when the human explicitly approves it.
    - For casual one-off planning, inline output is enough unless the user asked for a file.
 
 ## Examples

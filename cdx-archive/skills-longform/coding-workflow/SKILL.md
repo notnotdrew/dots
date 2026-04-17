@@ -8,6 +8,7 @@ description: Routes substantial feature work through the existing Codex research
 Use this skill when the user wants significant implementation work and the next step is not obvious from the request alone.
 
 This is a router. It chooses the right next skill, keeps work moving, and avoids re-explaining workflow logic that already exists elsewhere.
+`QRDSPI` means the staged workflow across Question, Research, Design, Structure, Plan, and Implement. It is stage vocabulary, not an orchestration system.
 
 ## Quick Start
 
@@ -21,7 +22,7 @@ Start at the earliest stage the request still needs. Do not force every task thr
 - Active coding inside execution: `practicing-tdd`
 
 For small, already-specified changes, skip this skill and implement directly.
-For the full staged QRDSPI flow, treat `codex/qrdspi/README.md` as the orchestration contract and use `bin/qrdspi` as the intended entrypoint once the runner exists. Until then, invoke the matching stage skill directly.
+For QRDSPI work, invoke the matching stage skill directly and use the persisted artifacts as the handoff contract between stages.
 
 ## When To Use
 
@@ -88,6 +89,6 @@ That path is a default, not a mandate. Enter where the request actually starts.
 - Treat this skill as orchestration, not as a second planning system
 - Prefer the lightest valid next stage
 - Name the next skill explicitly so the handoff is unambiguous
-- For runner-driven QRDSPI work, keep stage semantics aligned with `codex/qrdspi/README.md` instead of inventing parallel workflow rules
+- For QRDSPI work, keep stage semantics aligned across the stage skills instead of inventing parallel workflow rules
 - Keep simple work out of the staged workflow
 - Never duplicate downstream templates or detailed instructions here

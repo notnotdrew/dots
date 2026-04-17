@@ -8,6 +8,7 @@ description: Routes substantial feature work through the existing Codex research
 Use this skill for substantial implementation work when the next step is not obvious.
 
 This is a router. Choose the earliest unresolved stage. For small, explicit changes, implement directly.
+`QRDSPI` means the staged workflow across Question, Research, Design, Structure, Plan, and Implement. It is stage vocabulary, not an orchestration system.
 
 ## Route
 

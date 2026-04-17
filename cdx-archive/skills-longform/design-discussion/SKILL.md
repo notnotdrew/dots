@@ -11,7 +11,7 @@ Use this skill after codebase research is complete and before implementation pla
 
 This skill should tighten understanding, not expand the scope. Keep it short enough for full human review in one sitting.
 This is the approval checkpoint between factual research and execution planning. Walk the design section by section and stop at each checkpoint until the section is corrected or approved.
-In runner-driven QRDSPI mode, that approval happens inside the current invocation. When the human approves the design, update the design artifact frontmatter to `Status: approved`, then stop so the runner can decide whether to continue.
+In staged QRDSPI work, keep the design artifact non-approved until the human explicitly approves it. Then update the frontmatter to `Status: approved`.
 When the workflow is persisted, use `artifact-management` so the design document becomes the canonical approval artifact for later outline and plan stages.
 
 ## Choose Your Approach
@@ -42,7 +42,7 @@ Also include Components and Key Interactions so the reviewer can validate the sy
 - Review the document in this order: `Current State`, `Desired End State`, optional `Components and Patterns to Follow`, optional `Key Interactions`, `Design Decisions`, `Open Questions`, and `What We're Not Doing`
 - If the user corrects a section, revise that section immediately, restate it, and do not continue until that revision is acknowledged
 - In a staged workflow, persist the design artifact by default using `artifact-management`
-- In runner-driven QRDSPI mode, leave the design artifact non-approved until the human approves inside the invocation, then set `Status: approved`
+- In staged QRDSPI work, leave the design artifact non-approved until the human explicitly approves it, then set `Status: approved`
 - If critical design questions remain, stop there instead of handing off to planning
 - If no critical questions remain and the document is approved, say the design is ready for `$structure-outline`
 - Use diagrams only when they improve clarity
@@ -76,7 +76,7 @@ Also include Components and Key Interactions so the reviewer can validate the sy
 
 5. Persist only when needed.
    - In a staged workflow, persist the design artifact by default through `artifact-management` and return the path you updated.
-   - In runner-driven QRDSPI mode, update the artifact to `Status: approved` only when the human approves inside the invocation.
+   - In staged QRDSPI work, update the artifact to `Status: approved` only when the human explicitly approves it.
    - For casual one-off design discussion, inline output is enough unless the user asks for a file.
 
 ## Report
@@ -171,7 +171,7 @@ Failed charge events are classified, persisted, and then handed to background re
 - Distinguish clearly between facts from research and decisions made during synthesis
 - Keep the document focused on design alignment, not execution planning
 - Let the calibrated depth determine which optional sections appear
-- In runner-driven QRDSPI mode, encode approval in the artifact itself instead of relying on the runner to pause for out-of-band confirmation
+- In staged QRDSPI work, encode approval in the artifact itself instead of assuming any external runner will manage approval state
 - If the inputs are not strong enough to support design alignment, say what is missing instead of smoothing over the gap
 - When research surfaced exemplars worth following, name them explicitly so later stages can preserve them
 - Keep the walkthrough visibly checkpointed so corrections land before later sections build on them

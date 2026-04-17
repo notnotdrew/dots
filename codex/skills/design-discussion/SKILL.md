@@ -12,7 +12,7 @@ Keep it to design alignment:
 - stay out of implementation detail and task breakdowns
 - stop when the inputs are too thin or critical questions remain
 
-If the workflow is persisted, use `artifact-management`. In runner-driven QRDSPI mode, leave the artifact unapproved until the human approves inside the current invocation, then set `Status: approved`.
+If the workflow is persisted, use `artifact-management`. In staged QRDSPI work, leave the artifact unapproved until the human explicitly approves it, then set `Status: approved`.
 
 ## Depth
 

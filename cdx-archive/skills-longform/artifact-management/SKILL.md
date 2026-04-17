@@ -9,8 +9,10 @@ description: Standardizes how workflow artifacts are located, named, created, an
 
 Use this skill whenever a multi-step workflow needs durable artifacts instead of ephemeral chat output.
 
+`QRDSPI` means the staged workflow across Question, Research, Design, Structure, Plan, and Implement.
 For the QRDSPI flow, persisted artifacts are the default handoff format unless the user explicitly wants an inline-only response.
 For QRDSPI work, the canonical root is `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`. Use `~/.cdx-artifacts/<project-slug>/` as the generic fallback for non-QRDSPI persisted work.
+Stage artifacts cover `question`, `research`, `design`, `structure`, and `plan`. Implementation continues from the approved plan artifact.
 
 Use [references/naming-and-paths.md](references/naming-and-paths.md) to choose the artifact root and filename, then apply the metadata from [references/frontmatter-schema.md](references/frontmatter-schema.md).
 
