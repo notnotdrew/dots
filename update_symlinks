@@ -15,6 +15,7 @@ declare -A FOLDERS=(
   [nvim]="$HOME/.config/nvim"
   [bin]="$HOME/bin"
   [codex]="$HOME/.codex"
+  [cdx-artifacts]="$HOME/.cdx-artifacts"
 )
 
 set -u
