@@ -1,5 +1,7 @@
 codex/.tmp/
 codex/artifacts
+cdx-artifacts/*
+!cdx-artifacts/.keep
 codex/auth.json
 codex/cache/
 codex/models_cache.json

@@ -5,13 +5,13 @@
 For QRDSPI work, use one artifact root per project and work item:
 
 ```text
-~/.codex/artifacts/<project-root-or-repo>/<feature>/
+~/.cdx-artifacts/<project-root-or-repo>/<feature>/
 ```
 
 - `<project-root-or-repo>` is the stable repository or project key.
 - `<feature>` is the workflow topic slug.
 - If an existing QRDSPI artifact already lives somewhere else, keep using that root for the same work item instead of migrating mid-stream.
-- For non-QRDSPI persisted work, `.codex/artifacts/<project-slug>/` remains the generic repo-local fallback.
+- For non-QRDSPI persisted work, `~/.cdx-artifacts/<project-slug>/` remains the generic fallback.
 
 ## Stage Filenames
 
@@ -38,7 +38,7 @@ When deciding where to read or write:
 1. Reuse a user-provided artifact path.
 2. Reuse the root of an existing artifact with the same topic slug.
 3. Reuse the root of the nearest clearly related QRDSPI artifact in the repo.
-4. Otherwise create `~/.codex/artifacts/<project-root-or-repo>/<feature>/` for QRDSPI work, or `.codex/artifacts/<project-slug>/` for other persisted workflows.
+4. Otherwise create `~/.cdx-artifacts/<project-root-or-repo>/<feature>/` for QRDSPI work, or `~/.cdx-artifacts/<project-slug>/` for other persisted workflows.
 
 ## Duplicate Avoidance
 

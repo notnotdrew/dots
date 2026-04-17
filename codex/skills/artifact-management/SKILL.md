@@ -10,8 +10,8 @@ description: Standardizes how workflow artifacts are located, named, created, an
 Use this skill when work should survive the current chat.
 
 - QRDSPI default: persist unless the user wants inline-only output.
-- QRDSPI root: `~/.codex/artifacts/<project-root-or-repo>/<feature>/`
-- Non-QRDSPI fallback: `.codex/artifacts/<project-slug>/`
+- QRDSPI root: `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`
+- Non-QRDSPI fallback: `~/.cdx-artifacts/<project-slug>/`
 
 ## Instructions
 

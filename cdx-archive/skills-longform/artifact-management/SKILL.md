@@ -10,7 +10,7 @@ description: Standardizes how workflow artifacts are located, named, created, an
 Use this skill whenever a multi-step workflow needs durable artifacts instead of ephemeral chat output.
 
 For the QRDSPI flow, persisted artifacts are the default handoff format unless the user explicitly wants an inline-only response.
-For QRDSPI work, the canonical root is `~/.codex/artifacts/<project-root-or-repo>/<feature>/`. Keep repo-local `.codex/artifacts/<project-slug>/` as the generic fallback for non-QRDSPI persisted work.
+For QRDSPI work, the canonical root is `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`. Use `~/.cdx-artifacts/<project-slug>/` as the generic fallback for non-QRDSPI persisted work.
 
 Use [references/naming-and-paths.md](references/naming-and-paths.md) to choose the artifact root and filename, then apply the metadata from [references/frontmatter-schema.md](references/frontmatter-schema.md).
 
@@ -19,8 +19,8 @@ Use [references/naming-and-paths.md](references/naming-and-paths.md) to choose t
 1. Resolve the artifact root before writing anything new.
    - If the user provided an existing artifact path, keep using that artifact root.
    - Otherwise, search the current repo for existing QRDSPI artifacts and reuse their root if you find a clear match.
-   - If no prior root exists and the work follows the QRDSPI stage flow, use `~/.codex/artifacts/<project-root-or-repo>/<feature>/`.
-   - If no prior root exists and the work is not using the QRDSPI stage flow, use `.codex/artifacts/<project-slug>/` under the current repository root.
+   - If no prior root exists and the work follows the QRDSPI stage flow, use `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`.
+   - If no prior root exists and the work is not using the QRDSPI stage flow, use `~/.cdx-artifacts/<project-slug>/`.
 
 2. Resolve the project slug deterministically.
    - Prefer the `Project` or `ProjectSlug` metadata from an existing artifact.
