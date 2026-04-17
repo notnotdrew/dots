@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Shape Up Pitches"
+  short_description: "Draft Shape Up betting pitches from rough inputs"
+  default_prompt: "Use $writing-shape-up-pitches to turn these notes into a Shape Up pitch with clear problems, shaped solutions, boundaries, bonus features, KPIs, and long-term vision."
