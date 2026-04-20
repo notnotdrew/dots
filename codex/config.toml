@@ -1,4 +1,6 @@
-model = "gpt-5.4"
+model = "gpt-5.1-codex-mini"
+# model = "gpt-5.4-mini"
+
 model_reasoning_effort = "medium"
 personality = "pragmatic"
 [projects."/Users/drewprice/Documents/dev/fs/fis-demos"]

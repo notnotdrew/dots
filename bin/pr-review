@@ -11,7 +11,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
-PR_PARSE="${ROOT_DIR}/codex/skills/pr-review/scripts/gh-pr-parse"
+PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 
 die() {
     echo "error: $1" >&2
