@@ -1,4 +1,4 @@
-model = "gpt-5.1-codex-mini"
+model = "gpt-5.4"
 # model = "gpt-5.4-mini"
 
 model_reasoning_effort = "medium"
@@ -48,6 +48,12 @@ trust_level = "trusted"
 [projects."/Users/drewprice/bobfiles"]
 trust_level = "trusted"
 
+[projects."/Users/drewprice/Documents/dev/fs/formstact-test"]
+trust_level = "trusted"
+
+[projects."/Users/drewprice/Documents/dev/fs/extra-beverly-ristow"]
+trust_level = "trusted"
+
 [notice.model_migrations]
 "gpt-5.1" = "gpt-5.2-codex"
 "gpt-5.2-codex" = "gpt-5.4"
@@ -55,6 +61,9 @@ trust_level = "trusted"
 
 [tui]
 status_line = ["project-root", "git-branch", "model-with-reasoning", "context-used", "total-output-tokens", "total-input-tokens", "used-tokens", "context-window-size"]
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
 
 [[skills.config]]
 path = "/Users/drewprice/dots/codex/skills/.system/imagegen/SKILL.md"

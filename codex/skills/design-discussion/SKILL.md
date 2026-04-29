@@ -14,6 +14,12 @@ Keep it to design alignment:
 
 If the workflow is persisted, use `artifact-management`. In staged QRDSPI work, leave the artifact unapproved until the human explicitly approves it, then set `Status: approved`.
 
+## Back-and-Forth Enforcement
+
+- After drafting each section (Current State, Desired End State, Components/Patterns, Key Interactions, Design Decisions, Open Questions, What We're Not Doing), explicitly ask the user to confirm accuracy or provide corrections before moving on.
+- Wait for the user’s reply before starting the next section. If the user corrects the section, immediately revise it, restate the updated version, and re-prompt for confirmation.
+- Treat any implicit approval as insufficient; require an explicit acknowledgement such as “looks good,” “approved,” “please move on,” or simply “y.”
+
 ## Depth
 
 **Simple change**

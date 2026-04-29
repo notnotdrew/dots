@@ -21,6 +21,7 @@ alias vi='vim'
 alias vim='vim'
 alias vrc='vim ~/.vimrc'
 alias zrc='vim ~/.zshrc'
+alias ipad='displayplacer "id:C451E971-242D-46BF-AA77-97B0303C4A23+37D8832A-2D66-02CA-B9F7-8F30A301B230 res:1080x810 hz:60 color_depth:4 enabled:true scaling:on origin:(0,0) degree:0"'
 
 export BAT_THEME="base16"
 
