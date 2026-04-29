@@ -61,20 +61,6 @@ Preferred correction:
 - prefer fixture builders or factories already used in the repo
 - make test data complete enough for downstream code to behave realistically
 
-## Anti-Pattern: Memorializing Removals With Absence Tests
-
-Bad signs:
-
-- adding `queryBy*` assertions only to prove a deleted button or link stays gone
-- writing a regression test for an intentionally removed control with no broader contract behind it
-- forcing a RED step when the change is only subtractive and existing coverage already protects surrounding behavior
-
-Preferred correction:
-
-- ask whether the removal represents a durable product rule or just the current shape of the UI
-- skip the new test when its only purpose is to lock in intentional absence
-- verify the removal with existing nearby tests, direct inspection, or manual checks as appropriate
-
 ## Quick Gate
 
 Before adding a mock or helper, ask:
@@ -82,6 +68,5 @@ Before adding a mock or helper, ask:
 1. Is this replacing a real system boundary?
 2. Does the test still exercise meaningful behavior?
 3. Am I avoiding changes to production code that exist only for tests?
-4. Am I testing a durable contract rather than freezing an intentional removal?
 
 If the answer to any of those is no, redesign the test first.

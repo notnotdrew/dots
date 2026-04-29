@@ -7,25 +7,27 @@ description: Standardizes how workflow artifacts are located, named, created, an
 
 ## Quick Start
 
-Use this skill when work should survive the current chat.
+Use this skill whenever a multi-step workflow needs durable artifacts instead of ephemeral chat output.
 
-- `QRDSPI` means the staged workflow across Question, Research, Design, Structure, Plan, and Implement.
-- QRDSPI default: persist unless the user wants inline-only output.
-- QRDSPI artifact root: `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`
-- Non-QRDSPI fallback: `~/.cdx-artifacts/<project-slug>/`
-- Stage artifacts cover `question`, `research`, `design`, `structure`, and `plan`. Implementation continues from the approved plan.
+`QRDSPI` means the staged workflow across Question, Research, Design, Structure, Plan, and Implement.
+For the QRDSPI flow, persisted artifacts are the default handoff format unless the user explicitly wants an inline-only response.
+For QRDSPI work, the canonical root is `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`. Use `~/.cdx-artifacts/<project-slug>/` as the generic fallback for non-QRDSPI persisted work.
+Stage artifacts cover `question`, `research`, `design`, `structure`, and `plan`. Implementation continues from the approved plan artifact.
+
+Use [references/naming-and-paths.md](references/naming-and-paths.md) to choose the artifact root and filename, then apply the metadata from [references/frontmatter-schema.md](references/frontmatter-schema.md).
 
 ## Instructions
 
 1. Resolve the artifact root before writing anything new.
-   - Reuse a user-provided artifact path.
-   - Otherwise reuse the root of an existing artifact for the same work item.
-   - Otherwise use the QRDSPI root or the generic fallback above.
+   - If the user provided an existing artifact path, keep using that artifact root.
+   - Otherwise, search the current repo for existing QRDSPI artifacts and reuse their root if you find a clear match.
+   - If no prior root exists and the work follows the QRDSPI stage flow, use `~/.cdx-artifacts/<project-root-or-repo>/<feature>/`.
+   - If no prior root exists and the work is not using the QRDSPI stage flow, use `~/.cdx-artifacts/<project-slug>/`.
 
 2. Resolve the project slug deterministically.
    - Prefer the `Project` or `ProjectSlug` metadata from an existing artifact.
    - Otherwise, derive the slug from the current repository directory name.
-   - Ask only when ambiguity would put the artifact in the wrong place.
+   - If multiple repos or projects are genuinely in play, ask only if the ambiguity would put the artifact in the wrong place.
 
 3. Resolve the stage file before creating one.
    - Search for an existing artifact for the same stage and topic slug first.
@@ -40,28 +42,10 @@ Use this skill when work should survive the current chat.
    - `plan--<topic-slug>.md`
 
 5. Apply the shared metadata contract.
-   - Include this YAML frontmatter:
-
-```yaml
----
-Title: "<Human-readable title>"
-Stage: question | research | design | structure | plan
-Slug: "<topic-slug>"
-Project: "<project-slug>"
-Created: YYYY-MM-DD
-Modified: YYYY-MM-DD
-Status: active | approved | superseded | draft
-SourceInputs:
-  - "<ticket, file path, prompt summary, or artifact path>"
-RelatedArtifacts:
-  - "<path to upstream or downstream artifact>"
----
-```
-
+   - Include YAML frontmatter using the schema in [references/frontmatter-schema.md](references/frontmatter-schema.md).
    - Preserve `Created` when updating an existing file.
    - Always refresh `Modified` on edits.
    - Keep `RelatedArtifacts` accurate as downstream stages are added.
-   - Keep the body for workflow content, not metadata sprawl.
 
 6. Update in place when the workflow revisits a stage.
    - Revise the existing stage artifact rather than creating a second version unless the user explicitly wants a new branch or alternate draft.
@@ -71,3 +55,11 @@ RelatedArtifacts:
 7. Report the artifact path in your response when you persist.
    - Name the path you wrote or updated.
    - If you stayed inline-only by user choice, say that you intentionally skipped artifact persistence.
+
+## Guidelines
+
+- Default to persisted artifacts for multi-step workflows; default to inline-only for casual one-step help.
+- Reuse the same artifact root across all stages of one workflow.
+- Prefer updating a correct existing artifact over creating version-spam.
+- Keep naming stable so later stages can locate upstream documents without guesswork.
+- Do not invent project metadata when a local artifact or repository name can answer it.

@@ -1,17 +1,12 @@
 # Level 4: Delegation Prompt
 
-Use when the parent should orchestrate:
+The primary agent orchestrates other agents. This level is about prompt design for sub-agents as much as it is about the top-level workflow.
+
+Use this level when:
 
 - work can be parallelized
-- sub-agents need different responsibilities
-- synthesis matters as much as execution
-
-Keep:
-
-- parent workflow
-- self-contained sub-agent instructions
-- ownership boundaries
-- synthesis report
+- specialized sub-agents are useful
+- the main agent should coordinate instead of doing every step itself
 
 Example:
 
@@ -42,19 +37,19 @@ COUNT: $2
 Summarize the combined findings.
 ```
 
-Rules:
+Key rules:
 
 - sub-agents are effectively stateless relative to the parent prompt
 - every sub-agent prompt must contain the context it needs
 - parallelize only independent work
 - keep the parent focused on orchestration and synthesis
 
-For Codex:
+Codex-specific adaptation:
 
 - when the target prompt is for Codex, describe delegation in terms of `spawn_agent`, `send_input`, and `wait_agent`
 - specify ownership clearly when multiple workers will edit code
 
-Use Level 5 if:
+Level up to Level 5 when:
 
 - the prompt should accept another prompt, spec, or plan as input
 - you want modular chains such as Plan -> Build -> Review

@@ -1,29 +1,54 @@
-# Source Order
+# Inspiration
 
-Use these sources in this order.
+This skill intentionally borrows patterns from two sources.
 
-## 1. Bob's Skills
+## 1. Bob's dotfiles repo
 
-Start with `~/bobfiles/claude/skills/` when a close analog exists.
+Preferred local checkout:
 
-Best references:
+- `~/bobfiles`
+- Keep it current with `bin/update-bobfiles`
+
+Browse these files for concrete inspiration. Prefer the local checkout when it exists so references are stable even without network access:
 
 - `~/bobfiles/claude/commands/create-skill.md`
+  A thin entrypoint that gathers intent and delegates to the durable skill-authoring layer.
 - `~/bobfiles/claude/skills/creating-agent-skills/SKILL.md`
+  The main structural inspiration for this Codex skill.
 - `~/bobfiles/claude/skills/writing-prompts/SKILL.md`
+  Useful for thinking about prompt complexity, workflow shape, and reusable prompt sections.
 
-Borrow workflow, judgment, constraints, and example shape.
+What to borrow:
 
-## 2. Codex's Native Structure
+- clear create / improve / audit modes
+- strong emphasis on descriptions and trigger phrases
+- progressive disclosure
+- concrete examples and anti-patterns
 
-Use these for current Codex conventions:
+What to adapt rather than copy:
+
+- Claude-specific tool names and slash commands
+- assumptions about assistant-specific confirmation flows or orchestration mechanics
+- Anthropic-specific docs and file structure
+
+## 2. Codex's built-in skill tooling
+
+Use these local resources for current Codex-native expectations:
 
 - `~/.codex/skills/.system/skill-creator/SKILL.md`
 - `~/.codex/skills/.system/skill-creator/scripts/init_skill.py`
 - `~/.codex/skills/.system/skill-creator/scripts/quick_validate.py`
 
-Borrow folder structure, metadata shape, and validation expectations.
+What to borrow:
 
-## Tie Breaker
+- Codex skill anatomy
+- naming constraints
+- `agents/openai.yaml` metadata
+- bundled resource conventions
 
-When the two sources differ, prefer Codex-native structure and Bob's workflow design.
+## Practical Rule
+
+When Bob's structure and Codex's current scaffolding guidance differ:
+
+1. Prefer Codex-native structure for compatibility.
+2. Prefer Bob's patterns for judgment, workflow design, and authoring discipline.

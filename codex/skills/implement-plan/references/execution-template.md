@@ -1,22 +1,26 @@
 # Execution Template
 
+Use this reference after the approved plan artifact is loaded and one target phase has been selected.
+
 ## Preconditions
 
 - An approved local `plan--<topic-slug>.md` artifact exists.
 - Any earlier phases required by the target phase are already complete.
 - The target phase is an approved phase from the plan artifact.
-- The phase goal, non-goals, done criteria, and verification expectations are clear enough to execute.
-- Project conventions have been identified from `AGENTS.md`, `CLAUDE.md`, or equivalent local config.
-- The phase can be broken into task-sized slices.
+- Upstream design, outline, and research artifacts are available when needed to resolve context.
+- Project execution conventions have been identified from `AGENTS.md`, `CLAUDE.md`, or equivalent local config.
+- The executor understands the phase's non-goals, done criteria, and verification expectations.
+- The phase can be decomposed into task-sized slices that fit a RED/GREEN/REFACTOR cycle when automated testing is meaningful.
 
-If any of these are missing, stop and route the work back upstream.
+If those conditions are not met, stop and route the work back to the correct upstream stage.
 
 ## One-Phase Workflow
 
 1. Load the artifacts.
    - Read the plan artifact completely.
-   - Read only the supporting artifacts needed for the selected phase.
-   - Read `AGENTS.md` first for project conventions, using `CLAUDE.md` only as fallback.
+   - Read the supporting design, outline, and research artifacts needed for the selected phase.
+   - Read `AGENTS.md` when present to discover test, lint, typecheck, file layout, and relevant project-specific skills.
+   - If `AGENTS.md` is absent, use `CLAUDE.md` as a fallback for the same information.
    - Re-open the current source files cited by the plan before relying on old references.
 
 2. Select one phase.
@@ -29,21 +33,21 @@ If any of these are missing, stop and route the work back upstream.
    - If the requested work spills into a later phase, defer that work instead of absorbing it now.
 
 4. Decompose the phase into task slices.
-   - Turn `Changes Required` into small tasks with clear boundaries.
-   - Keep each task inside the current phase.
+   - Turn the approved phase's `Changes Required` content into small tasks with clear boundaries and ordering.
+   - Keep each task inside the current phase and avoid speculative extra tasks.
 
 5. Execute each task through subagents.
-   - Tester: write the failing test and confirm RED.
-   - Engineer: make the test pass with the minimum production change.
-   - Refactorer: simplify changed production files while preserving behavior, then route any test cleanup suggestions back through the orchestrator.
+   - Tester subagent: write the failing test and confirm failure for the expected reason.
+   - Engineer subagent: make the failing test pass with the minimal production change.
+   - Refactorer subagent: simplify the changed production files while preserving behavior, then report any test cleanup suggestions back to the orchestrator.
    - The orchestrator mediates every handoff and remains the only owner of scope, sequencing, and artifact updates.
    - Prefer file-scoped or feature-scoped test commands over full-suite verification.
    - If meaningful automated TDD is not possible, record the reason and use a single-agent fallback for the task.
 
 6. Review and simplify per changed file.
-   - Review every changed file for bugs, regressions, confusing logic, duplication, and unnecessary abstraction.
-   - Simplify one file at a time when behavior stays unchanged and scope stays inside the phase.
-   - Re-run the narrowest trustworthy checks after review-driven changes.
+   - Review every changed file individually for bugs, regressions, confusing logic, duplication, and unnecessary abstraction.
+   - Apply simplifications one file at a time when they preserve behavior and remain inside the approved phase scope.
+   - If a review or simplification changes code, re-run the narrowest trustworthy checks covering that file or feature area.
    - Do not mark the phase complete while review findings remain unresolved.
 
 7. Record the checkpoint.
@@ -59,7 +63,7 @@ If any of these are missing, stop and route the work back upstream.
 
 ## Routing Rules
 
-Use these upstream routes when implementation conflicts with approved artifacts:
+Stop and route back upstream when implementation conflicts with approved artifacts:
 
 - `design-discussion`: the approved design is internally inconsistent with the code reality or desired end state.
 - `structure-outline`: the approved phase boundaries or sequencing no longer fit the implementation dependency graph.
@@ -67,15 +71,7 @@ Use these upstream routes when implementation conflicts with approved artifacts:
 
 ## Plan Artifact Update Format
 
-Append these exact sections under the phase that just ran:
-
-- `### Execution Status`
-- `### Automated Verification`
-- `### Review And Simplification`
-- `### Manual Verification Result`
-- `### Blockers Or Follow-Up Notes`
-
-Use this checkpoint shape:
+Update the executed phase inside the existing plan artifact with an execution checkpoint section like this:
 
 ```markdown
 ## Phase 2: Wire Retry Scheduling Through the Billing Worker
@@ -105,11 +101,14 @@ ExecutionMode: subagents
 ### Automated Verification
 
 - `npm run test -- billing-retries`
+- `npm run lint -- src/billing`
+- `npm run typecheck -- --pretty false`
 - Passed
 
 ### Review And Simplification
 
-- Reviewed changed files and simplified where safe.
+- Reviewed changed files individually for correctness and unnecessary complexity.
+- Simplified retry scheduling branching in `src/billing/retry_policy.ts`.
 - Re-ran scoped verification after simplification.
 
 ### Manual Verification Result
@@ -121,9 +120,9 @@ ExecutionMode: subagents
 - None.
 ```
 
-Keep the plan artifact frontmatter at `Status: approved` so execution can resume from the same file later.
+If the phase is blocked or still waiting on human verification, keep the same structure and change `Status` accordingly.
 
-Use only these `Status:` values:
+Use only these runner-readable `Status:` values:
 
 - `completed`: the phase is fully done, including required manual verification, so the runner may consider the next phase
 - `blocked`: the runner must stop because execution hit a real blocker
@@ -135,14 +134,15 @@ If a phase has no `### Execution Status` section yet, the runner should treat it
 
 - Exactly one approved phase was selected for execution.
 - The plan artifact was read completely before implementation started.
-- Project conventions were loaded from `AGENTS.md`, `CLAUDE.md`, or equivalent local config.
+- `AGENTS.md` was used when present, or `CLAUDE.md`/equivalent local project conventions were discovered.
 - Earlier required phases were already complete.
 - The work stayed inside the approved phase boundary.
-- Task slices were defined before implementation started.
-- Subagent use or single-agent fallback was recorded.
+- Task slices were defined inside the phase before implementation started.
+- Tester, engineer, and refactorer subagents were used when a meaningful automated test path existed, or the fallback was documented.
+- `practicing-tdd` governed the RED/GREEN/REFACTOR cycle when a meaningful automated test path existed.
 - Automated verification was recorded, with scoped commands preferred over full-suite commands.
 - Every changed file received a review pass, and simplification changes were re-verified.
 - Manual verification result or remaining manual step was recorded.
-- Any blocker was documented precisely.
+- Any blockers were documented precisely.
 - The existing plan artifact was updated in place.
 - The run stopped after the phase checkpoint.

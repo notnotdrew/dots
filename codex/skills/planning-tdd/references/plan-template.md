@@ -6,11 +6,20 @@
 
 [Brief summary of the behavior being added or changed and why it matters]
 
-## Current State
+## Current State Analysis
+
+### Key Discoveries
 
 - [Verified finding with `file:line` reference]
 - [Existing test pattern to follow]
 - [Constraint or dependency that shapes the plan]
+
+### Testing Infrastructure
+
+- **Framework**: [Vitest, RSpec, ExUnit, etc.]
+- **Helpers**: [fixtures, factories, support files]
+- **Run command**: [focused command for the relevant tests]
+- **Wider verification**: [broader command to confirm surrounding safety]
 
 ## Desired End State
 
@@ -27,11 +36,15 @@
 
 ---
 
-## Phase [N]: [Phase Name]
+## Phase 1: [Phase Name]
 
-[One behavioral slice this phase delivers]
+### Overview
 
-### Cycle [N]: [Behavior]
+[What behavioral slice this phase delivers]
+
+### TDD Cycles
+
+#### Cycle 1: [Behavior]
 
 **RED - Write Failing Test**
 
@@ -43,18 +56,22 @@
 
 **Structural context**: [Relevant files, modules, and contracts with `file:line` references]
 
-If this cycle is a pure removal with no durable contract worth specifying, replace the RED section with:
+#### Cycle 2: [Behavior]
 
-**No new automated test**
+**RED - Write Failing Test**
 
-- [Why an absence test would be brittle or non-durable]
-- [What existing coverage still protects nearby behavior]
-- [What manual or inspection-based verification will be used instead]
+```text
+[Exact test to write first]
+```
+
+**Expected failure**: [Failure mode]
+
+**Structural context**: [Relevant files with `file:line` references]
 
 ### Automated Testing
 
 - [ ] [Focused test description] - `path/to/test`
-- [ ] [Nearby regression or integration check] - `path/to/test`
+- [ ] [Integration or regression test description] - `path/to/test`
 
 **Run**: `[exact command]`
 **Expected**: [expected passing result after implementation]
@@ -63,3 +80,36 @@ If this cycle is a pure removal with no durable contract worth specifying, repla
 
 - [ ] [Specific user-visible or operator-visible check]
 - [ ] [Concrete scenario to run]
+
+---
+
+## Phase 2: [Phase Name]
+
+### Overview
+
+[What this phase adds]
+
+### TDD Cycles
+
+#### Cycle 1: [Behavior]
+
+**RED - Write Failing Test**
+
+```text
+[Exact test to write first]
+```
+
+**Expected failure**: [Failure mode]
+
+**Structural context**: [Relevant files with `file:line` references]
+
+### Automated Testing
+
+- [ ] [Test description] - `path/to/test`
+
+**Run**: `[exact command]`
+**Expected**: [expected result]
+
+### Manual Verification
+
+- [ ] [Concrete check]

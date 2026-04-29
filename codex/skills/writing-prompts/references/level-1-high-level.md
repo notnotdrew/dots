@@ -1,16 +1,12 @@
 # Level 1: High-Level Prompt
 
-Use when the task is simple and static:
+Static, ad hoc prompts for repeat work. Keep them short: title, purpose, and a compact set of instructions.
 
-- no dynamic inputs
-- no formal report
-- no real phases
+Use this level when:
 
-Keep:
-
-- title
-- purpose
-- short instruction list
+- the task is simple
+- the steps do not vary much
+- you do not need dynamic inputs or a formal report
 
 Example:
 
@@ -25,7 +21,13 @@ Start the application for development.
 4. Verify the app is reachable at the expected local URL
 ```
 
-Use Level 2 if:
+Characteristics:
+
+- no variables section
+- no metadata required unless the target system needs it
+- direct instructions
+
+Level up to Level 2 when:
 
 - inputs change between runs
 - output format matters

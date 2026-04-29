@@ -1,27 +1,81 @@
 # Project Documentation Workflow
 
-Use for READMEs, onboarding guides, and agent-instruction files.
+Write READMEs, getting-started guides, onboarding docs, and agent-instruction files that serve both human developers and LLMs.
 
-## Place It
+## Inputs
 
-- README: repo root
-- getting started or onboarding guide: `docs/` or repo root
-- `AGENTS.md` or established agent file: repo root
+One or more of:
 
-## Choose the Doc
+- project path to document
+- natural language description of what needs documenting
+- specific doc type requested such as README, getting started guide, or `AGENTS.md`
 
-- project overview and common commands: README
-- first-run setup: getting started guide
-- machine-facing rules and commands: `AGENTS.md` or existing agent file
+## Output Placement
 
-## Write
+Project docs are standalone markdown files:
 
-1. Inspect the repo structure, manifests, scripts, and existing docs.
-2. Prefer the happy path first.
-3. Make commands exact and copy-pasteable.
-4. Keep headings concrete so a skim reveals setup, commands, structure, and constraints.
-5. Keep README and onboarding prose short.
-6. Keep agent files directive and compact. Use `ALWAYS` and `NEVER` for hard rules.
+- README: project root as `README.md`
+- getting started guide: `docs/getting-started.md` or project root
+- `AGENTS.md`: project root
+- alternate agent instructions when required by the repo: `CLAUDE.md` or another established file
+
+## Doc Type Detection
+
+| Request Contains | Doc Type | Section |
+| --- | --- | --- |
+| "README", "project overview" | README | README template |
+| "getting started", "setup guide", "onboarding" | Getting started guide | Getting started template |
+| "AGENTS.md", "CLAUDE.md", "agent instructions", "coding guidelines" | Agent instructions | Agent instructions template |
+
+## Procedure
+
+### Step 1: Gather Context
+
+Examine the project:
+
+1. read the directory structure to identify the language, framework, and key directories
+2. find existing docs to avoid duplication
+3. read package manifests for project metadata
+4. identify key commands for build, test, lint, format, and run
+5. inspect configuration files that reveal conventions
+
+### Step 2: Select Template
+
+Choose the appropriate template below.
+
+### Step 3: Write the Draft
+
+Apply these principles for human readers:
+
+- lead with what the reader needs to do
+- use concrete, copy-pasteable commands
+- keep paragraphs short
+- provide the happy path first
+
+Apply these principles for LLM readers:
+
+- use explicit keyword-rich headings
+- front-load context in each section
+- make each section self-contained
+- use fully qualified names for code references
+- state relationships explicitly
+
+### Step 4: Polish User-Facing Prose
+
+For READMEs, getting-started guides, and tutorials, do a final rewrite pass:
+
+- cut filler and hedging
+- replace vague claims with concrete facts
+- prefer active voice
+- keep paragraphs to 2-4 sentences
+- keep headings specific rather than generic
+- make sure a skimming reader can find setup, commands, and key concepts quickly
+
+Do not do this prose-polish pass for agent instructions. Agent files are directive documents, not narrative prose.
+
+### Step 5: Validate
+
+Run the quality checklist at the bottom of this file.
 
 ## README Template
 
@@ -166,9 +220,25 @@ Agent-instruction rules:
 - list exact runnable commands
 - avoid explanatory prose
 
-## Check
+## Post-Processing Decision Matrix
 
-- A new developer can run the happy path from the doc alone.
-- Commands and versions are exact.
-- README stays compact and links out for depth.
-- Agent instructions stay short, directive, and runnable.
+| Doc Type | Prose polish pass? | Reason |
+| --- | --- | --- |
+| README | Yes | User-facing prose |
+| Getting started guide | Yes | User-facing prose |
+| `AGENTS.md` | No | Machine-consumed directives |
+| `CLAUDE.md` | No | Machine-consumed directives |
+| Tutorial | Yes | User-facing prose |
+
+## Quality Checklist
+
+- [ ] A new developer can get the project running from the doc alone
+- [ ] All commands are copy-pasteable and correct
+- [ ] Prerequisites list exact versions
+- [ ] Headings are specific and action-oriented
+- [ ] Each section is self-contained
+- [ ] No ambiguous pronouns cross section boundaries
+- [ ] README stays compact and links out for depth
+- [ ] Root agent instruction file stays compact and links out for depth
+- [ ] User-facing docs have been polished for readability
+- [ ] Agent instructions use `NEVER` or `ALWAYS` for hard constraints

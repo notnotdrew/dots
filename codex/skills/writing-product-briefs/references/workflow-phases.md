@@ -1,19 +1,32 @@
 # Product Brief Workflow Phases
 
-Use these phases to keep the brief short and concrete.
+Detailed guidance for each phase of the product brief workflow.
 
 ## Phase 1: Discovery
 
-Goal: understand the problem, stakes, and constraints.
+**Goal:** Understand the problem space and business context.
 
-Ask 2-3 questions at a time.
+### Questions To Ask
 
-- What problem are you solving?
-- Who has it today?
-- Why now?
-- What happens if nothing changes?
-- What constraints matter?
-- How will success be recognized?
+Ask 2-3 at a time.
+
+**Round 1: Problem and context**
+
+- What problem are you trying to solve?
+- Who experiences this problem today?
+- What is the current situation or status quo?
+
+**Round 2: Motivation and stakes**
+
+- Why solve this now? What changed or is changing?
+- What happens if you do not solve it?
+- Is this a greenfield product, a new feature, or an improvement?
+
+**Round 3: Success and constraints**
+
+- How will you know you succeeded?
+- What constraints exist: technical, business, regulatory, or operational?
+- Which stakeholders need to align on this brief?
 
 ### Discovery Output
 
@@ -26,18 +39,30 @@ Ask 2-3 questions at a time.
 **Constraints**: [Known limitations]
 ```
 
-Phase gate: summarize the framing and confirm it if uncertainty remains.
+### Phase Gate
+
+Summarize your understanding and ask the user to confirm or correct the framing before moving on if material uncertainty remains.
 
 ## Phase 2: Product Thesis
 
-Goal: state why this product should work.
+**Goal:** Articulate the core claims about why this product will work.
 
-Each claim should be specific, falsifiable, and value-focused.
+### Thesis Structure
+
+The thesis answers: why will this product succeed where others have not?
+
+Each claim should be:
+
+- specific
+- falsifiable
+- value-focused
 
 ### Thesis Format
 
 ```markdown
 ## Product Thesis
+
+We make [N] basic claims:
 
 **[Claim 1 Title]**
 [2-3 sentences explaining the claim, the expected improvement,
@@ -49,35 +74,63 @@ and the mechanism of value]
 
 ### Antithesis And Risks
 
-Ask what could make the thesis fail.
+Every thesis needs its antithesis. Ask what might cause this not to work.
 
 ```markdown
 ## Antithesis/Risks
+
+What might cause this to not work as we expect?
 
 - [Risk 1: Specific concern that could invalidate a thesis claim]
 - [Risk 2: External factor that could undermine success]
 - [Risk 3: Assumption that might be wrong]
 ```
 
-Phase gate: confirm the claims and risks reflect the user's actual beliefs.
+### Guidelines
+
+Do:
+
+- state claims as beliefs to validate
+- connect claims to a specific value mechanism
+- include honest risks that could invalidate the thesis
+
+Do not:
+
+- make claims that cannot be proven wrong
+- hide risks to make the brief look stronger
+- confuse features with value claims
+
+### Phase Gate
+
+Present the thesis and risks. Ask whether they capture the user's actual beliefs or whether claims, count, or risks need revision.
 
 ## Phase 3: Audience And Metrics
 
-Goal: define who benefits and how success is measured.
+**Goal:** Define who benefits and how success will be measured.
 
 ### Target Audience
 
+Create named personas representing distinct user segments.
+
 ```markdown
 ## Target Audience
+
+We have [N] target personas:
 
 **[Persona Name]**
 [Descriptive nickname] is a [role or situation] who wants to
 [primary goal]. [Optional context about their pain points.]
 ```
 
+### Naming Guidance
+
+- Use memorable names when that helps recall.
+- Let the name hint at the persona's situation.
+- Keep the description focused on behavior relevant to the product.
+
 ### Product Goals
 
-Use adoption, value, and business impact.
+Structure goals around adoption, value, and business impact.
 
 ```markdown
 ## Product Goals
@@ -94,13 +147,44 @@ Use adoption, value, and business impact.
 [Business impact metric and expected direction]
 ```
 
-Phase gate: confirm the personas and metrics represent what actually matters.
+### Metrics Guidance
+
+Do:
+
+- define current baseline and target where possible
+- prioritize value metrics over output metrics
+- acknowledge tradeoffs and downside risks
+
+Do not:
+
+- use vanity metrics without evidence of value
+- set targets without grounding them in current state
+- ignore harm to adjacent business metrics
+
+### Phase Gate
+
+Ask the user to confirm that the personas and metrics represent what actually matters before moving to scenarios.
 
 ## Phase 4: North Star Scenarios
 
-Goal: make the vision concrete through short narratives.
+**Goal:** Create narrative scenarios that make the vision concrete.
 
-Each scenario should start with a user problem, follow the interaction, and end in value capture.
+### What North Star Scenarios Are For
+
+- explaining the product vision to stakeholders
+- revealing missing requirements
+- validating whether the thesis holds in real usage
+- seeding demos, onboarding, and later documentation
+
+### Scenario Construction
+
+For each scenario:
+
+1. Start with a user problem.
+2. Follow the thread of what the persona needs next.
+3. Include where value is observed or measured.
+4. Look for vague or risky plot holes and tighten them.
+5. Avoid implementation details unless they are essential to the product concept.
 
 ### Scenario Format
 
@@ -113,15 +197,23 @@ Each scenario should start with a user problem, follow the interaction, and end 
 value capture.]
 ```
 
-Aim for a happy path plus at least one failure, exception, or escalation path.
+### Scenario Mix
 
-Phase gate: confirm the scenarios are concrete enough to guide later discovery.
+Aim for a set that covers:
+
+- at least one core happy path
+- at least one alternate but still important path
+- at least one failure, exception, or escalation path
+
+### Phase Gate
+
+Review the scenarios with the user and ask whether they make the product vision concrete enough to guide follow-on discovery.
 
 ## Phase 5: Review And Handoff
 
-Goal: deliver a brief that is actionable.
+**Goal:** Deliver a brief that is actionable rather than merely complete-looking.
 
-Final checks:
+### Final Checks
 
 - Does each thesis claim clearly connect to one or more scenarios?
 - Do the risks actually threaten the thesis?
@@ -129,4 +221,10 @@ Final checks:
 - Do the scenarios expose unanswered questions worth carrying into discovery?
 - Is the brief describing value and intent rather than implementation?
 
-Handoff: present the brief in polished markdown. Optionally call out the biggest open question, the riskiest assumption, and the scenario to validate first.
+### Handoff Guidance
+
+When the brief is complete, present it as a polished markdown document. If useful, also call out:
+
+- the strongest open questions
+- the biggest assumption to validate next
+- the scenario most worth turning into discovery or requirements work first

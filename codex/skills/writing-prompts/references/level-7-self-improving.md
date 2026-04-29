@@ -1,10 +1,12 @@
 # Level 7: Self-Improving Prompt
 
-Use when the prompt should keep durable domain knowledge:
+Adds an Expertise section that grows over time. These prompts are built to learn from repeated execution.
 
-- the domain is stable enough to justify upkeep
-- repeated runs produce real lessons
-- there is an explicit improve loop
+Use this level when:
+
+- a domain expert prompt should accumulate practical knowledge
+- repeated implementation cycles should feed improvements back into the prompt
+- you want an expert family such as Plan, Build, and Improve
 
 Pattern:
 
@@ -43,11 +45,11 @@ PATH_TO_SPEC: $ARGUMENTS
 4. Report the work.
 ```
 
-Rules:
+Rules for the expertise section:
 
 - organize it into clear categories
 - keep entries concrete and actionable
 - update it through an explicit improve step, not during normal execution
 - keep workflow stable while expertise evolves
 
-Use sparingly.
+Use Level 7 sparingly. It is powerful, but only worth the extra structure when the domain is durable and the feedback loop is real.

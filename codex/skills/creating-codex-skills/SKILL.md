@@ -1,66 +1,348 @@
 ---
 name: creating-codex-skills
-description: Create, refine, and audit Codex skills. Use when authoring `SKILL.md` files, tightening skill folders, or checking skill metadata and structure.
+description: Expert guidance for creating, writing, and refining Codex skills. Use when working with SKILL.md files, authoring new skills, improving existing skills, or understanding skill structure and best practices.
 ---
 
 # Creating Codex Skills
 
-Build the smallest skill that reliably changes Codex's behavior.
+This skill teaches how to create effective Codex skills following Codex's current skill structure and your personal global configuration conventions.
 
-## Default Approach
+## Quick Start
 
-1. Check `~/bobfiles/claude/skills/` for a close analog before inventing a new workflow.
-2. Keep `SKILL.md` thin. Move detailed material into `references/`. Put repeatable code into `scripts/`.
-3. Write discovery metadata carefully. `name` should be specific; `description` should say what the skill does and when to use it.
-4. Test with real prompts. Remove any section that does not improve results.
-
-## Minimum Shape
+Create a new skill in `~/.codex/skills/`:
 
 ```text
-my-skill/
-├── SKILL.md
-├── agents/openai.yaml
-├── references/
-└── scripts/
+~/.codex/skills/my-skill-name/
 ```
 
-Only `SKILL.md` is required. Add other files only when they earn their cost.
-
-```markdown
+````markdown
+# ~/.codex/skills/my-skill-name/SKILL.md
 ---
 name: my-skill-name
-description: What it does. Use when the user needs it.
+description: Generates weekly status reports from git logs. Use when the user asks for status updates, weekly reports, or standup summaries.
 ---
 
 # My Skill Name
 
 ## Quick Start
-Fastest path to value.
+Run `git log --since="1 week ago"` and summarize changes by author.
 
 ## Instructions
-Core workflow Codex should follow.
+1. Gather commits from the past week
+2. Group by author and category (feature, fix, chore)
+3. Summarize in bullet points
 
 ## Examples
-Only when examples clarify behavior.
+**Input:** "Generate my weekly status"
+**Output:**
+- **Features:** Added user authentication (3 commits)
+- **Fixes:** Resolved login timeout issue
+- **Chores:** Updated dependencies
+````
+
+Before creating a skill from scratch, check `~/bobfiles/claude/skills/` for an analogous Claude skill.
+If one exists, translate that skill into Codex-native form instead of inventing a new workflow from scratch.
+
+## Relationship to Prompt Writing
+
+Skills are prompts packaged for Codex. For foundational prompt engineering, workflow design, and reusable prompt structure, use the local `writing-prompts` skill first:
+
+- [../writing-prompts/SKILL.md](../writing-prompts/SKILL.md)
+
+This skill focuses on packaging prompts as Codex skills:
+- YAML frontmatter for discovery
+- Progressive disclosure via reference files
+- Codex skill structure and metadata
+
+## Core Principles
+
+### 1. Skills Are Prompts
+
+All prompting best practices apply. Be clear and direct. Assume Codex is already capable; only add context Codex does not already have.
+
+### 2. Standard Markdown Format
+
+Use YAML frontmatter plus a markdown body with standard headings.
+
+````markdown
+---
+name: my-skill-name
+description: What it does and when to use it
+---
+
+# My Skill Name
+
+## Quick Start
+Immediate actionable guidance...
+
+## Instructions
+Step-by-step procedures...
+
+## Examples
+Concrete usage examples...
+````
+
+### 3. Progressive Disclosure
+
+Keep `SKILL.md` concise. Split detailed content into reference files. Load only what's needed.
+
+```text
+my-skill/
+├── SKILL.md              # Entry point (required)
+├── references/           # Detailed docs (loaded when needed)
+├── agents/openai.yaml    # UI metadata
+└── scripts/              # Utility scripts (executed, not loaded)
 ```
 
-## Create
+### 4. Effective Descriptions
 
-1. Pick a clear hyphenated name. Avoid vague buckets like `helpers` or `utils`.
-2. Draft a strong description with both capability and trigger language.
-3. Keep the body focused on workflow, constraints, and decisions Codex would not infer on its own.
-4. Add `references/` when details are large, variant-specific, or rarely needed.
-5. Add `scripts/` when determinism matters or code would otherwise be rewritten repeatedly.
-6. Add or refresh `agents/openai.yaml` so the UI text matches the skill.
+The description field enables skill discovery. Include both what the skill does and when to use it.
 
-## Audit
+**Good:**
+```yaml
+description: Extracts text and tables from PDF files, fills forms, and merges documents. Use when working with PDFs, forms, or document extraction.
+```
 
-- Is the description specific enough to trigger correctly?
-- Can any section be deleted without hurting results?
-- Does `SKILL.md` point directly to every reference file Codex may need?
-- Are Claude-specific mechanics translated rather than copied?
-- Does the folder avoid extra docs that do not help the skill run?
+**Bad:**
+```yaml
+description: Helps with documents
+```
 
-## Source Order
+## Skill Structure
 
-Use [references/inspiration.md](references/inspiration.md) when you need source material or a tiebreaker between Bob's patterns and Codex-native structure.
+### Required Frontmatter
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `name` | Yes | Lowercase letters, numbers, hyphens only |
+| `description` | Yes | What it does and when to use it |
+| `allowed-tools` | No | Use only when the skill genuinely needs it |
+| `metadata` | No | Optional skill metadata |
+
+### Naming Conventions
+
+Use clear hyphenated names. Gerund form is often good:
+
+- `processing-pdfs`
+- `analyzing-spreadsheets`
+- `writing-git-commits`
+- `creating-codex-skills`
+
+Avoid vague names such as `helpers`, `utils`, or `codex-stuff`.
+
+### Body Structure
+
+Use standard markdown headings:
+
+````markdown
+# Skill Name
+
+## Quick Start
+Fastest path to value...
+
+## Instructions
+Core guidance Codex follows...
+
+## Examples
+Input/output pairs showing expected behavior...
+
+## Advanced Features
+Additional capabilities (link to reference files)...
+
+## Guidelines
+Rules and constraints...
+````
+
+## What Would You Like To Do?
+
+1. **Create new skill** - Build from scratch
+2. **Audit existing skill** - Check against best practices
+3. **Add component** - Add workflow, reference, or example
+4. **Get guidance** - Understand skill design
+
+Use these workflow files when the request is specific:
+
+- [workflows/create-new-skill.md](workflows/create-new-skill.md) - author a new skill from scratch or from a translated analog
+- [workflows/audit-skill.md](workflows/audit-skill.md) - review an existing skill against the Codex rubric
+- [workflows/verify-skill.md](workflows/verify-skill.md) - do a final correctness and usability pass before considering the skill done
+
+## Creating a New Skill
+
+### Step 1: Check For An Existing Analog
+
+Before choosing a structure, search `~/bobfiles/claude/skills/` for a skill covering the same job.
+
+If a close analog exists:
+
+- treat Bob's skill as the primary source
+- preserve its core workflow, judgment, constraints, and examples
+- translate Claude-specific mechanics into Codex-native instructions
+- keep only the content that still makes sense in Codex
+- avoid reinventing the workflow unless the original is clearly wrong or stale
+
+If no good analog exists, create the skill from scratch.
+
+### Step 2: Choose Type
+
+**Simple skill (single file):**
+- Short and self-contained
+- Best for straightforward guidance
+- No complex workflow splitting
+
+**Progressive disclosure skill (multiple files):**
+- `SKILL.md` as overview
+- Reference files for detailed docs
+- Scripts for utilities when needed
+
+### Step 3: Create SKILL.md
+
+````markdown
+---
+name: formatting-sql
+description: Formats SQL queries with consistent style and indentation. Use when the user has messy SQL, asks to format queries, or mentions SQL style.
+---
+
+# Formatting SQL
+
+## Quick Start
+
+Paste your SQL and I'll format it with consistent indentation, uppercase keywords, and aligned clauses.
+
+## Instructions
+
+1. Uppercase all SQL keywords
+2. Place each major clause on its own line
+3. Indent subqueries consistently
+4. Align column lists vertically when helpful
+5. Preserve query behavior
+
+## Examples
+
+**Input:**
+```sql
+select u.id,u.name,o.total from users u join orders o on u.id=o.user_id where o.total>100
+```
+
+**Output:**
+```sql
+SELECT
+  u.id,
+  u.name,
+  o.total
+FROM users u
+JOIN orders o ON u.id = o.user_id
+WHERE o.total > 100
+```
+
+## Guidelines
+
+- Preserve comments
+- Do not change query logic, only formatting
+````
+
+### Step 4: Add Reference Files (If Needed)
+
+Link from `SKILL.md` to detailed content:
+
+```markdown
+For API reference, see [references/api.md](references/api.md).
+For form filling guidance, see [references/forms.md](references/forms.md).
+```
+
+Keep references one level deep from `SKILL.md`.
+
+### Step 5: Add Scripts (If Needed)
+
+Scripts execute without loading into context:
+
+````markdown
+## Utility Scripts
+
+Analyze a PDF:
+```bash
+python scripts/analyze.py input.pdf > fields.json
+```
+````
+
+### Step 6: Test With Real Usage
+
+1. Test with actual tasks, not contrived examples
+2. Observe where Codex struggles
+3. Refine based on real behavior
+4. Keep the skill small until the workflow proves itself
+
+## Translation-First Rule
+
+When the user asks for a skill in a domain that may already exist in `~/bobfiles/claude/skills/`:
+
+1. Search Bob's skills first.
+2. If a close analog exists, use it as the primary source.
+3. Preserve the original workflow, judgment, examples, and constraints.
+4. Translate Claude-specific mechanics into Codex-native instructions, tools, and file references.
+5. Only create the skill from scratch when no suitable analog exists.
+
+## Auditing Existing Skills
+
+Check against this rubric:
+
+- [ ] Valid YAML frontmatter (`name` + `description`)
+- [ ] Description includes clear trigger language
+- [ ] Uses standard markdown headings
+- [ ] `SKILL.md` gets to value quickly
+- [ ] References are one level deep
+- [ ] Examples are concrete, not abstract
+- [ ] Consistent terminology
+- [ ] No stale assistant-specific assumptions unless intentional
+- [ ] Scripts handle errors explicitly when present
+
+## Common Patterns
+
+### Template Pattern
+
+Provide output templates for consistent results.
+
+### Workflow Pattern
+
+For complex multi-step tasks, provide explicit numbered steps.
+
+### Conditional Pattern
+
+Guide through decision points:
+
+````markdown
+## Choose Your Approach
+
+**Creating new content?** Follow the creation workflow.
+**Editing existing?** Follow the editing workflow.
+````
+
+## Anti-Patterns to Avoid
+
+- Vague descriptions
+- Deep nesting
+- Too many options without a default
+- Rebuilding a skill from scratch when a suitable Bob skill already exists
+- Copying Claude-specific mechanics directly into Codex
+- Time-sensitive guidance that will rot quickly
+- Overbuilding a skill before the workflow is proven
+
+## Reference Files
+
+For detailed guidance and inspiration, see:
+
+- [references/inspiration.md](references/inspiration.md) - Bob repo references and Codex-native adaptation notes
+- [references/best-practices.md](references/best-practices.md) - concise authoring rules that survive translation from other skill ecosystems
+- [references/skill-structure.md](references/skill-structure.md) - recommended Codex skill layout and when to add supporting files
+- [templates/simple-skill.md](templates/simple-skill.md) - starting point for a compact single-file skill
+- [templates/router-skill.md](templates/router-skill.md) - starting point for a skill that routes between multiple workflows
+
+## Success Criteria
+
+A well-structured skill:
+- Has valid YAML frontmatter with descriptive name and description
+- Uses standard markdown headings
+- Keeps `SKILL.md` concise
+- Links to reference files for detailed content
+- Includes concrete examples with input/output pairs
+- Preserves the core workflow and intent of an analogous Bob skill when one exists
+- Has been tested with real usage

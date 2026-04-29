@@ -5,26 +5,90 @@ description: Routes substantial feature work through the existing Codex research
 
 # Coding Workflow
 
-Use this skill for substantial implementation work when the next step is not obvious.
+Use this skill when the user wants significant implementation work and the next step is not obvious from the request alone.
 
-This is a router. Choose the earliest unresolved stage. For small, explicit changes, implement directly.
+This is a router. It chooses the right next skill, keeps work moving, and avoids re-explaining workflow logic that already exists elsewhere.
 `QRDSPI` means the staged workflow across Question, Research, Design, Structure, Plan, and Implement. It is stage vocabulary, not an orchestration system.
 
-## Route
+## Quick Start
 
-- Need current-state understanding: `research-codebase`
-- Need option analysis or tradeoffs: `thinking-patterns`
-- Need design alignment after comparing options: `design-discussion`
-- Need safe phases: `structure-outline`
-- Need a concrete plan from approved structure: `plan-implementation`
-- Need to execute the next approved phase: `implement-plan`
-- Need test-first coding: `practicing-tdd`
+Start at the earliest stage the request still needs. Do not force every task through every stage.
 
-## Rules
+- Unclear scope or missing current-state understanding: `research-codebase`
+- Competing approaches or design tradeoffs: `thinking-patterns` then `design-discussion`
+- Agreed direction but no phase structure: `structure-outline`
+- Approved structure but no concrete implementation plan: `plan-implementation`
+- Approved plan with a ready next phase: `implement-plan`
+- Active coding inside execution: `practicing-tdd`
 
-- Keep this skill thin. Route to the next skill; do not restate its workflow.
-- Prefer the lightest stage that resolves the current blocker.
-- Skip this skill for tiny fixes, review-only work, documentation-only work, or explanation-only requests.
-- Do not plan while scope or design is unsettled.
-- Do not keep planning once an approved phase is ready to implement.
-- Use `practicing-tdd` during execution when meaningful automated tests exist.
+For small, already-specified changes, skip this skill and implement directly.
+For QRDSPI work, invoke the matching stage skill directly and use the persisted artifacts as the handoff contract between stages.
+
+## When To Use
+
+Use `coding-workflow` when:
+
+- the user asks to build or implement a feature
+- the task spans multiple files or subsystems
+- the implementation path is unclear
+- requirements are partial and need staged clarification
+- the work will likely benefit from explicit research, design, or planning handoffs
+
+## When Not To Use
+
+Do not use `coding-workflow` for:
+
+- tiny fixes with an obvious implementation path
+- narrowly scoped changes where the user already gave the exact edit
+- isolated refactors that do not need research or staged planning
+- review-only, documentation-only, or explanation-only requests
+
+In those cases, go straight to the relevant execution skill or complete the work directly.
+
+## Routing Table
+
+| Request Shape | Next Skill | Why |
+| --- | --- | --- |
+| "How does this part work?" | `research-codebase` | Document the current state before proposing changes |
+| "Think through the options" | `thinking-patterns` | Make the reasoning visible and auditable |
+| "Help me choose a direction" | `thinking-patterns` -> `design-discussion` | Compare approaches, then lock the design |
+| "Break this into safe phases" | `structure-outline` | Define the phase boundaries before detail |
+| "Write the implementation plan" | `plan-implementation` | Turn approved structure into concrete steps |
+| "Complete the next approved step" | `implement-plan` | Execute exactly one approved phase |
+| "Implement this with tests first" | `practicing-tdd` | Enforce RED -> GREEN -> REFACTOR |
+
+## Workflow
+
+1. Classify the request.
+   - Decide whether the user needs research, design, structure, a detailed plan, or direct execution.
+   - Choose the earliest unresolved stage and route there.
+
+2. Keep the workflow thin.
+   - Hand off to the existing specialized skill instead of copying its method.
+   - Preserve the boundaries and outputs of that downstream skill.
+
+3. Advance only when the current stage is ready.
+   - Do not jump into implementation if the design is still unsettled.
+   - Do not create a detailed plan when structure or scope is still ambiguous.
+   - Do not keep planning when the user already has an approved plan and just needs execution.
+
+4. Use TDD during coding.
+   - When the chosen path reaches implementation, follow `practicing-tdd` whenever meaningful automated tests exist.
+   - If the task is documentation-only or otherwise lacks a meaningful test path, say so explicitly and continue with the narrowest safe verification available.
+
+## Default Progression
+
+The common path for substantial feature work is:
+
+`research-codebase` -> `thinking-patterns` / `design-discussion` -> `structure-outline` -> `plan-implementation` -> `implement-plan`
+
+That path is a default, not a mandate. Enter where the request actually starts.
+
+## Guidelines
+
+- Treat this skill as orchestration, not as a second planning system
+- Prefer the lightest valid next stage
+- Name the next skill explicitly so the handoff is unambiguous
+- For QRDSPI work, keep stage semantics aligned across the stage skills instead of inventing parallel workflow rules
+- Keep simple work out of the staged workflow
+- Never duplicate downstream templates or detailed instructions here

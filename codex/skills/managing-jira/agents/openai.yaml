@@ -1,4 +1,4 @@
 interface:
   display_name: "Managing Jira"
-  short_description: "Summarize Jira tickets"
-  default_prompt: "Load this Jira ticket into a compact summary"
+  short_description: "Normalize Jira tickets for downstream work"
+  default_prompt: "Use managing Jira to load this ticket into a compact summary for planning or implementation"
