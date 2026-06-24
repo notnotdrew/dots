@@ -54,6 +54,9 @@ trust_level = "trusted"
 [projects."/Users/drewprice/Documents/dev/fs/extra-beverly-ristow"]
 trust_level = "trusted"
 
+[projects."/Users/drewprice/Documents/dev/receipts"]
+trust_level = "trusted"
+
 [notice.model_migrations]
 "gpt-5.1" = "gpt-5.2-codex"
 "gpt-5.2-codex" = "gpt-5.4"

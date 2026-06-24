@@ -2,12 +2,13 @@ codex/.tmp/
 codex/artifacts
 cdx-artifacts/*
 !cdx-artifacts/.keep
+codex/*.sqlite*
 codex/auth.json
 codex/cache/
-codex/models_cache.json
 codex/history*
 codex/installation_id
 codex/log*
+codex/models_cache.json
 codex/rules/
 codex/session*
 codex/shell_snapshots/

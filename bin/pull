@@ -1,9 +1,144 @@
 #!/bin/bash
+set -euo pipefail
 
-if [ "$1" = "-d" ]; then
-  hub pull-request -opda notnotdrew
-elif [ "$1" = "-no" ]; then
-  hub pull-request -opa notnotdrew
-else
-  hub pull-request -opa notnotdrew --reviewer flatiron-labs/engineering
+mode_args=(-opa notnotdrew --reviewer flatiron-labs/engineering)
+base_branch=""
+editor_script=""
+
+cleanup() {
+  if [[ -n "$editor_script" ]]; then
+    rm -f "$editor_script"
+  fi
+}
+trap cleanup EXIT
+
+resolve_stack_line() {
+  local branch="$1"
+  local base_pr_number
+
+  base_pr_number="$(hub pr list -h "$branch" -f '%i' -L 1 2>/dev/null || true)"
+
+  if [[ -n "$base_pr_number" ]]; then
+    printf 'Stacks on %s\n' "$base_pr_number"
+  fi
+}
+
+build_editor_script() {
+  local stack_line="$1"
+
+  editor_script="$(mktemp "${TMPDIR:-/tmp}/pull-editor.XXXXXX")"
+
+  cat <<'EOF' > "$editor_script"
+#!/bin/bash
+set -euo pipefail
+
+file_path="$1"
+stack_line="$PULL_STACK_LINE"
+tmp_file="$(mktemp "${TMPDIR:-/tmp}/pull-message.XXXXXX")"
+editable_file="$(mktemp "${TMPDIR:-/tmp}/pull-editable.XXXXXX")"
+ignored_file="$(mktemp "${TMPDIR:-/tmp}/pull-ignored.XXXXXX")"
+
+cleanup() {
+  rm -f "$tmp_file"
+  rm -f "$editable_file"
+  rm -f "$ignored_file"
+}
+trap cleanup EXIT
+
+if ! grep -Fqx "$stack_line" "$file_path"; then
+  scissor_line="$(grep -n -m 1 '^# .* >8 .*' "$file_path" | cut -d: -f1 || true)"
+
+  if [[ -n "$scissor_line" ]]; then
+    sed -n "1,$((scissor_line - 1))p" "$file_path" > "$editable_file"
+    sed -n "${scissor_line},\$p" "$file_path" > "$ignored_file"
+  else
+    cp "$file_path" "$editable_file"
+    : > "$ignored_file"
+  fi
+
+  awk -v stack_line="$stack_line" '
+    {
+      lines[NR] = $0
+    }
+
+    END {
+      if (NR == 0) {
+        print ""
+        print stack_line
+        print ""
+        exit
+      }
+
+      print lines[1]
+
+      if (lines[1] == "") {
+        print stack_line
+        print ""
+
+        for (i = 2; i <= NR; i++) {
+          print lines[i]
+        }
+
+        exit
+      }
+
+      for (i = 2; i <= NR; i++) {
+        print lines[i]
+
+        if (!inserted && lines[i] == "") {
+          print stack_line
+          print ""
+          inserted = 1
+        }
+      }
+
+      if (!inserted) {
+        print ""
+        print stack_line
+      }
+    }
+  ' "$editable_file" > "$tmp_file"
+
+  cat "$ignored_file" >> "$tmp_file"
+
+  mv "$tmp_file" "$file_path"
 fi
+
+exec /bin/sh -c "$PULL_REAL_EDITOR \"\$1\"" pull-editor "$file_path"
+EOF
+
+  chmod +x "$editor_script"
+  export PULL_REAL_EDITOR
+  export PULL_STACK_LINE="$stack_line"
+}
+
+if [[ "${1:-}" == "-d" ]]; then
+  mode_args=(-opda notnotdrew)
+  shift
+elif [[ "${1:-}" == "-no" ]]; then
+  mode_args=(-opa notnotdrew)
+  shift
+fi
+
+if [[ $# -gt 0 ]]; then
+  base_branch="$1"
+fi
+
+hub_args=(pull-request "${mode_args[@]}")
+
+if [[ -n "$base_branch" ]]; then
+  hub_args+=(--base "$base_branch")
+fi
+
+if [[ -n "$base_branch" ]]; then
+  stack_line="$(resolve_stack_line "$base_branch")"
+
+  if [[ -n "$stack_line" ]]; then
+    PULL_REAL_EDITOR="$(git var GIT_EDITOR)"
+    build_editor_script "$stack_line"
+    GIT_EDITOR="$editor_script" hub "${hub_args[@]}"
+    exit 0
+  fi
+fi
+
+hub "${hub_args[@]}"

@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+index_backup=""
+restore_index_dir=""
+
+cleanup() {
+  if [[ -n "$index_backup" && -n "$restore_index_dir" && -f "$index_backup" && -d "$restore_index_dir" ]]; then
+    cp "$index_backup" "$restore_index_dir/index"
+  fi
+
+  if [[ -n "$index_backup" && -f "$index_backup" ]]; then
+    rm -f "$index_backup"
+  fi
+}
+trap cleanup EXIT
+
+die() {
+  echo "bundle-gem-rspec-active-support: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: bundle-gem-rspec-active-support <name>
+
+Creates a new gem with `bundle gem <name> --exe --test=rspec`, adds
+`activesupport` and `pry` as runtime dependencies, and requires:
+
+  require "active_support"
+  require "active_support/core_ext"
+  require "pry"
+
+It also configures RuboCop with:
+
+  inherit_gem:
+    rubocop-shopify: rubocop.yml
+
+  plugins:
+    - rubocop-md
+    - rubocop-rspec
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+configure_bundle_path() {
+  bundle config set path '.bundle'
+}
+
+main() {
+  if [[ $# -ne 1 ]]; then
+    usage
+    exit 1
+  fi
+
+  local gem_dir="$1"
+  local gemspec
+  local gemfile
+  local git_dir
+  local exe_file
+  local exe_mode
+  local entry_file
+
+  require_command bundle
+  require_command git
+  require_command ruby
+
+  bundle gem "$gem_dir" --exe --test=rspec
+
+  [[ -d "$gem_dir" ]] || die "expected generated directory: $gem_dir"
+
+  git_dir="$(git -C "$gem_dir" rev-parse --git-dir)"
+  [[ -n "$git_dir" ]] || die "could not find git directory in $gem_dir"
+
+  if [[ "$git_dir" != /* ]]; then
+    git_dir="$gem_dir/$git_dir"
+  fi
+
+  [[ -f "$git_dir/index" ]] || die "could not find git index in $git_dir"
+  index_backup="$(mktemp)"
+  cp "$git_dir/index" "$index_backup"
+  restore_index_dir="$git_dir"
+
+  gemspec="$(find "$gem_dir" -maxdepth 1 -type f -name '*.gemspec' | head -n 1)"
+  [[ -n "$gemspec" ]] || die "could not find gemspec in $gem_dir"
+
+  gemfile="$gem_dir/Gemfile"
+  [[ -f "$gemfile" ]] || die "could not find Gemfile in $gem_dir"
+
+  exe_file="$gem_dir/exe/$(basename "$gem_dir")"
+
+  entry_file="$(
+    find "$gem_dir/lib" -type f -name '*.rb' ! -name 'version.rb' \
+      | LC_ALL=C sort \
+      | head -n 1
+  )"
+  [[ -n "$entry_file" ]] || die "could not find entry file in $gem_dir/lib"
+
+  ruby - "$gemspec" <<'RUBY'
+path = ARGV.fetch(0)
+content = File.read(path)
+dependencies = [
+  %(  spec.add_dependency "activesupport"\n),
+  %(  spec.add_dependency "pry"\n)
+]
+replacements = {
+  %q{"TODO: Put your gem's website or public repo URL here."} => %q{"https://example.com"},
+  %q{"TODO: Set to your gem server 'https://example.com'"} => %q{"https://rubygems.org"},
+  %q{"TODO: Set to 'http://mygemserver.com'"} => %q{"https://rubygems.org"},
+  %q{"TODO: Put your gem's public repo URL here."} => %q{"https://example.com/source"},
+  %q{"TODO: Put your gem's CHANGELOG.md URL here."} => %q{"https://example.com/changelog"}
+}
+
+replacements.each do |from, to|
+  content.gsub!(from, to)
+end
+
+content.gsub!(/^(\s*spec\.summary\s*=\s*).+$/) do
+  prefix = Regexp.last_match(1)
+  line = Regexp.last_match(0)
+  line.match?(/TODO|FIXME/) ? %(#{prefix}"Generated gem.") : line
+end
+
+content.gsub!(/^(\s*spec\.description\s*=\s*).+$/) do
+  prefix = Regexp.last_match(1)
+  line = Regexp.last_match(0)
+  line.match?(/TODO|FIXME/) ? %(#{prefix}"Generated gem.") : line
+end
+
+content.gsub!(/^(\s*spec\.summary\s+=\s+).+$/) do
+  prefix = Regexp.last_match(1)
+  line = Regexp.last_match(0)
+  line.match?(/TODO|FIXME/) ? %(#{prefix}%q{Generated gem.}) : line
+end
+
+content.gsub!(/^(\s*spec\.description\s+=\s+).+$/) do
+  prefix = Regexp.last_match(1)
+  line = Regexp.last_match(0)
+  line.match?(/TODO|FIXME/) ? %(#{prefix}%q{Generated gem.}) : line
+end
+
+unless dependencies.all? { |dependency| content.include?(dependency) }
+  marker = %(  # spec.add_dependency "example-gem", "~> 1.0"\n)
+  insert_before = %(  # For more information and examples about making a new gem, check out our\n)
+  dependency_block = "#{dependencies.join}\n"
+
+  if content.include?(marker)
+    content.sub!(marker, "#{dependency_block}#{marker}")
+  elsif content.include?(insert_before)
+    content.sub!(insert_before, "#{dependency_block}#{insert_before}")
+  elsif content.match?(/\nend\s*\z/)
+    content.sub!(/\nend\s*\z/, "\n#{dependency_block}end\n")
+  else
+    abort("failed to update #{path}")
+  end
+end
+
+File.write(path, content)
+RUBY
+
+  ruby - "$gemfile" <<'RUBY'
+path = ARGV.fetch(0)
+content = File.read(path)
+gems = [
+  %(gem "rubocop-shopify", require: false\n),
+  %(gem "rubocop-md", require: false\n),
+  %(gem "rubocop-rspec", require: false\n)
+]
+
+missing_gems = gems.reject { |gem_line| content.include?(gem_line) }
+
+unless missing_gems.empty?
+  insertion_point = /(^gemspec\s*$\n?)/m
+  gem_block = "#{missing_gems.join}\n"
+
+  if content.match?(insertion_point)
+    content.sub!(insertion_point, "\\1#{gem_block}")
+  else
+    content = "#{content.rstrip}\n\n#{gem_block}"
+  end
+end
+
+File.write(path, content)
+RUBY
+
+  ruby - "$entry_file" <<'RUBY'
+path = ARGV.fetch(0)
+content = File.read(path)
+requires = <<~REQUIRES
+  require "active_support"
+  require "active_support/core_ext"
+  require "pry"
+
+REQUIRES
+
+unless content.include?('require "active_support"') && content.include?('require "pry"')
+  frozen_string = "# frozen_string_literal: true\n\n"
+
+  if content.start_with?(frozen_string)
+    content.sub!(frozen_string, "#{frozen_string}#{requires}")
+  else
+    content = "#{requires}#{content}"
+  end
+end
+
+File.write(path, content)
+RUBY
+
+  cat > "$gem_dir/.rubocop.yml" <<'EOF'
+---
+inherit_gem:
+  rubocop-shopify: rubocop.yml
+
+plugins:
+  - rubocop-md
+  - rubocop-rspec
+EOF
+
+  (
+    cd "$gem_dir"
+    configure_bundle_path
+    bundle install
+  )
+
+  if [[ -f "$exe_file" ]]; then
+    exe_mode="$(git -C "$gem_dir" ls-files --stage -- "exe/$(basename "$gem_dir")" | awk 'NR == 1 { print $1 }')"
+
+    case "$exe_mode" in
+      100644)
+        chmod 644 "$exe_file"
+        ;;
+      100755)
+        chmod 755 "$exe_file"
+        ;;
+    esac
+  fi
+}
+
+main "$@"
