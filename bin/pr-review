@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Launch Codex with the local `pr-review` skill and a validated PR reference.
+# Launch Cursor Agent with the local `pr-review` skill and a validated PR reference.
 #
 # Usage:
 #   pr-review <PR-URL>
@@ -31,11 +31,11 @@ pr_ref="$1"
 [ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
 "$PR_PARSE" "$pr_ref" >/dev/null || exit 1
 
-prompt="\$pr-review $pr_ref"
+prompt="/pr-review $pr_ref"
 
 if "$dry_run"; then
-    printf 'codex %s\n' "$prompt"
+    printf 'agent %s\n' "$prompt"
     exit 0
 fi
 
-exec codex "$prompt"
+exec agent "$prompt"
