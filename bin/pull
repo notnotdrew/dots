@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-mode_args=(-opa notnotdrew --reviewer flatiron-labs/engineering)
+mode_args=(-opa notnotdrew)
 base_branch=""
 editor_script=""
 
