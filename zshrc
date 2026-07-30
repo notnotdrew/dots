@@ -54,3 +54,5 @@ eval "$(mise activate zsh)"
 HEROKU_AC_ZSH_SETUP_PATH=/Users/drewprice/Library/Caches/heroku/autocomplete/zsh_setup && test -f $HEROKU_AC_ZSH_SETUP_PATH && source $HEROKU_AC_ZSH_SETUP_PATH;
 
 . "$HOME/.local/bin/env"
+
+if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi

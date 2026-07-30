@@ -5,213 +5,134 @@ description: "Reviews GitHub pull requests using the PERFECT code review methodo
 
 # PR Review
 
-Structured pull request review applying the PERFECT methodology in strict priority order. This skill is for reviewing GitHub PRs with full-file context, not just diff snippets.
+Review a GitHub pull request with full-file context, applying PERFECT in priority order: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, then Taste.
 
 ## Quick Start
 
-Use this skill with a PR number or GitHub PR URL:
+Run the launcher from the repository containing the pull request:
 
-```text
-$pr-review 42
-$pr-review https://github.com/org/repo/pull/42
+```bash
+pr-review 42
+pr-review https://github.com/org/repo/pull/42
 ```
 
 Prerequisites:
 - `git`
 - `gh`
+- `jq`
+- `wt` (WorkTrunk)
+- `agent` when using the launcher
 - GitHub auth configured for the target repo
 
-Helper scripts live next to this skill:
-- [scripts/gh-pr-parse](scripts/gh-pr-parse)
-- [scripts/pr-review-worktree](scripts/pr-review-worktree)
-
-Resolve those paths relative to this skill directory. Do not parse PR URLs heuristically when the parser script can do it deterministically.
+Use [scripts/gh-pr-parse](scripts/gh-pr-parse) to validate and parse the reference. Resolve the helper relative to this skill directory.
 
 ## Inputs
 
-- **PR ID**: e.g. `42` when already in the target repository
+- **PR number**: e.g. `42`
 - **PR URL**: e.g. `https://github.com/org/repo/pull/42`
+
+Both forms must be run from the target repository so WorkTrunk can create or locate the PR checkout.
 
 ## Workflow
 
-### 1. Gather PR Data
+### 1. Prepare The Checkout
 
-Use the worktree helper to create an isolated checkout of the PR head:
+Validate the input and create or select an isolated checkout of the PR head:
 
 ```bash
-PR_REVIEW_WORKTREE="<absolute path to scripts/pr-review-worktree resolved from this skill>"
+PR_PARSE="<absolute path to scripts/gh-pr-parse resolved from this skill>"
+PR_REF="<PR-ID-or-URL>"
+"$PR_PARSE" "$PR_REF" >/dev/null
 
-eval "$("$PR_REVIEW_WORKTREE" setup "<PR-ID-or-URL>")"
+case "$PR_REF" in
+  *[!0-9]*) WORKTRUNK_REF="$PR_REF" ;;
+  *) WORKTRUNK_REF="pr:${PR_REF}" ;;
+esac
 
-REPO_FLAG=""
-if [ -n "${OWNER:-}" ] && [ -n "${REPO:-}" ]; then
-  REPO_FLAG="--repo ${OWNER}/${REPO}"
-fi
-
-gh pr view "$PR_NUMBER" $REPO_FLAG \
-  --json title,body,files,additions,deletions,baseRefName,headRefName,url,state,reviewDecision,author
-
-gh pr diff "$PR_NUMBER" $REPO_FLAG
-gh pr checks "$PR_NUMBER" $REPO_FLAG
-gh pr view "$PR_NUMBER" $REPO_FLAG --json files --jq '.files[].path'
+SWITCH_RESULT=$(wt switch --no-cd --format json "$WORKTRUNK_REF")
+REVIEW_DIR=$(printf '%s\n' "$SWITCH_RESULT" | jq -er '.path')
+WORKTRUNK_ACTION=$(printf '%s\n' "$SWITCH_RESULT" | jq -er '.action')
 ```
 
-If setup fails because the environment blocks network access or `gh` access, surface that immediately instead of guessing.
+If setup fails because the environment blocks network or GitHub access, report the failure and stop.
 
-### 2. Read Changed Files In Full
+### 2. Gather Evidence
 
-For each changed source file, read the full file from `$REVIEW_DIR/<path>`, not just the diff hunk. Use the diff to locate changes, then use the full file to understand context, invariants, and local conventions.
+Get the PR metadata, diff, checks, and changed paths:
 
-Skip:
+```bash
+gh pr view "$PR_REF" \
+  --json title,body,files,additions,deletions,baseRefName,headRefName,url,state,reviewDecision,author
+
+gh pr diff "$PR_REF"
+gh pr checks "$PR_REF"
+gh pr view "$PR_REF" --json files --jq '.files[].path'
+```
+
+Read each changed source file in full from `$REVIEW_DIR/<path>`. Use the diff to locate the change and the full file to understand its context and local conventions.
+
+Skip by default:
 - generated files
 - lockfiles
 - binary assets
-- prose-only files unless the user explicitly wants them reviewed
+- prose-only files
 
 If the PR contains no source code files, state that no code review is applicable and stop.
 
 ### 3. Load Relevant Stack Skills
 
-Use [language-skill-mapping.md](references/language-skill-mapping.md) to map changed files to installed skills. Load only the matching local skills that exist in this environment.
-
-These stack skills inform:
-- **Form**: language and framework design norms
-- **Edge Cases**: ecosystem-specific failure modes
-- **Reliability**: security and performance expectations
-- **Evidence**: testing tools and conventions
-- **Clarity**: idiomatic naming and organization
+Use [language-skill-mapping.md](references/language-skill-mapping.md) to identify relevant installed skills. Load only skills that match the changed files.
 
 If no local skill exists for a language in the PR, continue with general engineering judgment and note that limitation in the review.
 
 ### 4. Apply PERFECT In Order
 
-Review the PR in this strict priority order:
-
-1. **Purpose**
-2. **Edge Cases**
-3. **Reliability**
-4. **Form**
-5. **Evidence**
-6. **Clarity**
-7. **Taste**
-
-Load [perfect-principles.md](references/perfect-principles.md) for the detailed checks and reporting expectations per principle.
-
-Earlier failures matter more than later ones. A PR that misses the task or has correctness bugs should not be softened by style praise.
-
-### 5. Produce The Review
-
-Use this structure:
+Load [perfect-principles.md](references/perfect-principles.md), then evaluate all seven principles in order. Earlier failures outweigh later strengths.
 
 ```markdown
 # PERFECT Review: PR #<ID> — <title>
 
-**PR**: <url>
-**Author**: <author>
-**Base**: <base> <- <head>
-**Files changed**: <count> (+<additions> -<deletions>)
+<PR URL, author, base/head, size, and CI status>
 
-## 1. Purpose
-**Verdict**: PASS | FAIL | NEEDS DISCUSSION
-<task understanding, implementation summary, and requirement gaps>
+## Findings
 
-### Findings
-- **[file:line]**: <problem, why it matters, fix direction>
+### 1. Purpose — PASS | FAIL | NEEDS DISCUSSION
+### 2. Edge Cases — PASS | CONCERN | FAIL
+### 3. Reliability — PASS | CONCERN | FAIL
+### 4. Form — PASS | CONCERN | FAIL
+### 5. Evidence — PASS | CONCERN | FAIL
+### 6. Clarity — PASS | CONCERN
+### 7. Taste — N/A
 
-## 2. Edge Cases
-**Verdict**: PASS | CONCERN | FAIL
-
-### Findings
-- **[file:line]**: <scenario, impact, handling>
-
-## 3. Reliability
-**Verdict**: PASS | CONCERN | FAIL
-
-### Findings
-- **[file:line]**: <performance or security concern>
-
-## 4. Form
-**Verdict**: PASS | CONCERN | FAIL
-
-### Findings
-- **[file:line]**: <design concern with argument and alternative>
-
-## 5. Evidence
-**Verdict**: PASS | CONCERN | FAIL
-<CI status and test coverage assessment>
-
-### Findings
-- **[file:line]**: <test gap or low-value test concern>
-
-## 6. Clarity
-**Verdict**: PASS | CONCERN
-
-### Findings
-- **[file:line]**: <clarity issue and improvement>
-
-## 7. Taste
-**Verdict**: N/A
-
-### Suggestions
-- **[file:line]**: <non-blocking preference with reasoning>
+For each finding:
+- **[file:line] [blocking|advisory]** — <problem, impact, and fix direction>
 
 ## Summary
 
-| Principle | Verdict |
-|-----------|---------|
-| Purpose | PASS/FAIL |
-| Edge Cases | PASS/CONCERN/FAIL |
-| Reliability | PASS/CONCERN/FAIL |
-| Form | PASS/CONCERN/FAIL |
-| Evidence | PASS/CONCERN/FAIL |
-| Clarity | PASS/CONCERN |
-| Taste | N/A |
-
 **Recommendation**: APPROVE | REQUEST CHANGES | NEEDS DISCUSSION
+<One short paragraph covering overall risk and any verification gaps.>
 ```
 
-Findings must be concrete. Every issue should explain:
-- what is wrong
-- why it matters
-- what direction would fix it
+Omit empty finding lists, but include a verdict for every principle. Findings must be concrete, line-specific when possible, and clearly blocking or advisory. Do not invent findings to fill the structure.
 
-### 6. Clean Up
+### 5. Clean Up
 
-When the review is complete, remove the worktree:
+Remove the checkout only if this skill created it. Leave pre-existing WorkTrunk checkouts alone.
 
 ```bash
-"$PR_REVIEW_WORKTREE" cleanup "$REVIEW_DIR"
+if [ "$WORKTRUNK_ACTION" = "created" ]; then
+  wt remove --yes --foreground "$REVIEW_DIR"
+fi
 ```
 
 ## Guidelines
 
-### Review Ethos
-
 - Review code, not the author.
 - Do not block on taste.
 - Do not invent missing requirements.
-- Do not give empty approvals such as `LGTM` without demonstrating understanding.
-
-### Scope Boundaries
-
 - Focus on code changed by the PR.
 - Read surrounding code when needed to evaluate correctness.
 - Do not expand into unrelated refactoring requests.
 - Skip documentation review unless the user asks for it.
-
-### Evidence Standards
-
 - Prefer specific bug reports to vague discomfort.
-- Use line references whenever possible.
-- Distinguish blocking failures from advisory concerns.
 - If CI or local execution cannot be checked, say so explicitly.
-
-## Specialized Lenses
-
-Combine this skill with existing local stack skills where relevant:
-- `developing-typescript`
-- `testing-react-with-vitest`
-- `developing-bash`
-- `review-code`
-
-Use `review-code` when you need extra depth on test quality, maintainability, or severity framing inside the changed code.

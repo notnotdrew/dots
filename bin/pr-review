@@ -1,6 +1,7 @@
 #!/bin/sh
 
-# Launch Cursor Agent with the local `pr-review` skill and a validated PR reference.
+# Launch Cursor Agent in a WorkTrunk checkout with the local `pr-review` skill.
+# Run this from the repository containing the pull request.
 #
 # Usage:
 #   pr-review <PR-URL>
@@ -9,8 +10,6 @@
 
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-ROOT_DIR=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
 PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 
 die() {
@@ -24,18 +23,26 @@ if [ "${1:-}" = "--dry-run" ]; then
     shift
 fi
 
-[ $# -ge 1 ] || die "usage: pr-review [--dry-run] <PR-URL-or-ID>"
+[ $# -eq 1 ] || die "usage: pr-review [--dry-run] <PR-URL-or-ID>"
 
 pr_ref="$1"
 
 [ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
 "$PR_PARSE" "$pr_ref" >/dev/null || exit 1
 
+case "$pr_ref" in
+    *[!0-9]*) worktree_ref="$pr_ref" ;;
+    *) worktree_ref="pr:$pr_ref" ;;
+esac
+
 prompt="/pr-review $pr_ref"
 
 if "$dry_run"; then
-    printf 'agent %s\n' "$prompt"
+    printf 'worktree: %s\nprompt: %s\n' "$worktree_ref" "$prompt"
     exit 0
 fi
 
-exec agent "$prompt"
+command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
+command -v agent >/dev/null 2>&1 || die "Cursor Agent (agent) is required but not found"
+
+exec wt switch --execute agent "$worktree_ref" -- "$prompt"
