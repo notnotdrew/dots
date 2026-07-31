@@ -1,0 +1,1247 @@
+#!/bin/sh
+
+set -eu
+
+export LC_ALL=C
+
+script_name=${0##*/}
+
+fail() {
+    printf '%s\n' "$script_name: $*" >&2
+    exit 1
+}
+
+if [ "$#" -ne 1 ]; then
+    fail "usage: $script_name <review-series-directory>"
+fi
+
+review_dir=$1
+[ -d "$review_dir" ] || fail "review-series directory not found: $review_dir"
+
+for artifact_name in context-brief.md findings-ledger.md perfect-review.md; do
+    [ -f "$review_dir/$artifact_name" ] ||
+        fail "missing canonical artifact: $artifact_name"
+done
+
+context_file=$review_dir/context-brief.md
+ledger_file=$review_dir/findings-ledger.md
+review_file=$review_dir/perfect-review.md
+
+field_value() {
+    field_file=$1
+    field_name=$2
+    awk -v prefix="- $field_name: " '
+        /^## Coverage[[:space:]]*$/ {
+            exit
+        }
+        index($0, prefix) == 1 {
+            print substr($0, length(prefix) + 1)
+            exit
+        }
+    ' "$field_file"
+}
+
+require_field() {
+    required_file=$1
+    required_name=$2
+    required_value=$(field_value "$required_file" "$required_name")
+    [ -n "$required_value" ] ||
+        fail "missing required field: ${required_file##*/}: $required_name"
+}
+
+for artifact_file in "$context_file" "$ledger_file" "$review_file"; do
+    require_field "$artifact_file" Owner
+    require_field "$artifact_file" Repository
+    require_field "$artifact_file" PRNumber
+    require_field "$artifact_file" Mode
+    require_field "$artifact_file" ModeSelection
+    require_field "$artifact_file" ObservedHead
+    require_field "$artifact_file" Readiness
+done
+
+require_field "$context_file" PRURL
+require_field "$context_file" ObservedBase
+require_field "$context_file" ReadinessHistory
+require_field "$ledger_file" UnresolvedMaterialDecisions
+require_field "$review_file" PRURL
+require_field "$review_file" ContextArtifact
+require_field "$review_file" LedgerArtifact
+
+expected_owner=$(field_value "$context_file" Owner)
+expected_repository=$(field_value "$context_file" Repository)
+expected_pr_number=$(field_value "$context_file" PRNumber)
+expected_mode=$(field_value "$context_file" Mode)
+expected_mode_selection=$(field_value "$context_file" ModeSelection)
+expected_head=$(field_value "$context_file" ObservedHead)
+unresolved_material_decisions=$(field_value "$ledger_file" UnresolvedMaterialDecisions)
+
+case "$expected_pr_number" in
+    ''|*[!0-9]*) fail "invalid PRNumber: $expected_pr_number" ;;
+    *[1-9]*) ;;
+    *) fail "invalid PRNumber: $expected_pr_number" ;;
+esac
+
+case "$expected_mode" in
+    Standard|Deep) ;;
+    *) fail "invalid review mode: $expected_mode" ;;
+esac
+
+for artifact_file in "$context_file" "$ledger_file" "$review_file"; do
+    mode_selection=$(field_value "$artifact_file" ModeSelection)
+    case "$mode_selection" in
+        default|explicit) ;;
+        *) fail "invalid ModeSelection: ${artifact_file##*/}: $mode_selection" ;;
+    esac
+    [ "$mode_selection" = "$expected_mode_selection" ] ||
+        fail "artifact ModeSelection mismatch: ${artifact_file##*/}"
+done
+
+if [ "$expected_mode" = Deep ] && [ "$expected_mode_selection" != explicit ]; then
+    fail "Deep mode requires ModeSelection: explicit"
+fi
+
+for artifact_file in "$ledger_file" "$review_file"; do
+    [ "$(field_value "$artifact_file" Owner)" = "$expected_owner" ] ||
+        fail "artifact identity mismatch: ${artifact_file##*/}: Owner"
+    [ "$(field_value "$artifact_file" Repository)" = "$expected_repository" ] ||
+        fail "artifact identity mismatch: ${artifact_file##*/}: Repository"
+    [ "$(field_value "$artifact_file" PRNumber)" = "$expected_pr_number" ] ||
+        fail "artifact identity mismatch: ${artifact_file##*/}: PRNumber"
+    [ "$(field_value "$artifact_file" Mode)" = "$expected_mode" ] ||
+        fail "artifact identity mismatch: ${artifact_file##*/}: Mode"
+    [ "$(field_value "$artifact_file" ObservedHead)" = "$expected_head" ] ||
+        fail "observed head mismatch: ${artifact_file##*/}"
+done
+
+has_epochs=0
+if grep -E '^## Review Epochs[[:space:]]*$' \
+    "$context_file" "$ledger_file" "$review_file" >/dev/null 2>&1; then
+    has_epochs=1
+    for artifact_file in "$context_file" "$ledger_file" "$review_file"; do
+        require_field "$artifact_file" CurrentEpoch
+    done
+fi
+
+awk -v context_file="$context_file" \
+    -v ledger_file="$ledger_file" \
+    -v review_file="$review_file" '
+    function artifact_error(message) {
+        print "validate-review-artifacts: " message > "/dev/stderr"
+        invalid = 1
+    }
+    function trim(value) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        return value
+    }
+    function valid_epoch(epoch) {
+        return epoch ~ /^R[1-9][0-9]*$/
+    }
+    function valid_finding_id(finding_id) {
+        return finding_id ~ /^F[0-9][0-9][0-9][0-9]*$/ &&
+               finding_id ~ /^F0*[1-9][0-9]*$/
+    }
+    function valid_amendment_id(amendment_id) {
+        return amendment_id ~ /^A0*[1-9][0-9]*$/
+    }
+    function valid_disposition(disposition) {
+        return disposition == "candidate" ||
+               disposition == "verified" ||
+               disposition == "dismissed" ||
+               disposition == "superseded"
+    }
+    function valid_amendment_disposition(disposition) {
+        return disposition == "none" || valid_disposition(disposition)
+    }
+    function valid_review_type(review_type) {
+        return review_type == "initial-upgrade" ||
+               review_type == "incremental" ||
+               review_type == "targeted-update" ||
+               review_type == "rebase" ||
+               review_type == "full-rebuild" ||
+               review_type == "single-finding"
+    }
+    function valid_transition(from_disposition, to_disposition) {
+        if (from_disposition == "candidate") {
+            return valid_disposition(to_disposition)
+        }
+        if (from_disposition == "verified") {
+            return to_disposition == "verified" ||
+                   to_disposition == "dismissed" ||
+                   to_disposition == "superseded"
+        }
+        return from_disposition == to_disposition
+    }
+    function finish_epoch(    key, required_count, required_index, required_field) {
+        if (!in_epoch) {
+            return
+        }
+        key = artifact SUBSEP current_epoch
+        epoch_order[artifact, ++epoch_count[artifact]] = current_epoch
+        required_count = split("Epoch ObservedBase ObservedHead ReviewType InheritsFrom InheritedEvidence InvalidatedEvidence Amendments FindingIDs FindingStates", required_fields, " ")
+        for (required_index = 1; required_index <= required_count; required_index++) {
+            required_field = required_fields[required_index]
+            if (epoch_field_count[key, required_field] != 1 ||
+                epoch_fields[key, required_field] == "") {
+                artifact_error("epoch field must appear exactly once: " current_epoch ": " required_field)
+            }
+        }
+        if (epoch_fields[key, "Epoch"] != current_epoch) {
+            artifact_error("epoch header and Epoch field differ: " current_epoch)
+        }
+        in_epoch = 0
+        current_epoch = ""
+    }
+    function finish_amendment(    key, required_count, required_index, required_field) {
+        if (!in_amendment) {
+            return
+        }
+        key = current_amendment
+        required_count = split("ID Epoch Type AmendsEpoch SubjectFinding HistoricalFinding ReplacementFinding FromDisposition ToDisposition EvidenceChange", required_fields, " ")
+        for (required_index = 1; required_index <= required_count; required_index++) {
+            required_field = required_fields[required_index]
+            if (amendment_field_count[key, required_field] != 1 ||
+                amendment_fields[key, required_field] == "") {
+                artifact_error("amendment field must appear exactly once: " current_amendment ": " required_field)
+            }
+        }
+        if (amendment_fields[key, "ID"] != current_amendment) {
+            artifact_error("amendment header and ID differ: " current_amendment)
+        }
+        in_amendment = 0
+        current_amendment = ""
+    }
+    function parse_finding_ids(epoch, value,    count, item_index, finding_id) {
+        if (value == "none") {
+            return
+        }
+        count = split(value, parsed_values, ",")
+        for (item_index = 1; item_index <= count; item_index++) {
+            finding_id = trim(parsed_values[item_index])
+            if (!valid_finding_id(finding_id)) {
+                artifact_error("malformed finding ID: " finding_id)
+            } else if (epoch_finding_ids[epoch, finding_id]) {
+                artifact_error("duplicate epoch finding ID: " epoch ": " finding_id)
+            } else {
+                epoch_finding_ids[epoch, finding_id] = 1
+                epoch_finding_count[epoch]++
+            }
+        }
+    }
+    function parse_finding_states(epoch, value,    count, item_index, entry, separator, finding_id, disposition) {
+        if (value == "none") {
+            return
+        }
+        count = split(value, parsed_values, ",")
+        for (item_index = 1; item_index <= count; item_index++) {
+            entry = trim(parsed_values[item_index])
+            separator = index(entry, "=")
+            finding_id = trim(substr(entry, 1, separator - 1))
+            disposition = trim(substr(entry, separator + 1))
+            if (!separator || !valid_finding_id(finding_id) || !valid_disposition(disposition)) {
+                artifact_error("invalid epoch finding state: " epoch ": " entry)
+            } else if ((epoch SUBSEP finding_id) in epoch_finding_states) {
+                artifact_error("duplicate epoch finding state: " epoch ": " finding_id)
+            } else {
+                epoch_finding_states[epoch, finding_id] = disposition
+                epoch_state_count[epoch]++
+            }
+        }
+    }
+    function parse_amendment_links(epoch, value,    count, item_index, amendment_id) {
+        if (value == "none") {
+            return
+        }
+        count = split(value, parsed_values, ",")
+        for (item_index = 1; item_index <= count; item_index++) {
+            amendment_id = trim(parsed_values[item_index])
+            if (!valid_amendment_id(amendment_id)) {
+                artifact_error("malformed amendment ID: " amendment_id)
+            } else if (epoch_amendments[epoch, amendment_id]) {
+                artifact_error("duplicate epoch amendment ID: " epoch ": " amendment_id)
+            } else {
+                epoch_amendments[epoch, amendment_id] = 1
+            }
+        }
+    }
+    FNR == 1 {
+        finish_epoch()
+        finish_amendment()
+        in_epoch_history = in_amendments = in_finding = 0
+        if (FILENAME == context_file) {
+            artifact = "context"
+        } else if (FILENAME == ledger_file) {
+            artifact = "ledger"
+        } else {
+            artifact = "review"
+        }
+    }
+    !in_epoch_history && !in_amendments && /^- CurrentEpoch: / {
+        top_current_epoch[artifact] = substr($0, 17)
+        top_current_epoch_count[artifact]++
+    }
+    !in_epoch_history && !in_amendments && /^- ObservedHead: / {
+        top_observed_head[artifact] = substr($0, 17)
+    }
+    /^## Review Epochs[[:space:]]*$/ {
+        finish_amendment()
+        in_amendments = 0
+        in_epoch_history = 1
+        epoch_section_count[artifact]++
+        next
+    }
+    in_epoch_history && /^### Epoch / {
+        finish_epoch()
+        current_epoch = substr($0, 11)
+        if (!valid_epoch(current_epoch)) {
+            artifact_error("invalid review epoch: " current_epoch)
+        }
+        in_epoch = 1
+        next
+    }
+    in_epoch_history && in_epoch && /^- [A-Za-z][A-Za-z]*: / {
+        separator = index($0, ": ")
+        field_name = substr($0, 3, separator - 3)
+        field_value = substr($0, separator + 2)
+        epoch_fields[artifact SUBSEP current_epoch, field_name] = field_value
+        epoch_field_count[artifact SUBSEP current_epoch, field_name]++
+        next
+    }
+    /^## Amendments[[:space:]]*$/ {
+        finish_epoch()
+        in_epoch_history = 0
+        if (artifact != "ledger") {
+            artifact_error("amendments must be recorded in findings-ledger.md")
+        }
+        in_amendments = 1
+        amendment_section_count++
+        next
+    }
+    in_amendments && /^### Amendment / {
+        finish_amendment()
+        current_amendment = substr($0, 15)
+        if (!valid_amendment_id(current_amendment)) {
+            artifact_error("malformed amendment ID: " current_amendment)
+        } else if (current_amendment in amendment_ids) {
+            artifact_error("duplicate amendment ID: " current_amendment)
+        } else {
+            amendment_ids[current_amendment] = 1
+        }
+        in_amendment = 1
+        next
+    }
+    in_amendments && in_amendment && /^- [A-Za-z][A-Za-z]*: / {
+        separator = index($0, ": ")
+        field_name = substr($0, 3, separator - 3)
+        field_value = substr($0, separator + 2)
+        amendment_fields[current_amendment, field_name] = field_value
+        amendment_field_count[current_amendment, field_name]++
+        next
+    }
+    FILENAME == ledger_file && /^### Finding / {
+        in_finding = 1
+        ledger_finding_header = substr($0, 13)
+        next
+    }
+    FILENAME == ledger_file && in_finding && /^- ID: / {
+        ledger_finding_id = substr($0, 7)
+        ledger_findings[ledger_finding_id] = 1
+        next
+    }
+    FILENAME == ledger_file && in_finding && /^- Disposition: / {
+        ledger_dispositions[ledger_finding_id] = substr($0, 16)
+        next
+    }
+    FILENAME == ledger_file && in_finding && /^## / {
+        in_finding = 0
+    }
+    END {
+        finish_epoch()
+        finish_amendment()
+
+        any_epochs = epoch_count["context"] + epoch_count["ledger"] + epoch_count["review"]
+        if (!any_epochs) {
+            exit invalid ? 1 : 0
+        }
+
+        split("context ledger review", artifacts, " ")
+        expected_count = epoch_count["context"]
+        if (!expected_count) {
+            artifact_error("missing review epoch history: context-brief.md")
+        }
+        for (artifact_index = 1; artifact_index <= 3; artifact_index++) {
+            compared_artifact = artifacts[artifact_index]
+            if (epoch_section_count[compared_artifact] != 1) {
+                artifact_error("review epoch section must appear exactly once: " compared_artifact)
+            }
+            if (epoch_count[compared_artifact] != expected_count) {
+                artifact_error("artifact review epoch history mismatch: " compared_artifact)
+            }
+            if (top_current_epoch_count[compared_artifact] != 1) {
+                artifact_error("CurrentEpoch must appear exactly once: " compared_artifact)
+            }
+        }
+
+        for (epoch_index = 1; epoch_index <= expected_count; epoch_index++) {
+            expected_epoch = "R" epoch_index
+            context_epoch = epoch_order["context", epoch_index]
+            if (context_epoch != expected_epoch) {
+                artifact_error("skipped review epoch: expected " expected_epoch ", found " context_epoch)
+            }
+            epoch_exists[context_epoch] = 1
+            for (artifact_index = 2; artifact_index <= 3; artifact_index++) {
+                compared_artifact = artifacts[artifact_index]
+                if (epoch_order[compared_artifact, epoch_index] != context_epoch) {
+                    artifact_error("artifact review epoch history mismatch: " compared_artifact)
+                }
+            }
+            required_count = split("Epoch ObservedBase ObservedHead ReviewType InheritsFrom InheritedEvidence InvalidatedEvidence Amendments FindingIDs FindingStates", required_fields, " ")
+            for (required_index = 1; required_index <= required_count; required_index++) {
+                required_field = required_fields[required_index]
+                expected_value = epoch_fields["context" SUBSEP context_epoch, required_field]
+                if (epoch_fields["ledger" SUBSEP context_epoch, required_field] != expected_value ||
+                    epoch_fields["review" SUBSEP context_epoch, required_field] != expected_value) {
+                    artifact_error("artifact epoch field mismatch: " context_epoch ": " required_field)
+                }
+            }
+            if (epoch_index == 1) {
+                if (epoch_fields["context" SUBSEP context_epoch, "ReviewType"] != "initial-upgrade" ||
+                    epoch_fields["context" SUBSEP context_epoch, "InheritsFrom"] != "initial") {
+                    artifact_error("R1 must record the initial artifact upgrade")
+                }
+            } else {
+                previous_epoch = "R" (epoch_index - 1)
+                review_type = epoch_fields["context" SUBSEP context_epoch, "ReviewType"]
+                inherits_from = epoch_fields["context" SUBSEP context_epoch, "InheritsFrom"]
+                if (!valid_review_type(review_type) || review_type == "initial-upgrade") {
+                    artifact_error("invalid review type: " context_epoch ": " review_type)
+                } else if (review_type == "full-rebuild") {
+                    if (inherits_from != "none" ||
+                        epoch_fields["context" SUBSEP context_epoch, "InheritedEvidence"] != "none" ||
+                        epoch_fields["context" SUBSEP context_epoch, "InvalidatedEvidence"] == "none") {
+                        artifact_error("full rebuild must invalidate inherited evidence: " context_epoch)
+                    }
+                } else if (inherits_from != previous_epoch) {
+                    artifact_error("invalid epoch inheritance: " context_epoch ": " inherits_from)
+                }
+            }
+            if (epoch_fields["context" SUBSEP context_epoch, "ObservedHead"] == "") {
+                artifact_error("epoch must record one observed head: " context_epoch)
+            }
+            parse_finding_ids(context_epoch, epoch_fields["context" SUBSEP context_epoch, "FindingIDs"])
+            parse_finding_states(context_epoch, epoch_fields["context" SUBSEP context_epoch, "FindingStates"])
+            parse_amendment_links(context_epoch, epoch_fields["context" SUBSEP context_epoch, "Amendments"])
+            if (epoch_finding_count[context_epoch] != epoch_state_count[context_epoch]) {
+                artifact_error("epoch finding IDs and states differ: " context_epoch)
+            }
+            for (finding_id in ledger_findings) {
+                if (epoch_finding_states[context_epoch, finding_id] != "" &&
+                    !epoch_finding_ids[context_epoch, finding_id]) {
+                    artifact_error("epoch finding state references unlisted ID: " context_epoch ": " finding_id)
+                }
+            }
+        }
+
+        current_epoch = "R" expected_count
+        for (artifact_index = 1; artifact_index <= 3; artifact_index++) {
+            compared_artifact = artifacts[artifact_index]
+            if (top_current_epoch[compared_artifact] != current_epoch) {
+                artifact_error("current epoch mismatch: " compared_artifact)
+            }
+            if (top_observed_head[compared_artifact] != epoch_fields["context" SUBSEP current_epoch, "ObservedHead"]) {
+                artifact_error("current observed head does not match epoch: " compared_artifact)
+            }
+        }
+
+        for (epoch_index = 1; epoch_index <= expected_count; epoch_index++) {
+            epoch = "R" epoch_index
+            for (finding_id in epoch_finding_ids) {
+                split(finding_id, finding_key, SUBSEP)
+                if (finding_key[1] != epoch) {
+                    continue
+                }
+                historical_id = finding_key[2]
+                if (!(historical_id in ledger_findings)) {
+                    artifact_error("historical finding ID missing from ledger: " historical_id)
+                }
+                if (!((epoch SUBSEP historical_id) in epoch_finding_states)) {
+                    artifact_error("epoch finding lacks state: " epoch ": " historical_id)
+                }
+            }
+        }
+        for (finding_id in ledger_findings) {
+            if (!epoch_finding_ids[current_epoch, finding_id]) {
+                artifact_error("current epoch omits ledger finding ID: " finding_id)
+            } else if (epoch_finding_states[current_epoch, finding_id] != ledger_dispositions[finding_id]) {
+                artifact_error("current epoch finding state mismatch: " finding_id)
+            }
+        }
+
+        for (amendment_id in amendment_ids) {
+            amendment_epoch = amendment_fields[amendment_id, "Epoch"]
+            amended_epoch = amendment_fields[amendment_id, "AmendsEpoch"]
+            subject_finding = amendment_fields[amendment_id, "SubjectFinding"]
+            historical_finding = amendment_fields[amendment_id, "HistoricalFinding"]
+            replacement_finding = amendment_fields[amendment_id, "ReplacementFinding"]
+            from_disposition = amendment_fields[amendment_id, "FromDisposition"]
+            to_disposition = amendment_fields[amendment_id, "ToDisposition"]
+
+            if (!(amendment_epoch in epoch_exists)) {
+                artifact_error("amendment references unknown epoch: " amendment_id ": " amendment_epoch)
+            } else if (substr(amendment_epoch, 2) + 0 < 2) {
+                artifact_error("amendment must belong to R2 or later: " amendment_id)
+            } else if (!epoch_amendments[amendment_epoch, amendment_id]) {
+                artifact_error("amendment is not linked from epoch: " amendment_id)
+            }
+            if (!(amended_epoch in epoch_exists)) {
+                artifact_error("amendment references unknown prior epoch: " amendment_id ": " amended_epoch)
+            } else if (substr(amended_epoch, 2) + 0 > substr(amendment_epoch, 2) + 0) {
+                artifact_error("amendment references a future epoch: " amendment_id ": " amended_epoch)
+            }
+            if (historical_finding != "none" &&
+                subject_finding != historical_finding) {
+                artifact_error("historical finding ID changed: " amendment_id ": " historical_finding " -> " subject_finding)
+            }
+            if (historical_finding != "none" &&
+                !epoch_finding_ids[amended_epoch, historical_finding]) {
+                artifact_error("amendment references unknown historical finding: " amendment_id ": " historical_finding)
+            }
+            if (subject_finding != "none" &&
+                !epoch_finding_ids[amendment_epoch, subject_finding]) {
+                artifact_error("amendment references unknown subject finding: " amendment_id ": " subject_finding)
+            }
+            if (replacement_finding != "none" &&
+                !epoch_finding_ids[amendment_epoch, replacement_finding]) {
+                artifact_error("amendment references unknown replacement finding: " amendment_id ": " replacement_finding)
+            }
+            if (historical_finding != "none" &&
+                epoch_finding_states[amended_epoch, historical_finding] != from_disposition) {
+                artifact_error("amendment prior disposition mismatch: " amendment_id)
+            }
+            if (subject_finding != "none" &&
+                epoch_finding_states[amendment_epoch, subject_finding] != to_disposition) {
+                artifact_error("amendment current disposition mismatch: " amendment_id)
+            }
+            if (!valid_amendment_disposition(from_disposition) ||
+                !valid_amendment_disposition(to_disposition)) {
+                artifact_error("invalid amendment disposition: " amendment_id ": " from_disposition " -> " to_disposition)
+            } else if (from_disposition != "none" &&
+                to_disposition != "none" &&
+                !valid_transition(from_disposition, to_disposition)) {
+                artifact_error("invalid disposition transition: " amendment_id ": " from_disposition " -> " to_disposition)
+            }
+        }
+        for (epoch_index = 1; epoch_index <= expected_count; epoch_index++) {
+            epoch = "R" epoch_index
+            for (amendment_link in epoch_amendments) {
+                split(amendment_link, amendment_key, SUBSEP)
+                if (amendment_key[1] == epoch &&
+                    !(amendment_key[2] in amendment_ids)) {
+                    artifact_error("epoch references unknown amendment: " epoch ": " amendment_key[2])
+                }
+            }
+        }
+        for (epoch_index = 2; epoch_index <= expected_count; epoch_index++) {
+            previous_epoch = "R" (epoch_index - 1)
+            epoch = "R" epoch_index
+            for (finding_id in ledger_findings) {
+                previous_disposition = epoch_finding_states[previous_epoch, finding_id]
+                current_disposition = epoch_finding_states[epoch, finding_id]
+                if (previous_disposition == "" ||
+                    current_disposition == "" ||
+                    previous_disposition == current_disposition) {
+                    continue
+                }
+                transition_amendment_found = 0
+                for (amendment_id in amendment_ids) {
+                    if (amendment_fields[amendment_id, "Epoch"] == epoch &&
+                        amendment_fields[amendment_id, "HistoricalFinding"] == finding_id &&
+                        amendment_fields[amendment_id, "SubjectFinding"] == finding_id &&
+                        amendment_fields[amendment_id, "FromDisposition"] == previous_disposition &&
+                        amendment_fields[amendment_id, "ToDisposition"] == current_disposition) {
+                        transition_amendment_found = 1
+                    }
+                }
+                if (!transition_amendment_found) {
+                    artifact_error("finding disposition change lacks amendment: " epoch ": " finding_id)
+                }
+            }
+        }
+
+        exit invalid ? 1 : 0
+    }
+' "$context_file" "$ledger_file" "$review_file" || exit 1
+
+expected_readiness=$(field_value "$context_file" Readiness)
+for artifact_file in "$context_file" "$ledger_file" "$review_file"; do
+    readiness=$(field_value "$artifact_file" Readiness)
+    case "$readiness" in
+        ready|'UNABLE TO REVIEW') ;;
+        *) fail "invalid readiness value: ${artifact_file##*/}: $readiness" ;;
+    esac
+    [ "$readiness" = "$expected_readiness" ] ||
+        fail "artifact readiness mismatch: ${artifact_file##*/}"
+
+    awk -v artifact="${artifact_file##*/}" '
+        function coverage_error(message) {
+            print "validate-review-artifacts: " message > "/dev/stderr"
+            invalid = 1
+        }
+        function finish_record(    principle_count, principle_index, principle) {
+            if (!in_record) {
+                return
+            }
+            if (!owner) {
+                coverage_error("missing required coverage field: " artifact ": Owner")
+            }
+            if (!principles) {
+                coverage_error("missing required coverage field: " artifact ": Principles")
+            } else {
+                principle_count = split(principles, coverage_principles, ",")
+                for (principle_index = 1; principle_index <= principle_count; principle_index++) {
+                    principle = coverage_principles[principle_index]
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", principle)
+                    if (principle != "Purpose" &&
+                        principle != "Edge Cases" &&
+                        principle != "Reliability" &&
+                        principle != "Form" &&
+                        principle != "Evidence" &&
+                        principle != "Clarity" &&
+                        principle != "Taste") {
+                        coverage_error("invalid coverage principle: " artifact ": " principle)
+                    }
+                }
+            }
+            if (!evidence) {
+                coverage_error("missing required coverage field: " artifact ": Evidence")
+            }
+            if (!state) {
+                coverage_error("missing required coverage field: " artifact ": State")
+            } else if (state != "reviewed" &&
+                       state != "unreviewed" &&
+                       state != "unable-to-review") {
+                coverage_error("invalid coverage state: " artifact ": " state)
+            }
+            if (!material) {
+                coverage_error("missing required coverage field: " artifact ": Material")
+            } else if (material != "yes" && material != "no") {
+                coverage_error("invalid coverage materiality: " artifact ": " material)
+            }
+            owner = principles = evidence = state = material = ""
+        }
+        /^## Coverage[[:space:]]*$/ {
+            in_coverage = 1
+            next
+        }
+        in_coverage && /^## / {
+            finish_record()
+            in_coverage = 0
+        }
+        in_coverage && /^### / {
+            finish_record()
+            in_record = 1
+            record_name = substr($0, 5)
+            if (record_name in coverage_record_names) {
+                coverage_error("duplicate coverage record: " artifact ": " record_name)
+            } else {
+                coverage_record_names[record_name] = 1
+            }
+            record_count++
+            next
+        }
+        in_coverage && in_record && /^- Owner: / {
+            owner = substr($0, 10)
+        }
+        in_coverage && in_record && /^- Principles: / {
+            principles = substr($0, 15)
+        }
+        in_coverage && in_record && /^- Evidence: / {
+            evidence = substr($0, 13)
+        }
+        in_coverage && in_record && /^- State: / {
+            state = substr($0, 10)
+        }
+        in_coverage && in_record && /^- Material: / {
+            material = substr($0, 13)
+        }
+        END {
+            if (in_coverage) {
+                finish_record()
+            }
+            if (record_count == 0) {
+                coverage_error("missing coverage record: " artifact)
+            }
+            exit invalid ? 1 : 0
+        }
+    ' "$artifact_file" || exit 1
+done
+
+awk -v context_file="$context_file" \
+    -v ledger_file="$ledger_file" \
+    -v review_file="$review_file" '
+    function coverage_error(first_artifact, second_artifact, record_name) {
+        print "validate-review-artifacts: coverage record mismatch: " \
+              first_artifact " and " second_artifact ": " record_name > "/dev/stderr"
+        invalid = 1
+    }
+    function finish_record(    record_key) {
+        if (!in_record) {
+            return
+        }
+        record_key = artifact SUBSEP record_name
+        coverage_records[record_key] = owner SUBSEP principles SUBSEP evidence SUBSEP state SUBSEP material
+        coverage_present[record_key] = 1
+        coverage_order[artifact, ++coverage_count[artifact]] = record_name
+        owner = principles = evidence = state = material = ""
+    }
+    function compare_coverage(first_file, second_file, first_artifact, second_artifact,
+                              record_index, compared_record, first_key, second_key) {
+        for (record_index = 1; record_index <= coverage_count[first_artifact]; record_index++) {
+            compared_record = coverage_order[first_artifact, record_index]
+            first_key = first_artifact SUBSEP compared_record
+            second_key = second_artifact SUBSEP compared_record
+            if (!coverage_present[second_key] ||
+                coverage_records[first_key] != coverage_records[second_key]) {
+                coverage_error(first_file, second_file, compared_record)
+            }
+        }
+        for (record_index = 1; record_index <= coverage_count[second_artifact]; record_index++) {
+            compared_record = coverage_order[second_artifact, record_index]
+            first_key = first_artifact SUBSEP compared_record
+            if (!coverage_present[first_key]) {
+                coverage_error(first_file, second_file, compared_record)
+            }
+        }
+    }
+    FNR == 1 {
+        finish_record()
+        in_coverage = in_record = 0
+        if (FILENAME == context_file) {
+            artifact = "context"
+        } else if (FILENAME == ledger_file) {
+            artifact = "ledger"
+        } else {
+            artifact = "review"
+        }
+    }
+    /^## Coverage[[:space:]]*$/ {
+        in_coverage = 1
+        next
+    }
+    in_coverage && /^## / {
+        finish_record()
+        in_coverage = in_record = 0
+    }
+    in_coverage && /^### / {
+        finish_record()
+        in_record = 1
+        record_name = substr($0, 5)
+        next
+    }
+    in_coverage && in_record && /^- Owner: / {
+        owner = substr($0, 10)
+    }
+    in_coverage && in_record && /^- Principles: / {
+        principles = substr($0, 15)
+    }
+    in_coverage && in_record && /^- Evidence: / {
+        evidence = substr($0, 13)
+    }
+    in_coverage && in_record && /^- State: / {
+        state = substr($0, 10)
+    }
+    in_coverage && in_record && /^- Material: / {
+        material = substr($0, 13)
+    }
+    END {
+        finish_record()
+        compare_coverage("context-brief.md", "findings-ledger.md", "context", "ledger")
+        compare_coverage("context-brief.md", "perfect-review.md", "context", "review")
+        compare_coverage("findings-ledger.md", "perfect-review.md", "ledger", "review")
+        exit invalid ? 1 : 0
+    }
+' "$context_file" "$ledger_file" "$review_file" || exit 1
+
+awk -v ledger_file="$ledger_file" \
+    -v review_file="$review_file" \
+    -v expected_readiness="$expected_readiness" \
+    -v has_epochs="$has_epochs" \
+    -v unresolved_material_decisions="$unresolved_material_decisions" '
+    function artifact_error(message) {
+        print "validate-review-artifacts: " message > "/dev/stderr"
+        invalid = 1
+    }
+    function valid_finding_id(finding_id) {
+        return finding_id ~ /^F[0-9][0-9][0-9][0-9]*$/ &&
+               finding_id ~ /^F0*[1-9][0-9]*$/
+    }
+    function finish_outcome_coverage(    principle_count, principle_index, principle, verdict_name) {
+        if (in_outcome_coverage_record &&
+            (outcome_coverage_state == "unreviewed" ||
+             outcome_coverage_state == "unable-to-review")) {
+            principle_count = split(outcome_coverage_principles, gap_principles, ",")
+            for (principle_index = 1; principle_index <= principle_count; principle_index++) {
+                principle = gap_principles[principle_index]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", principle)
+                verdict_name = principle == "Edge Cases" ? "EdgeCases" : principle
+                if (principle == "Taste") {
+                    continue
+                }
+                if (outcome_coverage_material == "yes") {
+                    material_gap_principles[verdict_name] = 1
+                } else if (principle == "Purpose") {
+                    purpose_gap_principles[verdict_name] = 1
+                } else {
+                    nonmaterial_gap_principles[verdict_name] = 1
+                }
+                if (outcome_coverage_material == "yes" || principle == "Purpose") {
+                    qualifying_unable_coverage_gap = 1
+                }
+            }
+            if (outcome_coverage_material == "yes") {
+                if (outcome_coverage_state == "unreviewed") {
+                    material_unreviewed = 1
+                } else {
+                    material_unable_to_review = 1
+                }
+            }
+        }
+        outcome_coverage_principles = outcome_coverage_state = outcome_coverage_material = ""
+    }
+    function finish_finding(    field_name) {
+        if (!in_finding) {
+            return
+        }
+        required_count = split("ID Claim Impact Principle Class AffectedBehavior Scope SourceReviewers Evidence Disposition DispositionHistory DuplicateOf Supersedes RawOutput", required_fields, " ")
+        for (required_index = 1; required_index <= required_count; required_index++) {
+            field_name = required_fields[required_index]
+            if (!finding_fields[field_name]) {
+                artifact_error("missing required finding field: " current_id ": " field_name)
+            }
+        }
+        if (finding_fields["Disposition"] != "candidate" &&
+            finding_fields["Disposition"] != "verified" &&
+            finding_fields["Disposition"] != "dismissed" &&
+            finding_fields["Disposition"] != "superseded") {
+            artifact_error("invalid finding disposition: " current_id ": " finding_fields["Disposition"])
+        }
+        if (finding_fields["Class"] != "blocking" &&
+            finding_fields["Class"] != "advisory") {
+            artifact_error("invalid finding class: " current_id ": " finding_fields["Class"])
+        }
+        if (finding_fields["Principle"] != "Purpose" &&
+            finding_fields["Principle"] != "Edge Cases" &&
+            finding_fields["Principle"] != "Reliability" &&
+            finding_fields["Principle"] != "Form" &&
+            finding_fields["Principle"] != "Evidence" &&
+            finding_fields["Principle"] != "Clarity" &&
+            finding_fields["Principle"] != "Taste") {
+            artifact_error("invalid finding principle: " current_id ": " finding_fields["Principle"])
+        }
+        if ((finding_fields["Principle"] == "Clarity" ||
+             finding_fields["Principle"] == "Taste") &&
+            finding_fields["Class"] != "advisory") {
+            artifact_error(finding_fields["Principle"] " finding must be advisory: " current_id)
+        }
+        if (finding_fields["Principle"] == "Purpose" &&
+            finding_fields["Class"] != "blocking") {
+            artifact_error("Purpose findings must be blocking: " current_id)
+        }
+        dispositions[current_id] = finding_fields["Disposition"]
+        classes[current_id] = finding_fields["Class"]
+        principles[current_id] = finding_fields["Principle"]
+        duplicate_links[current_id] = finding_fields["DuplicateOf"]
+        supersession_links[current_id] = finding_fields["Supersedes"]
+        for (field_name in finding_fields) {
+            delete finding_fields[field_name]
+        }
+        in_finding = 0
+        current_id = ""
+    }
+    FILENAME == ledger_file && /^### Finding / {
+        finish_finding()
+        header_id = substr($0, 13)
+        if (!valid_finding_id(header_id)) {
+            artifact_error("malformed finding ID: " header_id)
+        }
+        in_finding = 1
+        next
+    }
+    FILENAME == ledger_file && in_finding && /^- [A-Za-z][A-Za-z]*: / {
+        separator = index($0, ": ")
+        field_name = substr($0, 3, separator - 3)
+        field_value = substr($0, separator + 2)
+        finding_fields[field_name] = field_value
+        if (field_name == "ID") {
+            current_id = field_value
+            if (!valid_finding_id(current_id)) {
+                artifact_error("malformed finding ID: " current_id)
+            } else if (current_id in finding_ids) {
+                artifact_error("duplicate finding ID: " current_id)
+            } else {
+                finding_ids[current_id] = 1
+            }
+            if (header_id != current_id) {
+                artifact_error("finding header and ID differ: " header_id)
+            }
+        }
+        next
+    }
+    FILENAME == ledger_file && in_finding && /^## / {
+        finish_finding()
+    }
+    FILENAME == review_file && /^## Findings[[:space:]]*$/ {
+        in_final_findings = 1
+        final_principle = ""
+        next
+    }
+    FILENAME == review_file && in_final_findings && /^## / {
+        in_final_findings = 0
+        final_principle = ""
+    }
+    FILENAME == review_file && in_final_findings && /^### / {
+        final_principle = substr($0, 5)
+        if (final_principle != "Purpose" &&
+            final_principle != "Edge Cases" &&
+            final_principle != "Reliability" &&
+            final_principle != "Form" &&
+            final_principle != "Evidence" &&
+            final_principle != "Clarity" &&
+            final_principle != "Taste") {
+            artifact_error("invalid final finding principle section: " final_principle)
+        }
+        next
+    }
+    FILENAME == review_file && in_final_findings && /^- Finding: / {
+        final_id = substr($0, 12)
+        if (!valid_finding_id(final_id)) {
+            artifact_error("malformed finding ID: " final_id)
+        } else {
+            final_findings[final_id]++
+            final_principles[final_id] = final_principle
+            if (!final_principle) {
+                artifact_error("final finding is not under a principle section: " final_id)
+            }
+        }
+    }
+    FILENAME == review_file && /^## Outcome[[:space:]]*$/ {
+        in_outcome = 1
+        next
+    }
+    FILENAME == review_file && in_outcome && /^## / {
+        in_outcome = 0
+    }
+    FILENAME == review_file && in_outcome && /^- Recommendation: / {
+        recommendation_count++
+        recommendation = substr($0, 19)
+    }
+    FILENAME == review_file && in_outcome && /^- UnableToReview:[[:space:]]*$/ {
+        unable_count++
+    }
+    FILENAME == review_file && in_outcome && /^  - Blocker: / {
+        unable_blocker_count++
+        unable_blocker = substr($0, 14)
+    }
+    FILENAME == review_file && in_outcome && /^  - GatheredEvidence: / {
+        unable_evidence_count++
+        unable_evidence = substr($0, 23)
+    }
+    FILENAME == review_file && in_outcome && /^  - AffectedCoverage: / {
+        unable_coverage_count++
+        unable_coverage = substr($0, 23)
+    }
+    FILENAME == review_file && in_outcome && /^  - Remediation: / {
+        unable_remediation_count++
+        unable_remediation = substr($0, 18)
+    }
+    FILENAME == review_file && /^## PERFECT Verdicts[[:space:]]*$/ {
+        in_verdicts = 1
+        next
+    }
+    FILENAME == review_file && in_verdicts && /^## / {
+        in_verdicts = 0
+    }
+    FILENAME == review_file && in_verdicts &&
+    /^- (Purpose|EdgeCases|Reliability|Form|Evidence|Clarity|Taste): / {
+        verdict_name = substr($0, 3, index($0, ":") - 3)
+        verdict_value = substr($0, index($0, ":") + 2)
+        if (!verdict_order_count) {
+            verdict_order_count = split("Purpose EdgeCases Reliability Form Evidence Clarity Taste", verdict_order, " ")
+        }
+        verdict_sequence++
+        if (verdict_name != verdict_order[verdict_sequence]) {
+            artifact_error("PERFECT verdict is out of order: " verdict_name)
+        }
+        verdict_counts[verdict_name]++
+        verdict_values[verdict_name] = verdict_value
+    }
+    FILENAME == review_file && /^## Coverage[[:space:]]*$/ {
+        in_outcome_coverage = 1
+        next
+    }
+    FILENAME == review_file && in_outcome_coverage && /^### / {
+        finish_outcome_coverage()
+        in_outcome_coverage_record = 1
+        next
+    }
+    FILENAME == review_file && in_outcome_coverage && /^## / {
+        finish_outcome_coverage()
+        in_outcome_coverage = in_outcome_coverage_record = 0
+    }
+    FILENAME == review_file && in_outcome_coverage && in_outcome_coverage_record && /^- Principles: / {
+        outcome_coverage_principles = substr($0, 15)
+    }
+    FILENAME == review_file && in_outcome_coverage && in_outcome_coverage_record && /^- State: / {
+        outcome_coverage_state = substr($0, 10)
+    }
+    FILENAME == review_file && in_outcome_coverage && in_outcome_coverage_record && /^- Material: / {
+        outcome_coverage_material = substr($0, 13)
+    }
+    END {
+        finish_finding()
+        finish_outcome_coverage()
+
+        for (finding_id in duplicate_links) {
+            linked_id = duplicate_links[finding_id]
+            if (linked_id != "" && linked_id != "none") {
+                if (!valid_finding_id(linked_id)) {
+                    artifact_error("malformed finding ID: " linked_id)
+                } else if (!(linked_id in finding_ids)) {
+                    artifact_error("duplicate link references unknown finding ID: " linked_id)
+                }
+            }
+        }
+        for (finding_id in supersession_links) {
+            linked_id = supersession_links[finding_id]
+            if (linked_id != "" && linked_id != "none") {
+                if (!valid_finding_id(linked_id)) {
+                    artifact_error("malformed finding ID: " linked_id)
+                } else if (!(linked_id in finding_ids)) {
+                    artifact_error("supersession link references unknown finding ID: " linked_id)
+                }
+            }
+        }
+        for (finding_id in final_findings) {
+            if (!(finding_id in finding_ids)) {
+                artifact_error("final finding references unknown ledger ID: " finding_id)
+            } else if (dispositions[finding_id] != "verified") {
+                if (has_epochs) {
+                    artifact_error("final review references stale finding state: " finding_id)
+                } else {
+                    artifact_error("final finding is not verified: " finding_id)
+                }
+            } else if (final_principles[finding_id] != principles[finding_id]) {
+                artifact_error("final finding principle mismatch: " finding_id)
+            }
+            if (final_findings[finding_id] != 1) {
+                artifact_error("final finding must appear exactly once: " finding_id)
+            }
+        }
+        for (finding_id in dispositions) {
+            if (dispositions[finding_id] == "verified" &&
+                !(finding_id in final_findings)) {
+                artifact_error("verified finding is missing from final review: " finding_id)
+            }
+        }
+
+        if (recommendation_count + unable_count != 1) {
+            artifact_error("exactly one final outcome variant is required")
+        }
+        if (recommendation_count == 1 &&
+            recommendation != "APPROVE" &&
+            recommendation != "REQUEST CHANGES" &&
+            recommendation != "NEEDS DISCUSSION") {
+            artifact_error("invalid recommendation: " recommendation)
+        }
+        if (unable_count == 1 &&
+            (unable_blocker_count != 1 ||
+             unable_evidence_count != 1 ||
+             unable_coverage_count != 1 ||
+             unable_remediation_count != 1 ||
+             !unable_blocker ||
+             !unable_evidence ||
+             !unable_coverage ||
+             !unable_remediation)) {
+            artifact_error("UnableToReview requires blocker, gathered evidence, affected coverage, and remediation")
+        }
+        if (unable_count == 1 &&
+            expected_readiness == "ready" &&
+            !qualifying_unable_coverage_gap) {
+            artifact_error("ready review conflicts with UnableToReview outcome")
+        }
+        if (recommendation_count == 1 && material_unreviewed) {
+            artifact_error("material UNREVIEWED coverage conflicts with recommendation: " recommendation)
+        }
+        if (recommendation_count == 1 && material_unable_to_review) {
+            artifact_error("material unable-to-review coverage conflicts with recommendation: " recommendation)
+        }
+        for (finding_id in dispositions) {
+            if (dispositions[finding_id] == "candidate") {
+                if (recommendation_count == 1) {
+                    artifact_error("candidate finding conflicts with definitive recommendation: " finding_id)
+                } else if (unable_count == 1 && !qualifying_unable_coverage_gap) {
+                    artifact_error("candidate finding lacks qualifying UnableToReview coverage: " finding_id)
+                }
+            }
+        }
+
+        verified_blocker = 0
+        for (finding_id in dispositions) {
+            if (dispositions[finding_id] == "verified" &&
+                classes[finding_id] == "blocking") {
+                verified_blocker = 1
+                principle = principles[finding_id]
+                blocking_principles[principle == "Edge Cases" ? "EdgeCases" : principle] = 1
+            }
+        }
+        if (recommendation_count == 1 && verified_blocker &&
+            recommendation != "REQUEST CHANGES") {
+            artifact_error("verified blocking finding conflicts with recommendation: " recommendation)
+        }
+        if (recommendation == "REQUEST CHANGES" && !verified_blocker) {
+            artifact_error("REQUEST CHANGES requires a verified blocking finding")
+        }
+        if (recommendation == "NEEDS DISCUSSION" &&
+            !verified_blocker &&
+            unresolved_material_decisions == "none") {
+            artifact_error("NEEDS DISCUSSION requires an unresolved material decision")
+        }
+        if (recommendation == "APPROVE" &&
+            unresolved_material_decisions != "none") {
+            artifact_error("unresolved material decision conflicts with recommendation: APPROVE")
+        }
+
+        required_verdict_count = split("Purpose EdgeCases Reliability Form Evidence Clarity Taste", required_verdicts, " ")
+        for (verdict_index = 1; verdict_index <= required_verdict_count; verdict_index++) {
+            verdict_name = required_verdicts[verdict_index]
+            if (verdict_counts[verdict_name] != 1) {
+                artifact_error("required PERFECT verdict must appear exactly once: " verdict_name)
+            }
+        }
+        if (verdict_values["Purpose"] != "PASS" &&
+            verdict_values["Purpose"] != "FAIL" &&
+            verdict_values["Purpose"] != "NEEDS DISCUSSION" &&
+            verdict_values["Purpose"] != "UNREVIEWED") {
+            artifact_error("invalid PERFECT verdict: Purpose: " verdict_values["Purpose"])
+        }
+        for (verdict_index = 2; verdict_index <= 5; verdict_index++) {
+            verdict_name = required_verdicts[verdict_index]
+            if (verdict_values[verdict_name] != "PASS" &&
+                verdict_values[verdict_name] != "CONCERN" &&
+                verdict_values[verdict_name] != "FAIL" &&
+                verdict_values[verdict_name] != "UNREVIEWED") {
+                artifact_error("invalid PERFECT verdict: " verdict_name ": " verdict_values[verdict_name])
+            }
+        }
+        if (verdict_values["Clarity"] != "PASS" &&
+            verdict_values["Clarity"] != "CONCERN" &&
+            verdict_values["Clarity"] != "UNREVIEWED") {
+            artifact_error("invalid PERFECT verdict: Clarity: " verdict_values["Clarity"])
+        }
+        if (verdict_values["Taste"] != "N/A") {
+            artifact_error("invalid PERFECT verdict: Taste: " verdict_values["Taste"])
+        }
+        for (verdict_name in material_gap_principles) {
+            if (verdict_values[verdict_name] != "UNREVIEWED") {
+                artifact_error("material coverage gap requires UNREVIEWED verdict: " verdict_name)
+            }
+        }
+        for (verdict_index = 1; verdict_index <= 6; verdict_index++) {
+            verdict_name = required_verdicts[verdict_index]
+            if (verdict_values[verdict_name] == "UNREVIEWED" &&
+                !material_gap_principles[verdict_name] &&
+                !purpose_gap_principles[verdict_name]) {
+                artifact_error("UNREVIEWED verdict lacks material coverage gap: " verdict_name)
+            }
+        }
+        for (verdict_name in purpose_gap_principles) {
+            if (verdict_values[verdict_name] != "UNREVIEWED") {
+                artifact_error("Purpose coverage gap requires UNREVIEWED verdict: " verdict_name)
+            }
+        }
+        for (verdict_name in nonmaterial_gap_principles) {
+            if (!material_gap_principles[verdict_name] &&
+                !blocking_principles[verdict_name] &&
+                verdict_values[verdict_name] != "CONCERN") {
+                artifact_error("non-material coverage gap requires CONCERN verdict: " verdict_name)
+            }
+        }
+        for (verdict_index = 1; verdict_index <= 6; verdict_index++) {
+            verdict_name = required_verdicts[verdict_index]
+            if (verdict_values[verdict_name] == "FAIL" &&
+                !blocking_principles[verdict_name]) {
+                artifact_error("FAIL verdict requires a verified blocking finding: " verdict_name)
+            }
+        }
+        for (finding_id in dispositions) {
+            if (dispositions[finding_id] != "verified") {
+                continue
+            }
+            principle = principles[finding_id]
+            if (classes[finding_id] == "blocking" &&
+                principle != "Clarity" &&
+                principle != "Taste" &&
+                verdict_values[principle == "Edge Cases" ? "EdgeCases" : principle] != "FAIL" &&
+                verdict_values[principle == "Edge Cases" ? "EdgeCases" : principle] != "UNREVIEWED") {
+                artifact_error("blocking finding requires FAIL verdict: " finding_id)
+            } else if (classes[finding_id] == "advisory" &&
+                       principle != "Purpose" &&
+                       principle != "Taste" &&
+                       verdict_values[principle == "Edge Cases" ? "EdgeCases" : principle] != "CONCERN" &&
+                       verdict_values[principle == "Edge Cases" ? "EdgeCases" : principle] != "UNREVIEWED") {
+                artifact_error("advisory finding requires CONCERN verdict: " finding_id)
+            }
+        }
+        if (recommendation_count == 1 &&
+            !verified_blocker &&
+            verdict_values["Purpose"] == "NEEDS DISCUSSION" &&
+            recommendation != "NEEDS DISCUSSION") {
+            artifact_error("Purpose NEEDS DISCUSSION verdict conflicts with recommendation: " recommendation)
+        }
+        for (verdict_index = 1; verdict_index <= 6; verdict_index++) {
+            verdict_name = required_verdicts[verdict_index]
+            if (verdict_values[verdict_name] == "UNREVIEWED") {
+                if (recommendation_count == 1) {
+                    artifact_error("definitive recommendation conflicts with UNREVIEWED PERFECT verdict: " verdict_name)
+                } else if (unable_count != 1) {
+                    artifact_error("UNREVIEWED PERFECT verdict requires UnableToReview outcome: " verdict_name)
+                }
+            }
+        }
+
+        exit invalid ? 1 : 0
+    }
+' "$context_file" "$ledger_file" "$review_file" || exit 1
+
+outcome_variant=$(awk '
+    /^## Outcome[[:space:]]*$/ {
+        in_outcome = 1
+        next
+    }
+    in_outcome && /^## / {
+        in_outcome = 0
+    }
+    in_outcome && /^- Recommendation: / {
+        print "recommendation"
+        exit
+    }
+    in_outcome && /^- UnableToReview:[[:space:]]*$/ {
+        print "unable"
+        exit
+    }
+' "$review_file")
+
+case "$expected_readiness:$outcome_variant" in
+    ready:recommendation|ready:unable|'UNABLE TO REVIEW':unable) ;;
+    'UNABLE TO REVIEW':recommendation)
+        fail "failed readiness conflicts with a definitive recommendation"
+        ;;
+esac
+
+if [ "$(field_value "$review_file" ContextArtifact)" != "context-brief.md" ]; then
+    fail "invalid ContextArtifact link"
+fi
+if [ "$(field_value "$review_file" LedgerArtifact)" != "findings-ledger.md" ]; then
+    fail "invalid LedgerArtifact link"
+fi
+
+printf '%s\n' "review artifacts valid: $review_dir"

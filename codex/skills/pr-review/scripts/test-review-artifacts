@@ -1,0 +1,864 @@
+#!/bin/sh
+
+set -u
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+VALIDATOR="$SCRIPT_DIR/validate-review-artifacts"
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-review-artifacts.XXXXXX") || exit 1
+
+trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+if [ ! -x "$VALIDATOR" ]; then
+    printf '%s\n' "not ok - validator is missing or not executable: $VALIDATOR" >&2
+    exit 1
+fi
+
+tests_run=0
+tests_failed=0
+
+write_context_brief() {
+    fixture_dir=$1
+    readiness=$2
+    coverage_state=$3
+    coverage_material=$4
+    mode=${5:-Standard}
+    mode_selection=${6:-default}
+    readiness_history=${7-initial readiness assessment recorded}
+    coverage_principles=${8:-Reliability}
+
+    cat >"$fixture_dir/context-brief.md" <<EOF
+# Context Brief
+
+- Owner: example
+- Repository: repository
+- PRNumber: 42
+- PRURL: https://github.com/example/repository/pull/42
+- Mode: $mode
+- ModeSelection: $mode_selection
+- ObservedBase: 1111111111111111111111111111111111111111
+- ObservedHead: 2222222222222222222222222222222222222222
+- Readiness: $readiness
+- ReadinessHistory: $readiness_history
+
+## Coverage
+
+### application behavior
+
+- Owner: general-reviewer
+- Principles: $coverage_principles
+- Evidence: src/example.c and tests/example-test.c
+- State: $coverage_state
+- Material: $coverage_material
+EOF
+}
+
+write_empty_ledger() {
+    fixture_dir=$1
+    readiness=$2
+    coverage_state=$3
+    coverage_material=$4
+    mode=${5:-Standard}
+    mode_selection=${6:-default}
+    coverage_principles=${7:-Reliability}
+    unresolved_material_decisions=${8:-none}
+
+    cat >"$fixture_dir/findings-ledger.md" <<EOF
+# Findings Ledger
+
+- Owner: example
+- Repository: repository
+- PRNumber: 42
+- Mode: $mode
+- ModeSelection: $mode_selection
+- ObservedHead: 2222222222222222222222222222222222222222
+- Readiness: $readiness
+- UnresolvedMaterialDecisions: $unresolved_material_decisions
+
+## Coverage
+
+### application behavior
+
+- Owner: general-reviewer
+- Principles: $coverage_principles
+- Evidence: src/example.c and tests/example-test.c
+- State: $coverage_state
+- Material: $coverage_material
+
+## Findings
+
+No findings.
+EOF
+}
+
+write_finding_ledger() {
+    fixture_dir=$1
+    finding_id=$2
+    disposition=$3
+    finding_class=$4
+    duplicate_of=$5
+    supersedes=$6
+    mode=${7:-Standard}
+    mode_selection=${8:-default}
+    finding_principle=${9:-Reliability}
+    unresolved_material_decisions=${10:-none}
+    coverage_state=${11:-reviewed}
+    coverage_material=${12:-yes}
+    coverage_principles=${13:-Reliability}
+
+    cat >"$fixture_dir/findings-ledger.md" <<EOF
+# Findings Ledger
+
+- Owner: example
+- Repository: repository
+- PRNumber: 42
+- Mode: $mode
+- ModeSelection: $mode_selection
+- ObservedHead: 2222222222222222222222222222222222222222
+- Readiness: ready
+- UnresolvedMaterialDecisions: $unresolved_material_decisions
+
+## Coverage
+
+### application behavior
+
+- Owner: general-reviewer
+- Principles: $coverage_principles
+- Evidence: src/example.c and tests/example-test.c
+- State: $coverage_state
+- Material: $coverage_material
+
+## Findings
+
+### Finding $finding_id
+
+- ID: $finding_id
+- Claim: The changed error path returns success.
+- Impact: Callers can accept an incomplete operation.
+- Principle: $finding_principle
+- Class: $finding_class
+- AffectedBehavior: error handling
+- Scope: src/example.c
+- SourceReviewers: general-reviewer
+- Evidence: src/example.c:27 and tests/example-test.c:41
+- Disposition: $disposition
+- DispositionHistory: candidate -> $disposition; verified against the changed branch
+- DuplicateOf: $duplicate_of
+- Supersedes: $supersedes
+- RawOutput: none
+EOF
+}
+
+append_finding_record() {
+    fixture_dir=$1
+    finding_id=$2
+    disposition=$3
+    finding_class=$4
+    supersedes=$5
+    disposition_history=$6
+
+    cat >>"$fixture_dir/findings-ledger.md" <<EOF
+
+### Finding $finding_id
+
+- ID: $finding_id
+- Claim: The replacement error path returns success.
+- Impact: Callers can accept an incomplete replacement operation.
+- Principle: Reliability
+- Class: $finding_class
+- AffectedBehavior: replacement error handling
+- Scope: src/replacement.c
+- SourceReviewers: general-reviewer
+- Evidence: src/replacement.c:31 and tests/replacement-test.c:52
+- Disposition: $disposition
+- DispositionHistory: $disposition_history
+- DuplicateOf: none
+- Supersedes: $supersedes
+- RawOutput: none
+EOF
+}
+
+set_current_epoch_and_head() {
+    fixture_dir=$1
+    current_epoch=$2
+    current_head=$3
+
+    for artifact_name in context-brief.md findings-ledger.md perfect-review.md; do
+        awk -v current_epoch="$current_epoch" -v current_head="$current_head" '
+            /^- ObservedHead: / {
+                print "- ObservedHead: " current_head
+                print "- CurrentEpoch: " current_epoch
+                next
+            }
+            { print }
+        ' "$fixture_dir/$artifact_name" >"$fixture_dir/$artifact_name.tmp"
+        mv "$fixture_dir/$artifact_name.tmp" "$fixture_dir/$artifact_name"
+    done
+}
+
+append_epoch_record() {
+    artifact_file=$1
+    epoch=$2
+    observed_base=$3
+    observed_head=$4
+    review_type=$5
+    inherits_from=$6
+    inherited_evidence=$7
+    invalidated_evidence=$8
+    amendments=$9
+    finding_ids=${10}
+    finding_states=${11}
+
+    cat >>"$artifact_file" <<EOF
+
+### Epoch $epoch
+
+- Epoch: $epoch
+- ObservedBase: $observed_base
+- ObservedHead: $observed_head
+- ReviewType: $review_type
+- InheritsFrom: $inherits_from
+- InheritedEvidence: $inherited_evidence
+- InvalidatedEvidence: $invalidated_evidence
+- Amendments: $amendments
+- FindingIDs: $finding_ids
+- FindingStates: $finding_states
+EOF
+}
+
+start_epoch_history() {
+    fixture_dir=$1
+
+    for artifact_name in context-brief.md findings-ledger.md perfect-review.md; do
+        cat >>"$fixture_dir/$artifact_name" <<'EOF'
+
+## Review Epochs
+EOF
+    done
+}
+
+append_epoch_to_fixture() {
+    fixture_dir=$1
+    epoch=$2
+    observed_base=$3
+    observed_head=$4
+    review_type=$5
+    inherits_from=$6
+    inherited_evidence=$7
+    invalidated_evidence=$8
+    amendments=$9
+    finding_ids=${10}
+    finding_states=${11}
+
+    for artifact_name in context-brief.md findings-ledger.md perfect-review.md; do
+        append_epoch_record \
+            "$fixture_dir/$artifact_name" \
+            "$epoch" \
+            "$observed_base" \
+            "$observed_head" \
+            "$review_type" \
+            "$inherits_from" \
+            "$inherited_evidence" \
+            "$invalidated_evidence" \
+            "$amendments" \
+            "$finding_ids" \
+            "$finding_states"
+    done
+}
+
+append_amendment() {
+    fixture_dir=$1
+    amendment_id=$2
+    epoch=$3
+    amendment_type=$4
+    amends_epoch=$5
+    subject_finding=$6
+    historical_finding=$7
+    replacement_finding=$8
+    from_disposition=$9
+    to_disposition=${10}
+    evidence_change=${11}
+
+    if ! grep -F "## Amendments" "$fixture_dir/findings-ledger.md" >/dev/null 2>&1; then
+        cat >>"$fixture_dir/findings-ledger.md" <<'EOF'
+
+## Amendments
+EOF
+    fi
+
+    cat >>"$fixture_dir/findings-ledger.md" <<EOF
+
+### Amendment $amendment_id
+
+- ID: $amendment_id
+- Epoch: $epoch
+- Type: $amendment_type
+- AmendsEpoch: $amends_epoch
+- SubjectFinding: $subject_finding
+- HistoricalFinding: $historical_finding
+- ReplacementFinding: $replacement_finding
+- FromDisposition: $from_disposition
+- ToDisposition: $to_disposition
+- EvidenceChange: $evidence_change
+EOF
+}
+
+set_disposition_history() {
+    fixture_dir=$1
+    disposition_history=$2
+
+    awk -v disposition_history="$disposition_history" '
+        /^- DispositionHistory: / {
+            print "- DispositionHistory: " disposition_history
+            next
+        }
+        { print }
+    ' "$fixture_dir/findings-ledger.md" >"$fixture_dir/findings-ledger.tmp"
+    mv "$fixture_dir/findings-ledger.tmp" "$fixture_dir/findings-ledger.md"
+}
+
+write_recommendation_review() {
+    fixture_dir=$1
+    recommendation=$2
+    finding_id=$3
+    coverage_state=$4
+    coverage_material=$5
+    mode=${6:-Standard}
+    mode_selection=${7:-default}
+    purpose_verdict=${8:-PASS}
+    reliability_verdict=${9:-PASS}
+    finding_principle=${10:-Reliability}
+
+    cat >"$fixture_dir/perfect-review.md" <<EOF
+# PERFECT Review
+
+- Owner: example
+- Repository: repository
+- PRNumber: 42
+- PRURL: https://github.com/example/repository/pull/42
+- Mode: $mode
+- ModeSelection: $mode_selection
+- ObservedHead: 2222222222222222222222222222222222222222
+- Readiness: ready
+- ContextArtifact: context-brief.md
+- LedgerArtifact: findings-ledger.md
+
+## Coverage
+
+### application behavior
+
+- Owner: general-reviewer
+- Principles: Reliability
+- Evidence: src/example.c and tests/example-test.c
+- State: $coverage_state
+- Material: $coverage_material
+
+## PERFECT Verdicts
+
+- Purpose: $purpose_verdict
+- EdgeCases: PASS
+- Reliability: $reliability_verdict
+- Form: PASS
+- Evidence: PASS
+- Clarity: PASS
+- Taste: N/A
+EOF
+
+    if [ "$finding_id" != none ]; then
+        printf '\n%s\n\n%s\n\n%s\n' "## Findings" "### $finding_principle" "- Finding: $finding_id" >>"$fixture_dir/perfect-review.md"
+    fi
+
+    cat >>"$fixture_dir/perfect-review.md" <<EOF
+
+## Verification Gaps
+
+None.
+
+## Outcome
+
+- Recommendation: $recommendation
+EOF
+}
+
+write_unable_review() {
+    fixture_dir=$1
+    coverage_state=${2:-unable-to-review}
+    coverage_material=${3:-yes}
+    reliability_verdict=${4:-UNREVIEWED}
+    coverage_principles=${5:-Reliability}
+    readiness=${6:-UNABLE TO REVIEW}
+    purpose_verdict=${7:-UNREVIEWED}
+    edge_cases_verdict=${8:-UNREVIEWED}
+    form_verdict=${9:-UNREVIEWED}
+    evidence_verdict=${10:-UNREVIEWED}
+    clarity_verdict=${11:-UNREVIEWED}
+    coverage_owner=${12:-general-reviewer}
+    coverage_evidence=${13:-src/example.c and tests/example-test.c}
+
+    cat >"$fixture_dir/perfect-review.md" <<EOF
+# PERFECT Review
+
+- Owner: example
+- Repository: repository
+- PRNumber: 42
+- PRURL: https://github.com/example/repository/pull/42
+- Mode: Standard
+- ModeSelection: default
+- ObservedHead: 2222222222222222222222222222222222222222
+- Readiness: $readiness
+- ContextArtifact: context-brief.md
+- LedgerArtifact: findings-ledger.md
+
+## Coverage
+
+### application behavior
+
+- Owner: $coverage_owner
+- Principles: $coverage_principles
+- Evidence: $coverage_evidence
+- State: $coverage_state
+- Material: $coverage_material
+
+## PERFECT Verdicts
+
+- Purpose: $purpose_verdict
+- EdgeCases: $edge_cases_verdict
+- Reliability: $reliability_verdict
+- Form: $form_verdict
+- Evidence: $evidence_verdict
+- Clarity: $clarity_verdict
+- Taste: N/A
+
+## Verification Gaps
+
+- The changed subsystem could not be reviewed.
+
+## Outcome
+
+- UnableToReview:
+  - Blocker: The changed language is unsupported by the available review capability.
+  - GatheredEvidence: PR metadata, patch, and changed paths.
+  - AffectedCoverage: application behavior.
+  - Remediation: Provide a reviewer capable of evaluating the changed language.
+EOF
+}
+
+make_ready_fixture() {
+    fixture_dir=$1
+    mkdir "$fixture_dir" || return 1
+    write_context_brief "$fixture_dir" ready reviewed yes
+    write_empty_ledger "$fixture_dir" ready reviewed yes
+    write_recommendation_review "$fixture_dir" APPROVE none reviewed yes
+}
+
+make_request_changes_fixture() {
+    fixture_dir=$1
+    mkdir "$fixture_dir" || return 1
+    write_context_brief "$fixture_dir" ready reviewed yes
+    write_finding_ledger "$fixture_dir" F001 verified blocking none none
+    write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F001 reviewed yes Standard default PASS FAIL
+}
+
+make_needs_discussion_fixture() {
+    fixture_dir=$1
+    mkdir "$fixture_dir" || return 1
+    write_context_brief "$fixture_dir" ready reviewed yes
+    write_finding_ledger "$fixture_dir" F001 verified advisory none none Standard default Reliability "Whether to preserve the legacy fallback behavior"
+    write_recommendation_review "$fixture_dir" "NEEDS DISCUSSION" F001 reviewed yes Standard default "NEEDS DISCUSSION" CONCERN
+}
+
+make_unable_fixture() {
+    fixture_dir=$1
+    mkdir "$fixture_dir" || return 1
+    coverage_principles="Purpose, Edge Cases, Reliability, Form, Evidence, Clarity"
+    write_context_brief "$fixture_dir" "UNABLE TO REVIEW" unable-to-review yes Standard default "initial readiness assessment recorded" "$coverage_principles"
+    write_empty_ledger "$fixture_dir" "UNABLE TO REVIEW" unable-to-review yes Standard default "$coverage_principles"
+    write_unable_review "$fixture_dir" unable-to-review yes UNREVIEWED "$coverage_principles"
+}
+
+assert_validation() {
+    test_name=$1
+    expected_status=$2
+    expected_diagnostic=$3
+    fixture_dir=$4
+    output_file="$TEST_ROOT/output"
+
+    tests_run=$((tests_run + 1))
+    "$VALIDATOR" "$fixture_dir" >"$output_file" 2>&1
+    actual_status=$?
+
+    if [ "$actual_status" -ne "$expected_status" ]; then
+        printf '%s\n' "not ok - $test_name: expected status $expected_status, got $actual_status"
+        cat "$output_file"
+        tests_failed=$((tests_failed + 1))
+        return
+    fi
+
+    if ! grep -F "$expected_diagnostic" "$output_file" >/dev/null 2>&1; then
+        printf '%s\n' "not ok - $test_name: missing diagnostic: $expected_diagnostic"
+        cat "$output_file"
+        tests_failed=$((tests_failed + 1))
+        return
+    fi
+
+    printf '%s\n' "ok - $test_name"
+}
+
+fixture_dir="$TEST_ROOT/ready-approval"
+make_ready_fixture "$fixture_dir"
+assert_validation "accepts a ready approval" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/request-changes"
+make_request_changes_fixture "$fixture_dir"
+assert_validation "accepts request changes with a verified blocker" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/needs-discussion"
+make_needs_discussion_fixture "$fixture_dir"
+assert_validation "accepts needs discussion" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unable-empty-ledger"
+make_unable_fixture "$fixture_dir"
+assert_validation "accepts an empty-ledger unable-to-review outcome" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/ready-material-unreviewed-unable"
+mkdir "$fixture_dir"
+coverage_principles="Purpose, Edge Cases, Reliability, Form, Evidence, Clarity"
+write_context_brief "$fixture_dir" ready unreviewed yes Standard default "initial readiness assessment recorded" "$coverage_principles"
+write_empty_ledger "$fixture_dir" ready unreviewed yes Standard default "$coverage_principles"
+write_unable_review "$fixture_dir" unreviewed yes UNREVIEWED "$coverage_principles" ready
+assert_validation "accepts a ready review with material unreviewed coverage and an unable-to-review outcome" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/ready-non-material-purpose-unreviewed-unable"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready unreviewed no Standard default "initial readiness assessment recorded" Purpose
+write_empty_ledger "$fixture_dir" ready unreviewed no Standard default Purpose
+write_unable_review "$fixture_dir" unreviewed no PASS Purpose ready UNREVIEWED PASS PASS PASS PASS
+assert_validation "accepts a ready review with a non-material Purpose gap and an unable-to-review outcome" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/candidate-unable"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready unreviewed yes Standard default "initial readiness assessment recorded" Reliability
+write_finding_ledger "$fixture_dir" F001 candidate advisory none none Standard default Reliability none unreviewed yes Reliability
+write_unable_review "$fixture_dir" unreviewed yes UNREVIEWED Reliability ready PASS PASS PASS PASS PASS
+assert_validation "accepts a candidate disposition with qualifying coverage and an unable-to-review outcome" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/ready-reviewed-unable"
+make_ready_fixture "$fixture_dir"
+grep -v '^- Recommendation:' "$fixture_dir/perfect-review.md" >"$fixture_dir/perfect-review.tmp"
+mv "$fixture_dir/perfect-review.tmp" "$fixture_dir/perfect-review.md"
+cat >>"$fixture_dir/perfect-review.md" <<'EOF'
+- UnableToReview:
+  - Blocker: Required evidence is inaccessible.
+  - GatheredEvidence: PR metadata.
+  - AffectedCoverage: application behavior.
+  - Remediation: Restore access to the required evidence.
+EOF
+assert_validation "rejects a ready review with no qualifying coverage gap and an unable-to-review outcome" 1 "ready review conflicts with UnableToReview outcome" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unreviewed-purpose-without-material-gap"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" "UNABLE TO REVIEW" unable-to-review yes
+write_empty_ledger "$fixture_dir" "UNABLE TO REVIEW" unable-to-review yes
+write_unable_review "$fixture_dir"
+assert_validation "rejects an UNREVIEWED Purpose verdict without a material coverage gap" 1 "UNREVIEWED verdict lacks material coverage gap: Purpose" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/explicit-deep"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes Deep explicit
+write_empty_ledger "$fixture_dir" ready reviewed yes Deep explicit
+write_recommendation_review "$fixture_dir" APPROVE none reviewed yes Deep explicit
+assert_validation "accepts explicitly selected Deep mode" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/default-deep"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes Deep default
+write_empty_ledger "$fixture_dir" ready reviewed yes Deep default
+write_recommendation_review "$fixture_dir" APPROVE none reviewed yes Deep default
+assert_validation "rejects default-selected Deep mode" 1 "Deep mode requires ModeSelection: explicit" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/invalid-mode-selection"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes Standard automatic
+write_empty_ledger "$fixture_dir" ready reviewed yes Standard automatic
+write_recommendation_review "$fixture_dir" APPROVE none reviewed yes Standard automatic
+assert_validation "rejects an invalid mode selection" 1 "invalid ModeSelection: context-brief.md: automatic" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/mismatched-mode-selection"
+make_ready_fixture "$fixture_dir"
+write_empty_ledger "$fixture_dir" ready reviewed yes Standard explicit
+assert_validation "rejects inconsistent mode selection" 1 "artifact ModeSelection mismatch: findings-ledger.md" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/empty-readiness-history"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes Standard default ""
+write_empty_ledger "$fixture_dir" ready reviewed yes
+write_recommendation_review "$fixture_dir" APPROVE none reviewed yes
+assert_validation "rejects an empty readiness history" 1 "missing required field: context-brief.md: ReadinessHistory" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/missing-artifact"
+make_ready_fixture "$fixture_dir"
+rm "$fixture_dir/perfect-review.md"
+assert_validation "rejects a missing canonical artifact" 1 "missing canonical artifact: perfect-review.md" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/dangling-final-finding"
+make_ready_fixture "$fixture_dir"
+write_recommendation_review "$fixture_dir" APPROVE F999 reviewed yes
+assert_validation "rejects a dangling final finding link" 1 "final finding references unknown ledger ID: F999" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/duplicate-coverage-record"
+make_ready_fixture "$fixture_dir"
+write_context_brief "$fixture_dir" ready unable-to-review yes Standard default "initial readiness assessment recorded" Purpose
+cat >>"$fixture_dir/context-brief.md" <<'EOF'
+
+### application behavior
+
+- Owner: general-reviewer
+- Principles: Reliability
+- Evidence: src/example.c and tests/example-test.c
+- State: reviewed
+- Material: yes
+EOF
+assert_validation "rejects a duplicate coverage record" 1 "duplicate coverage record: context-brief.md: application behavior" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/context-review-coverage-mismatch"
+make_ready_fixture "$fixture_dir"
+awk '
+    $0 == "- Evidence: src/example.c and tests/example-test.c" {
+        print "- Evidence: src/different.c"
+        next
+    }
+    { print }
+' "$fixture_dir/context-brief.md" >"$fixture_dir/context-brief.tmp"
+mv "$fixture_dir/context-brief.tmp" "$fixture_dir/context-brief.md"
+assert_validation "rejects coverage records that differ between context and review artifacts" 1 "coverage record mismatch: context-brief.md and perfect-review.md: application behavior" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/ledger-review-coverage-mismatch"
+make_ready_fixture "$fixture_dir"
+awk '
+    $0 == "- Owner: general-reviewer" {
+        print "- Owner: synthesis-reviewer"
+        next
+    }
+    { print }
+' "$fixture_dir/findings-ledger.md" >"$fixture_dir/findings-ledger.tmp"
+mv "$fixture_dir/findings-ledger.tmp" "$fixture_dir/findings-ledger.md"
+assert_validation "rejects coverage records that differ between ledger and review artifacts" 1 "coverage record mismatch: findings-ledger.md and perfect-review.md: application behavior" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unable-review-coverage-mismatch"
+make_unable_fixture "$fixture_dir"
+write_unable_review "$fixture_dir" unable-to-review yes UNREVIEWED "$coverage_principles" "UNABLE TO REVIEW" UNREVIEWED UNREVIEWED UNREVIEWED UNREVIEWED UNREVIEWED synthesis-reviewer
+assert_validation "rejects coverage records that differ for an unable-to-review outcome" 1 "coverage record mismatch: context-brief.md and perfect-review.md: application behavior" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/malformed-finding-id"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" FX01 verified blocking none none
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" FX01 reviewed yes Standard default PASS FAIL
+assert_validation "rejects a malformed finding ID" 1 "malformed finding ID: FX01" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unknown-duplicate"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F001 dismissed advisory F999 none
+assert_validation "rejects a duplicate link to an unknown ID" 1 "duplicate link references unknown finding ID: F999" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unknown-supersession"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F001 superseded advisory none F999
+assert_validation "rejects a supersession link to an unknown ID" 1 "supersession link references unknown finding ID: F999" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/both-outcomes"
+make_ready_fixture "$fixture_dir"
+cat >>"$fixture_dir/perfect-review.md" <<'EOF'
+- UnableToReview:
+  - Blocker: Required evidence is inaccessible.
+  - GatheredEvidence: PR metadata.
+  - AffectedCoverage: application behavior.
+  - Remediation: Restore access to the required evidence.
+EOF
+assert_validation "rejects both final outcome variants" 1 "exactly one final outcome variant is required" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/candidate-recommendation"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F001 candidate advisory none none
+assert_validation "rejects a candidate disposition with a definitive recommendation" 1 "candidate finding conflicts with definitive recommendation: F001" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/material-unreviewed-recommendation"
+make_ready_fixture "$fixture_dir"
+write_context_brief "$fixture_dir" ready unreviewed yes
+write_empty_ledger "$fixture_dir" ready unreviewed yes
+write_recommendation_review "$fixture_dir" APPROVE none unreviewed yes
+assert_validation "rejects a definitive recommendation with material unreviewed coverage" 1 "material UNREVIEWED coverage conflicts with recommendation: APPROVE" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unreviewed-verdict-recommendation"
+make_ready_fixture "$fixture_dir"
+write_recommendation_review "$fixture_dir" APPROVE none reviewed yes Standard default UNREVIEWED
+assert_validation "rejects a definitive recommendation with an unreviewed PERFECT verdict" 1 "definitive recommendation conflicts with UNREVIEWED PERFECT verdict: Purpose" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/missing-coverage-principles"
+make_ready_fixture "$fixture_dir"
+grep -v '^- Principles:' "$fixture_dir/context-brief.md" >"$fixture_dir/context-brief.tmp"
+mv "$fixture_dir/context-brief.tmp" "$fixture_dir/context-brief.md"
+assert_validation "rejects coverage missing principles" 1 "missing required coverage field: context-brief.md: Principles" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unknown-coverage-principle"
+make_ready_fixture "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes Standard default "initial readiness assessment recorded" Unknown
+assert_validation "rejects an unknown coverage principle" 1 "invalid coverage principle: context-brief.md: Unknown" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/advisory-purpose-finding"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F001 verified advisory none none Standard default Purpose
+write_recommendation_review "$fixture_dir" "NEEDS DISCUSSION" F001 reviewed yes Standard default "NEEDS DISCUSSION" PASS Purpose
+assert_validation "rejects an advisory Purpose finding" 1 "Purpose findings must be blocking: F001" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/needs-discussion-without-material-decision"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes
+write_finding_ledger "$fixture_dir" F001 verified advisory none none
+write_recommendation_review "$fixture_dir" "NEEDS DISCUSSION" F001 reviewed yes Standard default PASS CONCERN
+assert_validation "rejects needs discussion without an unresolved material decision" 1 "NEEDS DISCUSSION requires an unresolved material decision" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/approval-with-material-decision"
+make_ready_fixture "$fixture_dir"
+write_empty_ledger "$fixture_dir" ready reviewed yes Standard default Reliability "Whether to preserve the legacy fallback behavior"
+assert_validation "rejects approval with an unresolved material decision" 1 "unresolved material decision conflicts with recommendation: APPROVE" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/non-material-unreviewed-reliability"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready unreviewed no
+write_empty_ledger "$fixture_dir" ready unreviewed no
+write_recommendation_review "$fixture_dir" APPROVE none unreviewed no
+assert_validation "rejects a PASS verdict for a non-material Reliability coverage gap" 1 "non-material coverage gap requires CONCERN verdict: Reliability" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/material-unreviewed-reliability"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" "UNABLE TO REVIEW" unreviewed yes
+write_empty_ledger "$fixture_dir" "UNABLE TO REVIEW" unreviewed yes
+write_unable_review "$fixture_dir" unreviewed yes PASS
+assert_validation "rejects a PASS verdict for a material Reliability coverage gap" 1 "material coverage gap requires UNREVIEWED verdict: Reliability" "$fixture_dir"
+
+old_base=1111111111111111111111111111111111111111
+old_head=2222222222222222222222222222222222222222
+rebased_base=3333333333333333333333333333333333333333
+new_head=4444444444444444444444444444444444444444
+rebased_head=5555555555555555555555555555555555555555
+
+fixture_dir="$TEST_ROOT/initial-to-r1-upgrade"
+make_request_changes_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R1 "$old_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+assert_validation "accepts an initial review upgraded to R1 without changing finding IDs" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/r1-to-r2-inheritance"
+make_request_changes_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" incremental R1 "context:application behavior; findings:F001" none none F001 "F001=verified"
+assert_validation "accepts valid R1-to-R2 inheritance" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/rebase-evidence-change"
+make_request_changes_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R2 "$rebased_head"
+set_disposition_history "$fixture_dir" "R1 candidate -> verified; R2 verified -> verified; revision anchors revalidated after rebase"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$rebased_base" "$rebased_head" rebase R1 "context:application behavior; findings:F001" "revision-anchors:R1" A001 F001 "F001=verified"
+append_amendment "$fixture_dir" A001 R2 rebase R1 F001 F001 none verified verified "base and head SHAs changed; behavioral evidence revalidated"
+assert_validation "accepts rebase evidence changes with stable review and finding identity" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/targeted-supersession"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes
+write_finding_ledger "$fixture_dir" F001 superseded blocking none none
+set_disposition_history "$fixture_dir" "R1 candidate -> verified; R2 verified -> superseded; F002 represents the changed behavior"
+append_finding_record "$fixture_dir" F002 verified blocking F001 "R2 candidate -> verified; replacement behavior confirmed"
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F002 reviewed yes Standard default PASS FAIL
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" targeted-update R1 "context:application behavior" "finding-evidence:F001" A001 "F001,F002" "F001=superseded,F002=verified"
+append_amendment "$fixture_dir" A001 R2 targeted-supersession R1 F001 F001 F002 verified superseded "changed behavior is represented by F002"
+assert_validation "accepts targeted supersession while preserving the historical finding" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/full-rebuild"
+make_request_changes_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+set_disposition_history "$fixture_dir" "R1 candidate -> verified; R2 verified -> verified; full rebuild revalidated the claim"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" full-rebuild none none "all:R1" A001 F001 "F001=verified"
+append_amendment "$fixture_dir" A001 R2 full-rebuild R1 none none none none none "all current context and finding evidence rebuilt"
+assert_validation "accepts a full rebuild that preserves prior epoch history" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/single-finding-amendment"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes
+write_finding_ledger "$fixture_dir" F001 dismissed blocking none none
+set_disposition_history "$fixture_dir" "R1 candidate -> verified; R2 verified -> dismissed; focused verification disproved the claim"
+write_recommendation_review "$fixture_dir" APPROVE none reviewed yes
+set_current_epoch_and_head "$fixture_dir" R2 "$old_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$old_head" single-finding R1 "context:F001; evidence:F001" none A001 F001 "F001=dismissed"
+append_amendment "$fixture_dir" A001 R2 single-finding R1 F001 F001 none verified dismissed "focused verification disproved the claim"
+assert_validation "accepts a single-finding amendment with prior judgment preserved" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/skipped-epoch"
+make_ready_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R3 "$new_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none none none
+append_epoch_to_fixture "$fixture_dir" R3 "$old_base" "$new_head" incremental R1 "context:application behavior" none none none none
+assert_validation "rejects a skipped review epoch" 1 "skipped review epoch: expected R2, found R3" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/dangling-amendment"
+make_ready_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none none none
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" incremental R1 "context:application behavior" none A999 none none
+assert_validation "rejects an epoch linked to an unknown amendment" 1 "epoch references unknown amendment: R2: A999" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/changed-historical-id"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes
+write_finding_ledger "$fixture_dir" F002 verified blocking none none
+set_disposition_history "$fixture_dir" "R1 candidate -> verified as F001; R2 verified -> verified as F002"
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F002 reviewed yes Standard default PASS FAIL
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" single-finding R1 "context:F001; evidence:F001" none A001 F002 "F002=verified"
+append_amendment "$fixture_dir" A001 R2 single-finding R1 F002 F001 none verified verified "finding evidence refreshed"
+assert_validation "rejects a changed historical finding ID" 1 "historical finding ID changed: A001: F001 -> F002" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/invalid-disposition-transition"
+make_request_changes_fixture "$fixture_dir"
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+set_disposition_history "$fixture_dir" "R1 candidate -> superseded; R2 superseded -> verified"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=superseded"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" single-finding R1 "context:F001; evidence:F001" none A001 F001 "F001=verified"
+append_amendment "$fixture_dir" A001 R2 single-finding R1 F001 F001 none superseded verified "attempted to revive a terminal superseded record"
+assert_validation "rejects an invalid disposition transition" 1 "invalid disposition transition: A001: superseded -> verified" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/stale-final-review-reference"
+mkdir "$fixture_dir"
+write_context_brief "$fixture_dir" ready reviewed yes
+write_finding_ledger "$fixture_dir" F001 dismissed blocking none none
+set_disposition_history "$fixture_dir" "R1 candidate -> verified; R2 verified -> dismissed"
+append_finding_record "$fixture_dir" F002 verified blocking none "R2 candidate -> verified; current blocking claim"
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F001 reviewed yes Standard default PASS FAIL
+set_current_epoch_and_head "$fixture_dir" R2 "$new_head"
+start_epoch_history "$fixture_dir"
+append_epoch_to_fixture "$fixture_dir" R1 "$old_base" "$old_head" initial-upgrade initial "legacy canonical artifacts" none none F001 "F001=verified"
+append_epoch_to_fixture "$fixture_dir" R2 "$old_base" "$new_head" targeted-update R1 "context:application behavior" "finding-evidence:F001" A001 "F001,F002" "F001=dismissed,F002=verified"
+append_amendment "$fixture_dir" A001 R2 single-finding R1 F001 F001 none verified dismissed "focused verification disproved F001"
+assert_validation "rejects final-review references to stale finding state" 1 "final review references stale finding state: F001" "$fixture_dir"
+
+if [ "$tests_failed" -ne 0 ]; then
+    printf '%s\n' "$tests_failed of $tests_run review artifact tests failed"
+    exit 1
+fi
+
+printf '%s\n' "all $tests_run review artifact tests passed"

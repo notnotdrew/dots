@@ -1,0 +1,114 @@
+#!/bin/sh
+
+set -u
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+LAUNCHER="$SCRIPT_DIR/../../../../bin/pr-review"
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-pr-review-launcher.XXXXXX") || exit 1
+
+trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+if [ ! -x "$LAUNCHER" ]; then
+    printf '%s\n' "not ok - launcher is missing or not executable: $LAUNCHER" >&2
+    exit 1
+fi
+
+tests_run=0
+tests_failed=0
+
+assert_command() {
+    test_name=$1
+    expected_status=$2
+    expected_output=$3
+    shift 3
+
+    tests_run=$((tests_run + 1))
+    actual_file="$TEST_ROOT/actual-$tests_run"
+    expected_file="$TEST_ROOT/expected-$tests_run"
+    printf '%s\n' "$expected_output" >"$expected_file"
+
+    "$LAUNCHER" "$@" >"$actual_file" 2>&1
+    actual_status=$?
+
+    if [ "$actual_status" -ne "$expected_status" ]; then
+        printf '%s\n' "not ok - $test_name: expected status $expected_status, got $actual_status"
+        printf '%s\n' "expected output:"
+        while IFS= read -r output_line || [ -n "$output_line" ]; do
+            printf '%s\n' "$output_line"
+        done <"$expected_file"
+        printf '%s\n' "actual output:"
+        while IFS= read -r output_line || [ -n "$output_line" ]; do
+            printf '%s\n' "$output_line"
+        done <"$actual_file"
+        tests_failed=$((tests_failed + 1))
+        return
+    fi
+
+    if ! cmp -s "$expected_file" "$actual_file"; then
+        printf '%s\n' "not ok - $test_name: output differs"
+        printf '%s\n' "expected output:"
+        while IFS= read -r output_line || [ -n "$output_line" ]; do
+            printf '%s\n' "$output_line"
+        done <"$expected_file"
+        printf '%s\n' "actual output:"
+        while IFS= read -r output_line || [ -n "$output_line" ]; do
+            printf '%s\n' "$output_line"
+        done <"$actual_file"
+        tests_failed=$((tests_failed + 1))
+        return
+    fi
+
+    printf '%s\n' "ok - $test_name"
+}
+
+usage_error='error: usage: pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
+
+assert_command "defaults to Standard mode" 0 'worktree: pr:42
+prompt: /pr-review 42' --dry-run 42
+
+assert_command "forwards explicit Standard mode" 0 'worktree: pr:42
+prompt: /pr-review --mode standard 42' --dry-run --mode standard 42
+
+assert_command "forwards Deep mode" 0 'worktree: pr:42
+prompt: /pr-review --mode deep 42' --dry-run --mode deep 42
+
+assert_command "forwards an omitted-mode full rebuild" 0 'worktree: pr:42
+prompt: /pr-review --full-rebuild 42' --dry-run --full-rebuild 42
+
+assert_command "forwards an explicit-Standard full rebuild" 0 'worktree: pr:42
+prompt: /pr-review --mode standard --full-rebuild 42' --dry-run --mode standard --full-rebuild 42
+
+assert_command "forwards a Deep full rebuild" 0 'worktree: pr:42
+prompt: /pr-review --mode deep --full-rebuild 42' --dry-run --mode deep --full-rebuild 42
+
+assert_command "forwards a single-finding revision" 0 'worktree: pr:42
+prompt: /pr-review --finding F001 42' --dry-run --finding F001 42
+
+assert_command "rejects an unknown mode" 1 'error: unknown mode: broad' --dry-run --mode broad 42
+
+assert_command "rejects duplicate dry-run flags" 1 'error: duplicate option: --dry-run' --dry-run --dry-run 42
+assert_command "rejects duplicate mode flags" 1 'error: duplicate option: --mode' --dry-run --mode standard --mode standard 42
+assert_command "rejects duplicate full-rebuild flags" 1 'error: duplicate option: --full-rebuild' --dry-run --full-rebuild --full-rebuild 42
+assert_command "rejects duplicate finding flags" 1 'error: duplicate option: --finding' --dry-run --finding F001 --finding F002 42
+
+assert_command "rejects a missing mode value" 1 'error: missing value for --mode' --dry-run --mode
+assert_command "rejects a missing finding value" 1 'error: missing value for --finding' --dry-run --finding
+
+assert_command "rejects a Deep single-finding revision" 1 'error: --finding cannot be combined with --mode deep' --dry-run --mode deep --finding F001 42
+assert_command "rejects a full-rebuild single-finding revision" 1 'error: --finding cannot be combined with --full-rebuild' --dry-run --full-rebuild --finding F001 42
+
+assert_command "rejects a zero finding ID" 1 'error: invalid finding ID: F0 (expected F followed by a positive integer)' --dry-run --finding F0 42
+assert_command "rejects an all-zero padded finding ID" 1 'error: invalid finding ID: F000 (expected F followed by a positive integer)' --dry-run --finding F000 42
+assert_command "rejects a lowercase finding ID" 1 'error: invalid finding ID: f001 (expected F followed by a positive integer)' --dry-run --finding f001 42
+assert_command "rejects a finding ID suffix" 1 'error: invalid finding ID: F001x (expected F followed by a positive integer)' --dry-run --finding F001x 42
+
+assert_command "rejects a missing positional reference" 1 "$usage_error" --dry-run
+assert_command "rejects extra positional references" 1 "$usage_error" --dry-run 42 43
+assert_command "rejects an unknown flag" 1 'error: unknown option: --verbose' --dry-run --verbose 42
+
+if [ "$tests_failed" -ne 0 ]; then
+    printf '%s\n' "$tests_failed of $tests_run pr-review launcher tests failed"
+    exit 1
+fi
+
+printf '%s\n' "all $tests_run pr-review launcher tests passed"

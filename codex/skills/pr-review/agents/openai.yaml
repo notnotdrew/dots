@@ -1,4 +1,4 @@
 interface:
   display_name: "PR Review"
-  short_description: "Review GitHub pull requests with PERFECT"
-  default_prompt: "Review this GitHub pull request using the PERFECT methodology"
+  short_description: "Review and update pull requests with PERFECT"
+  default_prompt: "Review or update this GitHub pull request with PERFECT, using Standard by default and Deep only when explicitly requested"

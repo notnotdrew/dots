@@ -1,19 +1,27 @@
 ---
 name: pr-review
-description: "Reviews GitHub pull requests using the PERFECT code review methodology: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, Taste. Use when reviewing a PR by number or URL, or when the user asks for a structured pull request review."
+description: "Reviews and updates GitHub pull requests using PERFECT: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, Taste. Use for Standard reviews by default, explicitly requested Deep reviews, or follow-up review updates."
 ---
 
 # PR Review
 
-Review a GitHub pull request with full-file context, applying PERFECT in priority order: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, then Taste.
+Review or update a GitHub pull request with the artifact-backed PERFECT workflow. Standard is the default; Deep is available by explicit selection. Apply PERFECT in priority order: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, then Taste.
 
 ## Quick Start
 
-Run the launcher from the repository containing the pull request:
+When this skill is selected or receives a `/pr-review` request, execute the
+selected workflow in the current agent session. Never invoke the `pr-review`
+shell command from inside the agent: that command is the outer launcher and
+would recursively start another agent.
+
+For a human starting a review from a shell, run the launcher from the
+repository containing the pull request:
 
 ```bash
 pr-review 42
 pr-review https://github.com/org/repo/pull/42
+pr-review --mode deep 42
+pr-review --finding F001 42
 ```
 
 Prerequisites:
@@ -30,109 +38,64 @@ Use [scripts/gh-pr-parse](scripts/gh-pr-parse) to validate and parse the referen
 
 - **PR number**: e.g. `42`
 - **PR URL**: e.g. `https://github.com/org/repo/pull/42`
+- **Mode**: omitted or `--mode standard` for Standard; `--mode deep` for explicit Deep
+- **Update controls**: `--full-rebuild` or `--finding F<positive-integer>`
 
 Both forms must be run from the target repository so WorkTrunk can create or locate the PR checkout.
 
-## Workflow
+Standard is the omitted-mode default. Deep must be selected explicitly and never results from automatic escalation.
 
-### 1. Prepare The Checkout
+`--finding` requires an existing review series and one existing ID matching `F0*[1-9][0-9]*`. Display the normalized ID with at least three digits, allow additional digits, and use Standard verification depth. It is incompatible with `--mode deep` and `--full-rebuild`. A full rebuild also requires an existing series.
 
-Validate the input and create or select an isolated checkout of the PR head:
+## Workflow Routing
 
-```bash
-PR_PARSE="<absolute path to scripts/gh-pr-parse resolved from this skill>"
-PR_REF="<PR-ID-or-URL>"
-"$PR_PARSE" "$PR_REF" >/dev/null
+Resolve PR identity and the canonical series path before choosing a workflow:
 
-case "$PR_REF" in
-  *[!0-9]*) WORKTRUNK_REF="$PR_REF" ;;
-  *) WORKTRUNK_REF="pr:${PR_REF}" ;;
-esac
+1. If the canonical series path is absent, use [standard-review.md](workflows/standard-review.md) for omitted or explicit Standard, or [deep-review.md](workflows/deep-review.md) for explicitly selected Deep.
+2. If the series path exists, route to [incremental-review.md](workflows/incremental-review.md) before inspecting its contents so that workflow can recover an interrupted publication or report a precise collision. Inherit unaffected evidence by default; `--full-rebuild` selects its full-rebuild path under the selected mode.
+3. Reject `--full-rebuild` or `--finding` when the series path is absent. An empty, partial, invalid, or noncanonical existing path is a collision or recovery blocker, not an initial review.
 
-SWITCH_RESULT=$(wt switch --no-cd --format json "$WORKTRUNK_REF")
-REVIEW_DIR=$(printf '%s\n' "$SWITCH_RESULT" | jq -er '.path')
-WORKTRUNK_ACTION=$(printf '%s\n' "$SWITCH_RESULT" | jq -er '.action')
-```
+The selected workflow owns the complete procedure. Do not replace it with an inline single-agent review or duplicate Standard stages in the entry point.
 
-If setup fails because the environment blocks network or GitHub access, report the failure and stop.
+## Shared Workflow Boundaries
 
-### 2. Gather Evidence
+Every route reuses the contracts and Standard coordinator stages for readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, epochs, inheritance, amendments, and recoverable replacement while preserving those shared boundaries.
 
-Get the PR metadata, diff, checks, and changed paths:
+Standard may recommend a later Deep review but must complete under Standard guarantees or return `UNABLE TO REVIEW`. Deep must independently verify every retained actionable finding. Incremental review revalidates changed and dependency-affected scope, preserves unaffected history, and performs a full rebuild only when explicitly requested or when broad invalidation makes inheritance unsafe.
 
-```bash
-gh pr view "$PR_REF" \
-  --json title,body,files,additions,deletions,baseRefName,headRefName,url,state,reviewDecision,author
+## Required Contracts And Procedures
 
-gh pr diff "$PR_REF"
-gh pr checks "$PR_REF"
-gh pr view "$PR_REF" --json files --jq '.files[].path'
-```
+- [review-contracts.md](references/review-contracts.md) defines mode guarantees, readiness, coverage, finding identity, persistence, and outcome derivation.
+- [context-gathering.md](references/context-gathering.md) defines GitHub, Git, repository, test, relationship, history, and Linear evidence.
+- [reviewer-orchestration.md](references/reviewer-orchestration.md) defines risk-selected reviewer scopes, cross-boundary ownership, handoffs, returns, and concurrency.
+- [finding-synthesis.md](references/finding-synthesis.md) defines candidate ingestion, semantic deduplication, selective verification, disagreement handling, and normalized ledger updates.
+- [perfect-principles.md](references/perfect-principles.md) defines ordered PERFECT evaluation and ledger-aware compilation.
+- [language-skill-mapping.md](references/language-skill-mapping.md) selects relevant installed stack skills from changed files.
 
-Read each changed source file in full from `$REVIEW_DIR/<path>`. Use the diff to locate the change and the full file to understand its context and local conventions.
+Use the canonical shapes without creating a fourth handoff artifact:
 
-Skip by default:
-- generated files
-- lockfiles
-- binary assets
-- prose-only files
+- [context-brief.md](templates/context-brief.md)
+- [findings-ledger.md](templates/findings-ledger.md)
+- [perfect-review.md](templates/perfect-review.md)
 
-If the PR contains no source code files, state that no code review is applicable and stop.
+Validate the staged artifact directory with [validate-review-artifacts](scripts/validate-review-artifacts) before publication.
 
-### 3. Load Relevant Stack Skills
+## Ownership And Safety
 
-Use [language-skill-mapping.md](references/language-skill-mapping.md) to identify relevant installed skills. Load only skills that match the changed files.
+The coordinator alone owns mode and route selection, readiness, reviewer scope, cross-boundary ownership, stable finding IDs, canonical artifact writes, final compilation, publication, and checkout cleanup. Focused and synthesis reviewers return evidence and normalized proposals; they do not mutate canonical artifacts, derive the recommendation, expand scope, or delegate.
 
-If no local skill exists for a language in the PR, continue with general engineering judgment and note that limitation in the review.
+The launcher enters a WorkTrunk checkout before invoking this skill. Treat that checkout, every reused checkout, and every checkout not created by this direct invocation as pre-existing. Preserve it. Remove only a checkout that this invocation created itself, and only after valid artifacts are published.
 
-### 4. Apply PERFECT In Order
-
-Load [perfect-principles.md](references/perfect-principles.md), then evaluate all seven principles in order. Earlier failures outweigh later strengths.
-
-```markdown
-# PERFECT Review: PR #<ID> — <title>
-
-<PR URL, author, base/head, size, and CI status>
-
-## Findings
-
-### 1. Purpose — PASS | FAIL | NEEDS DISCUSSION
-### 2. Edge Cases — PASS | CONCERN | FAIL
-### 3. Reliability — PASS | CONCERN | FAIL
-### 4. Form — PASS | CONCERN | FAIL
-### 5. Evidence — PASS | CONCERN | FAIL
-### 6. Clarity — PASS | CONCERN
-### 7. Taste — N/A
-
-For each finding:
-- **[file:line] [blocking|advisory]** — <problem, impact, and fix direction>
-
-## Summary
-
-**Recommendation**: APPROVE | REQUEST CHANGES | NEEDS DISCUSSION
-<One short paragraph covering overall risk and any verification gaps.>
-```
-
-Omit empty finding lists, but include a verdict for every principle. Findings must be concrete, line-specific when possible, and clearly blocking or advisory. Do not invent findings to fill the structure.
-
-### 5. Clean Up
-
-Remove the checkout only if this skill created it. Leave pre-existing WorkTrunk checkouts alone.
-
-```bash
-if [ "$WORKTRUNK_ACTION" = "created" ]; then
-  wt remove --yes --foreground "$REVIEW_DIR"
-fi
-```
+Keep GitHub, Linear, PR state, Git history, and the reviewed checkout read-only. Do not submit reviews, post comments, change issue state, mutate the pull request, or edit reviewed files.
 
 ## Guidelines
 
 - Review code, not the author.
 - Do not block on taste.
 - Do not invent missing requirements.
-- Focus on code changed by the PR.
-- Read surrounding code when needed to evaluate correctness.
+- Focus on changed behavior and its immediate callers, models, tests, history, and boundaries.
 - Do not expand into unrelated refactoring requests.
-- Skip documentation review unless the user asks for it.
+- Skip generated files, lockfiles, binary assets, and prose-only files as primary review targets unless changed behavior depends on them.
+- Load only stack skills that match changed files; preserve unmatched-language limitations as coverage gaps.
 - Prefer specific bug reports to vague discomfort.
-- If CI or local execution cannot be checked, say so explicitly.
+- Preserve unexecuted, unavailable, pending, skipped, and failing checks as explicit evidence or coverage gaps.

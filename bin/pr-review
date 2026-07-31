@@ -4,28 +4,96 @@
 # Run this from the repository containing the pull request.
 #
 # Usage:
-#   pr-review <PR-URL>
-#   pr-review <PR-ID>
-#   pr-review --dry-run <PR-URL-or-ID>
+#   pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>
 
 set -eu
 
 PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
+usage='usage: pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
 
 die() {
-    echo "error: $1" >&2
+    printf 'error: %s\n' "$1" >&2
     exit 1
 }
 
 dry_run=false
-if [ "${1:-}" = "--dry-run" ]; then
-    dry_run=true
-    shift
+dry_run_seen=false
+mode=
+mode_seen=false
+full_rebuild=false
+full_rebuild_seen=false
+finding=
+finding_seen=false
+pr_ref=
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run)
+            [ "$dry_run_seen" = false ] || die "duplicate option: --dry-run"
+            dry_run=true
+            dry_run_seen=true
+            shift
+            ;;
+        --mode)
+            [ "$mode_seen" = false ] || die "duplicate option: --mode"
+            mode_seen=true
+            shift
+            [ $# -gt 0 ] || die "missing value for --mode"
+            case "$1" in
+                -*) die "missing value for --mode" ;;
+            esac
+            mode=$1
+            case "$mode" in
+                standard|deep) ;;
+                *) die "unknown mode: $mode" ;;
+            esac
+            shift
+            ;;
+        --full-rebuild)
+            [ "$full_rebuild_seen" = false ] || die "duplicate option: --full-rebuild"
+            full_rebuild=true
+            full_rebuild_seen=true
+            shift
+            ;;
+        --finding)
+            [ "$finding_seen" = false ] || die "duplicate option: --finding"
+            finding_seen=true
+            shift
+            [ $# -gt 0 ] || die "missing value for --finding"
+            case "$1" in
+                -*) die "missing value for --finding" ;;
+            esac
+            finding=$1
+            finding_digits=${finding#F}
+            case "$finding" in
+                F[0-9]*)
+                    case "$finding_digits" in
+                        *[!0-9]*|'') die "invalid finding ID: $finding (expected F followed by a positive integer)" ;;
+                        *[1-9]*) ;;
+                        *) die "invalid finding ID: $finding (expected F followed by a positive integer)" ;;
+                    esac
+                    ;;
+                *) die "invalid finding ID: $finding (expected F followed by a positive integer)" ;;
+            esac
+            shift
+            ;;
+        --*|-*)
+            die "unknown option: $1"
+            ;;
+        *)
+            [ -z "$pr_ref" ] || die "$usage"
+            pr_ref=$1
+            shift
+            ;;
+    esac
+done
+
+[ -n "$pr_ref" ] || die "$usage"
+
+if [ "$finding_seen" = true ]; then
+    [ "$mode" != "deep" ] || die "--finding cannot be combined with --mode deep"
+    [ "$full_rebuild" = false ] || die "--finding cannot be combined with --full-rebuild"
 fi
-
-[ $# -eq 1 ] || die "usage: pr-review [--dry-run] <PR-URL-or-ID>"
-
-pr_ref="$1"
 
 [ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
 "$PR_PARSE" "$pr_ref" >/dev/null || exit 1
@@ -35,9 +103,19 @@ case "$pr_ref" in
     *) worktree_ref="pr:$pr_ref" ;;
 esac
 
-prompt="/pr-review $pr_ref"
+prompt="/pr-review"
+if [ "$mode_seen" = true ]; then
+    prompt="$prompt --mode $mode"
+fi
+if [ "$full_rebuild" = true ]; then
+    prompt="$prompt --full-rebuild"
+fi
+if [ "$finding_seen" = true ]; then
+    prompt="$prompt --finding $finding"
+fi
+prompt="$prompt $pr_ref"
 
-if "$dry_run"; then
+if [ "$dry_run" = true ]; then
     printf 'worktree: %s\nprompt: %s\n' "$worktree_ref" "$prompt"
     exit 0
 fi
@@ -45,4 +123,4 @@ fi
 command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
 command -v agent >/dev/null 2>&1 || die "Cursor Agent (agent) is required but not found"
 
-exec wt switch --execute agent "$worktree_ref" -- "$prompt"
+exec wt switch --no-cd --execute agent "$worktree_ref" -- "$prompt"

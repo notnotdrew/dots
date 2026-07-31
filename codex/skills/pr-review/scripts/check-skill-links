@@ -1,0 +1,68 @@
+#!/bin/sh
+
+set -eu
+
+export LC_ALL=C
+
+script_name=${0##*/}
+script_dir=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
+skill_dir=$(CDPATH='' cd "$script_dir/.." && pwd -P)
+skill_file=$skill_dir/SKILL.md
+
+fail() {
+    printf '%s\n' "$script_name: $*" >&2
+    exit 1
+}
+
+[ -f "$skill_file" ] || fail "missing skill entry point: $skill_file"
+
+awk '
+    {
+        remaining = $0
+        while (match(remaining, /\]\([^()]*\)/)) {
+            link = substr(remaining, RSTART + 2, RLENGTH - 3)
+            print link
+            remaining = substr(remaining, RSTART + RLENGTH)
+        }
+    }
+' "$skill_file" |
+while IFS= read -r link; do
+    case "$link" in
+        ''|'#'*|*://*|mailto:*|/*) continue ;;
+    esac
+
+    link=${link%%#*}
+    link=${link%%\?*}
+
+    case "$link" in
+        *' "'*|*" '"*)
+            link=${link%% *}
+            ;;
+    esac
+
+    [ -n "$link" ] || continue
+
+    link_parent=${link%/*}
+    link_name=${link##*/}
+    if [ "$link_parent" = "$link" ]; then
+        link_parent=.
+    fi
+
+    [ -d "$skill_dir/$link_parent" ] ||
+        fail "relative link does not resolve: $link"
+
+    resolved_parent=$(CDPATH='' cd "$skill_dir/$link_parent" && pwd -P)
+    case "$resolved_parent" in
+        "$skill_dir"|"$skill_dir"/*) ;;
+        *) fail "relative link escapes skill directory: $link" ;;
+    esac
+
+    resolved_path=$resolved_parent/$link_name
+    if [ ! -f "$resolved_path" ] && [ ! -d "$resolved_path" ]; then
+        fail "relative link does not resolve: $link"
+    fi
+    [ ! -L "$resolved_path" ] ||
+        fail "relative link may not target a symbolic link: $link"
+done
+
+printf '%s\n' "skill links valid: $skill_file"
