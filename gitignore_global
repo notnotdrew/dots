@@ -11,3 +11,6 @@
 .codex/tmp/
 .codex/version.json
 tags
+
+.config/wt.toml
+.worktreeinclude
