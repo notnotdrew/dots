@@ -60,11 +60,24 @@ If identity cannot be resolved, no stable artifact path exists. Report the ident
 
 ## 2. Resolve Checkout Ownership
 
-Query the PR explicitly as `OWNER/REPOSITORY` and obtain its full `headRefOid` before deciding whether a checkout is needed.
+Query the PR explicitly as `OWNER/REPOSITORY` and obtain its full `headRefOid` before selecting a checkout. Reviews use disposable epoch checkouts only. Never select, switch, reset, or otherwise mutate the user's PR branch worktree (including a WorkTrunk `pr:<number>` checkout of that branch).
 
-First inspect `INVOCATION_DIR`. It is a usable pre-existing checkout only when all of these are true:
+For an initial review the epoch is `R1`. The disposable checkout branch name is:
+
+```text
+CHECKOUT_BRANCH = pr-<PR_NUMBER>-R1
+```
+
+Prefer launcher-provided values when present and consistent:
+
+- `PR_REVIEW_EPOCH` / `PR_REVIEW_CHECKOUT_BRANCH` naming `pr-<PR_NUMBER>-R1`;
+- `PR_REVIEW_OBSERVED_HEAD` equal to the queried `headRefOid`;
+- `PR_REVIEW_CHECKOUT_CREATED` as `yes` or `no`.
+
+First inspect `INVOCATION_DIR`. It is a usable checkout only when all of these are true:
 
 - it is a Git worktree for `OWNER/REPOSITORY`;
+- its branch or WorkTrunk name is exactly `pr-<PR_NUMBER>-R1` (or matches `PR_REVIEW_CHECKOUT_BRANCH`);
 - its current `HEAD` is exactly the observed GitHub `headRefOid`;
 - it is clean enough for read-only review; and
 - it contains the PR files needed for the comparison.
@@ -73,22 +86,24 @@ When those conditions hold:
 
 ```text
 REVIEW_DIR = INVOCATION_DIR
-CHECKOUT_CREATED_BY_THIS_INVOCATION = no
+CHECKOUT_CREATED_BY_THIS_INVOCATION = <yes only when PR_REVIEW_CHECKOUT_CREATED=yes; otherwise no>
 ```
 
-This includes a checkout created by the launcher before the skill started. Its origin outside this workflow makes it pre-existing and it must be preserved.
+A launcher-created disposable epoch checkout that matches the rules above is usable. Record ownership from `PR_REVIEW_CHECKOUT_CREATED` when the launcher exported it; otherwise treat a pre-existing matching epoch checkout as not owned by this invocation.
 
-Otherwise this is a direct invocation that needs a checkout. Validate the reference, convert a numeric reference to `pr:<number>` for WorkTrunk, and run:
+If `INVOCATION_DIR` is not a usable epoch checkout, create or reuse the disposable checkout with the skill helper (or equivalent WorkTrunk commands):
 
 ```bash
-wt switch --no-cd --format json "$WORKTRUNK_REF"
+"<skill-directory>/scripts/resolve-review-checkout" --ensure "$PR_REF"
 ```
 
-Require one absolute `.path` and one `.action` from the JSON. Set `REVIEW_DIR` to that path. Set `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` only when this workflow itself ran `wt switch` and its returned action is exactly `created`. Every other action means `no`.
+Require the helper's `CHECKOUT_BRANCH`, absolute `CHECKOUT_PATH`, `HEAD_SHA`, and `CHECKOUT_CREATED`. Set `REVIEW_DIR` to `CHECKOUT_PATH`. Set `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` when the helper reports `CHECKOUT_CREATED=yes` or when this workflow itself created the epoch checkout. Reuse of an already-matching `pr-<PR_NUMBER>-R1` checkout is `no`.
 
-After selection, require `git -C "$REVIEW_DIR" rev-parse HEAD` to equal the observed full head SHA. A mismatch is a readiness blocker; never switch or mutate a pre-existing checkout to make it match.
+Equivalent direct WorkTrunk creation when the helper is unavailable: create `pr-<PR_NUMBER>-R1` from the observed `headRefOid` (fetch `pull/<PR_NUMBER>/head` first if needed), not from a possibly stale local `pr:<number>` branch tip. After creation, require `HEAD` equals the observed full head SHA; reset that disposable epoch branch to the SHA when it does not. Never reset or otherwise mutate the user's PR branch worktree.
 
-Record checkout ownership separately from readiness. Setup failure does not grant permission to remove a checkout. Never remove a launcher-created, selected, reused, or otherwise pre-existing checkout.
+After selection, require `git -C "$REVIEW_DIR" rev-parse HEAD` to equal the observed full head SHA. A mismatch is a readiness blocker. Never repair a mismatch by mutating a non-epoch or otherwise pre-existing checkout; only recreate or pin a disposable epoch checkout owned by this review flow.
+
+Record checkout ownership separately from readiness. Setup failure does not grant permission to remove a checkout. Never remove the user's PR branch worktree or any non-epoch checkout.
 
 ## 3. Gather The Context Brief
 
@@ -278,13 +293,13 @@ Use:
 wt remove --yes --foreground "$REVIEW_DIR"
 ```
 
-Never remove a launcher-created or other pre-existing checkout. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits cleanup of a directly owned checkout.
+Never remove a checkout unless `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` and it is the disposable epoch checkout for this review. Never remove the user's PR branch worktree. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits cleanup of a directly owned epoch checkout.
 
 Return:
 
 - the final recommendation or concrete `UNABLE TO REVIEW` details;
 - the absolute canonical artifact directory and the three filenames;
-- the observed head and Standard mode-selection provenance;
+- the observed head, epoch checkout branch, and Standard mode-selection provenance;
 - material coverage and verification gaps, including unmatched languages and unexecuted checks;
 - whether a later Deep review is recommended, without claiming it ran; and
-- checkout cleanup status, distinguishing removed direct-invocation checkout from preserved pre-existing checkout.
+- checkout cleanup status, distinguishing removed owned epoch checkout from preserved checkout.

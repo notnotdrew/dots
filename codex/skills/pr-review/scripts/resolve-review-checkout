@@ -1,0 +1,282 @@
+#!/bin/sh
+
+# Resolve the disposable epoch checkout for a pr-review invocation.
+#
+# Prints eval-friendly KEY=VALUE pairs on one line:
+#   ACTION OWNER REPO PR_NUMBER HEAD_SHA EPOCH CHECKOUT_BRANCH
+#   CHECKOUT_CREATED CHECKOUT_PATH MESSAGE
+#
+# ACTION is noop (same head already reviewed) or review.
+# With --ensure, create or reuse the WorkTrunk checkout before printing.
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+PR_PARSE="$SCRIPT_DIR/gh-pr-parse"
+SERIES_ROOT="${HOME}/.cdx-artifacts/pr-reviews"
+
+usage='usage: resolve-review-checkout [--ensure] [--full-rebuild] [--finding F<id>] <PR-URL-or-ID>'
+
+die() {
+    printf 'error: %s\n' "$1" >&2
+    exit 1
+}
+
+shell_quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+ensure=false
+full_rebuild=false
+finding=
+pr_ref=
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --ensure)
+            ensure=true
+            shift
+            ;;
+        --full-rebuild)
+            full_rebuild=true
+            shift
+            ;;
+        --finding)
+            shift
+            [ $# -gt 0 ] || die "missing value for --finding"
+            finding=$1
+            shift
+            ;;
+        --*|-*)
+            die "unknown option: $1"
+            ;;
+        *)
+            [ -z "$pr_ref" ] || die "$usage"
+            pr_ref=$1
+            shift
+            ;;
+    esac
+done
+
+[ -n "$pr_ref" ] || die "$usage"
+[ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
+
+parsed=$("$PR_PARSE" "$pr_ref") || exit 1
+OWNER=
+REPO=
+PR_NUMBER=
+# parsed is KEY=VALUE pairs; assign only known keys
+eval "$parsed"
+
+[ -n "${PR_NUMBER:-}" ] || die "parser did not return PR_NUMBER"
+
+if [ -z "${OWNER:-}" ] || [ -z "${REPO:-}" ]; then
+    command -v gh >/dev/null 2>&1 || die "gh is required to resolve repository for numeric PR references"
+    name_with_owner=$(gh repo view --json nameWithOwner --jq '.nameWithOwner') || die "failed to resolve repository via gh repo view"
+    case "$name_with_owner" in
+        */*) ;;
+        *) die "unexpected nameWithOwner: $name_with_owner" ;;
+    esac
+    OWNER=${name_with_owner%/*}
+    REPO=${name_with_owner#*/}
+fi
+
+command -v gh >/dev/null 2>&1 || die "gh is required"
+command -v jq >/dev/null 2>&1 || die "jq is required"
+
+pr_json=$(gh pr view "$PR_NUMBER" --repo "${OWNER}/${REPO}" --json headRefOid,url) || die "failed to query PR ${OWNER}/${REPO}#${PR_NUMBER}"
+HEAD_SHA=$(printf '%s' "$pr_json" | jq -r '.headRefOid')
+PR_URL=$(printf '%s' "$pr_json" | jq -r '.url')
+case "$HEAD_SHA" in
+    ''|null) die "PR ${OWNER}/${REPO}#${PR_NUMBER} has no headRefOid" ;;
+esac
+
+series_dir="${SERIES_ROOT}/${OWNER}--${REPO}/pr-${PR_NUMBER}"
+series_review="${series_dir}/perfect-review.md"
+
+series_exists=false
+observed_head=
+current_epoch=
+readiness=
+if [ -f "$series_review" ]; then
+    series_exists=true
+    observed_head=$(awk '
+        BEGIN { in_identity = 0 }
+        /^## Identity$/ { in_identity = 1; next }
+        in_identity && /^## / { exit }
+        in_identity && /^- ObservedHead: / {
+            sub(/^- ObservedHead: /, "")
+            print
+            exit
+        }
+    ' "$series_review")
+    current_epoch=$(awk '
+        BEGIN { in_identity = 0 }
+        /^## Identity$/ { in_identity = 1; next }
+        in_identity && /^## / { exit }
+        in_identity && /^- CurrentEpoch: / {
+            sub(/^- CurrentEpoch: /, "")
+            print
+            exit
+        }
+    ' "$series_review")
+    readiness=$(awk '
+        BEGIN { in_identity = 0 }
+        /^## Identity$/ { in_identity = 1; next }
+        in_identity && /^## / { exit }
+        in_identity && /^- Readiness: / {
+            sub(/^- Readiness: /, "")
+            print
+            exit
+        }
+    ' "$series_review")
+fi
+
+epoch_ordinal() {
+    epoch=$1
+    case "$epoch" in
+        R[1-9]|R[1-9][0-9]|R[1-9][0-9][0-9]*)
+            printf '%s' "${epoch#R}"
+            ;;
+        *)
+            die "invalid epoch: $epoch"
+            ;;
+    esac
+}
+
+next_epoch_from() {
+    current=$1
+    if [ -z "$current" ]; then
+        printf 'R2'
+        return
+    fi
+    ordinal=$(epoch_ordinal "$current")
+    printf 'R%s' "$((ordinal + 1))"
+}
+
+ACTION=review
+EPOCH=
+MESSAGE=
+CHECKOUT_CREATED=no
+CHECKOUT_PATH=
+CHECKOUT_BRANCH=
+
+if [ "$series_exists" = false ]; then
+    EPOCH=R1
+    MESSAGE="initial review at ${HEAD_SHA}; checkout pr-${PR_NUMBER}-${EPOCH}"
+elif [ "$observed_head" = "$HEAD_SHA" ]; then
+    if [ -n "$current_epoch" ]; then
+        EPOCH=$current_epoch
+    else
+        EPOCH=R1
+    fi
+
+    if [ "$full_rebuild" = true ]; then
+        EPOCH=$(next_epoch_from "$current_epoch")
+        MESSAGE="full rebuild on unchanged head ${HEAD_SHA}; checkout pr-${PR_NUMBER}-${EPOCH}"
+    elif [ -n "$finding" ]; then
+        MESSAGE="single-finding revision on unchanged head ${HEAD_SHA}; checkout pr-${PR_NUMBER}-${EPOCH}"
+    elif [ "$readiness" = "UNABLE TO REVIEW" ]; then
+        MESSAGE="retry previous UNABLE TO REVIEW on unchanged head ${HEAD_SHA}; checkout pr-${PR_NUMBER}-${EPOCH}"
+    else
+        ACTION=noop
+        MESSAGE="PR ${OWNER}/${REPO}#${PR_NUMBER} head ${HEAD_SHA} already reviewed as ${EPOCH} (Readiness: ${readiness:-ready}). No new review unless --full-rebuild or --finding."
+    fi
+else
+    EPOCH=$(next_epoch_from "$current_epoch")
+    if [ -z "$current_epoch" ] && [ -n "$observed_head" ]; then
+        MESSAGE="new head ${HEAD_SHA} (was ${observed_head}); normalize prior as R1 and review as ${EPOCH}; checkout pr-${PR_NUMBER}-${EPOCH}"
+    else
+        MESSAGE="new head ${HEAD_SHA} (was ${observed_head:-unknown}); review as ${EPOCH}; checkout pr-${PR_NUMBER}-${EPOCH}"
+    fi
+fi
+
+CHECKOUT_BRANCH="pr-${PR_NUMBER}-${EPOCH}"
+
+emit_result() {
+    printf 'ACTION=%s OWNER=%s REPO=%s PR_NUMBER=%s HEAD_SHA=%s EPOCH=%s CHECKOUT_BRANCH=%s CHECKOUT_CREATED=%s CHECKOUT_PATH=%s PR_URL=%s MESSAGE=%s\n' \
+        "$(shell_quote "$ACTION")" \
+        "$(shell_quote "$OWNER")" \
+        "$(shell_quote "$REPO")" \
+        "$(shell_quote "$PR_NUMBER")" \
+        "$(shell_quote "$HEAD_SHA")" \
+        "$(shell_quote "$EPOCH")" \
+        "$(shell_quote "$CHECKOUT_BRANCH")" \
+        "$(shell_quote "$CHECKOUT_CREATED")" \
+        "$(shell_quote "$CHECKOUT_PATH")" \
+        "$(shell_quote "$PR_URL")" \
+        "$(shell_quote "$MESSAGE")"
+}
+
+if [ "$ACTION" = noop ] || [ "$ensure" = false ]; then
+    emit_result
+    exit 0
+fi
+
+command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
+command -v git >/dev/null 2>&1 || die "git is required"
+
+fetch_pr_head() {
+    # Materialize GitHub's PR head locally so disposable branches pin to headRefOid,
+    # not a stale local PR-branch tip.
+    if git rev-parse --verify "${HEAD_SHA}^{commit}" >/dev/null 2>&1; then
+        return 0
+    fi
+    git fetch origin "pull/${PR_NUMBER}/head" >/dev/null 2>&1 || \
+        git fetch origin "refs/pull/${PR_NUMBER}/head" >/dev/null 2>&1 || \
+        die "failed to fetch pull/${PR_NUMBER}/head for ${HEAD_SHA}"
+    git rev-parse --verify "${HEAD_SHA}^{commit}" >/dev/null 2>&1 || \
+        die "fetched PR head does not contain ${HEAD_SHA}"
+}
+
+pin_checkout_to_head() {
+    checkout_path=$1
+    current_head=$(git -C "$checkout_path" rev-parse HEAD)
+    if [ "$current_head" = "$HEAD_SHA" ]; then
+        return 0
+    fi
+    fetch_pr_head
+    git -C "$checkout_path" reset --hard "$HEAD_SHA" >/dev/null 2>&1 || \
+        die "failed to pin ${CHECKOUT_BRANCH} to ${HEAD_SHA}"
+    current_head=$(git -C "$checkout_path" rev-parse HEAD)
+    [ "$current_head" = "$HEAD_SHA" ] || die "checkout HEAD ${current_head} does not match ${HEAD_SHA}"
+}
+
+# Prefer an existing disposable checkout only when its HEAD already matches.
+existing_json=
+if existing_json=$(wt switch --no-cd --format json "$CHECKOUT_BRANCH" 2>/dev/null); then
+    CHECKOUT_PATH=$(printf '%s' "$existing_json" | jq -r '.path // empty')
+    if [ -n "$CHECKOUT_PATH" ] && [ -d "$CHECKOUT_PATH" ]; then
+        existing_head=$(git -C "$CHECKOUT_PATH" rev-parse HEAD)
+        if [ "$existing_head" = "$HEAD_SHA" ]; then
+            CHECKOUT_CREATED=no
+            MESSAGE="${MESSAGE}; reused existing checkout"
+            emit_result
+            exit 0
+        fi
+        # Owned disposable branch at the wrong SHA: pin it rather than touching the user PR worktree.
+        pin_checkout_to_head "$CHECKOUT_PATH"
+        CHECKOUT_CREATED=no
+        MESSAGE="${MESSAGE}; pinned existing checkout to ${HEAD_SHA}"
+        emit_result
+        exit 0
+    fi
+fi
+
+fetch_pr_head
+
+# Create from the exact GitHub head SHA when possible; fall back to pr:N then pin.
+created_json=
+if ! created_json=$(wt switch --no-cd --format json --create --base="$HEAD_SHA" "$CHECKOUT_BRANCH" 2>/dev/null); then
+    created_json=$(wt switch --no-cd --format json --create --base="pr:${PR_NUMBER}" "$CHECKOUT_BRANCH") || \
+        die "failed to create checkout ${CHECKOUT_BRANCH}"
+fi
+
+CHECKOUT_PATH=$(printf '%s' "$created_json" | jq -r '.path // empty')
+[ -n "$CHECKOUT_PATH" ] || die "wt switch did not return a checkout path"
+pin_checkout_to_head "$CHECKOUT_PATH"
+
+CHECKOUT_CREATED=yes
+MESSAGE="${MESSAGE}; created checkout at ${CHECKOUT_PATH}"
+emit_result
+exit 0

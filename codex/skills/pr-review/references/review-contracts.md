@@ -34,7 +34,9 @@ The owner, repository, and PR number identify the series. `ObservedBase` and `Ob
 
 ## Review Epochs And Amendments
 
-An unnormalized initial artifact set has no epoch metadata. Its first update records that unchanged prior review as `R1` with `ReviewType: initial-upgrade` and `InheritsFrom: initial`, then records the update as `R2`. It preserves every prior finding ID and judgment. Later review events are `R3`, `R4`, and so on, without gaps, reuse, or renumbering. All three artifacts carry the same ordered `## Review Epochs` records, top-level `CurrentEpoch`, and current `ObservedHead`.
+An unnormalized initial artifact set has no epoch metadata. Its first update that requires a new epoch (new head or explicit full rebuild) records that prior review as `R1` with `ReviewType: initial-upgrade` and `InheritsFrom: initial`, then records the update as `R2`. It preserves every prior finding ID and judgment. Later review events are `R3`, `R4`, and so on, without gaps, reuse, or renumbering. All three artifacts carry the same ordered `## Review Epochs` records, top-level `CurrentEpoch`, and current `ObservedHead`.
+
+Same GitHub head as the series' current `ObservedHead` does not create a new epoch on a default re-review when readiness is already `ready`. A same-head `UNABLE TO REVIEW` retry may replace the current epoch's published artifacts without appending. `--full-rebuild` on an unchanged head appends the next epoch. Disposable checkouts are named `pr-<PR_NUMBER>-R<epochOrdinal>` and must match that epoch's `ObservedHead`.
 
 Each epoch record has exactly these fields:
 

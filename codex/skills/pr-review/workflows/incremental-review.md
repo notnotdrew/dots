@@ -4,7 +4,7 @@ Use this workflow when the resolved GitHub PR already has a canonical review ser
 
 Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, epochs, inheritance, invalidation, amendments, and update publication.
 
-Keep GitHub, Linear, the PR, Git history, and the review checkout read-only. Never post a review or comment, change issue state, edit reviewed files, switch a pre-existing checkout, or let a reviewer mutate canonical artifacts. Artifact-series writes and removal of a checkout created by this invocation remain coordinator-only operations.
+Keep GitHub, Linear, the PR, Git history, and the review checkout read-only. Never post a review or comment, change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, or let a reviewer mutate canonical artifacts. Artifact-series writes and removal of a disposable epoch checkout created by this invocation remain coordinator-only operations.
 
 ## 1. Resolve The Existing Series And Recover First
 
@@ -29,26 +29,40 @@ If the marker is malformed, the backup is missing or invalid, any restore fails,
 
 After recovery, require the series to contain exactly the three regular canonical files and validate it before use. A partial series, unexpected in-series entry, or invalid artifact set is a blocker; do not repair it by inference. A sibling backup or staging directory without a marker is not recovery authority and must never be applied to the series.
 
-## 2. Normalize Epoch History
+## 2. Normalize Epoch History And Same-Head Requests
 
-The stable series identity remains owner, repository, and PR number. Epochs are ordinal review events; observed SHAs are evidence only.
+The stable series identity remains owner, repository, and PR number. Epochs are ordinal review events; observed SHAs are evidence only. Disposable checkouts are named `pr-<PR_NUMBER>-R<epochOrdinal>` and ground each epoch's `ObservedHead`.
 
-An unnormalized initial-review set has no epoch metadata. On its first successful update:
+Before appending an epoch, compare the current GitHub `headRefOid` to the series' current `ObservedHead` (top-level field, or the current epoch's head once normalized):
+
+- Same head, readiness already `ready`, and neither `--full-rebuild` nor `--finding`: stop as a no-op. Do not create a checkout, append an epoch, or rewrite artifacts. Report that the current head is already reviewed.
+- Same head and prior readiness `UNABLE TO REVIEW`, without `--full-rebuild`: retry against the current epoch. Reuse or recreate `pr-<PR_NUMBER>-R<current>`; do not append an epoch solely because the previous attempt failed readiness.
+- Same head with `--full-rebuild`: append the next epoch and use checkout `pr-<PR_NUMBER>-R<next>`.
+- Same head with `--finding`: follow Section 8; reuse the current epoch checkout when the head is unchanged.
+- New head: append the next gap-free epoch and use checkout `pr-<PR_NUMBER>-R<next>` at the new SHA.
+
+An unnormalized initial-review set has no epoch metadata. On its first successful update that requires a new epoch (new head or explicit full rebuild):
 
 1. represent the complete prior initial review as `R1` in all three replacement artifacts;
 2. preserve its recorded mode, selection provenance, revisions, readiness, coverage, findings, dispositions, verdicts, and outcome as the prior judgment; record the R1 revision, finding states, and inheritance in the shared epoch fields;
 3. preserve every existing finding ID exactly; and
-4. append `R2` for the update, even when it examines the same head.
+4. append `R2` for the update.
 
-Perform this normalization only in staged replacements. The existing files remain untouched until recoverable publication.
+A same-head retry of an unnormalized `UNABLE TO REVIEW` stays unnormalized until a later update requires epoch history; replace the three canonical files in place through the recoverable publication path without inventing `R2`.
 
-After normalization, a normal re-review, targeted update on a new head, rebase review, or full rebuild appends the next gap-free epoch. Each epoch uses the exact shared epoch fields in `review-contracts.md`; current top-level fields and amendments carry the resulting readiness, coverage, ledger, verdict, and outcome changes.
+Perform normalization only in staged replacements. The existing files remain untouched until recoverable publication.
+
+After normalization, a normal re-review on a new head, targeted update on a new head, rebase review, or explicit full rebuild appends the next gap-free epoch. Each epoch uses the exact shared epoch fields in `review-contracts.md`; current top-level fields and amendments carry the resulting readiness, coverage, ledger, verdict, and outcome changes.
 
 When the series already has epochs, require them to begin at `R1`, increase by one, and agree across all three artifacts. The next epoch is one greater than the current highest epoch. Never derive an epoch number from a SHA or discard an epoch whose recommendation later changed.
 
 ## 3. Resolve The Current Observation
 
-Resolve checkout ownership and the current GitHub head through Standard's read-only process. Record the full current head and actual merge-base for the current or new epoch as applicable. Re-query the head after gathering and before staging; do not combine revisions.
+Resolve the disposable epoch checkout and the current GitHub head through Standard's read-only epoch-checkout process, targeting `pr-<PR_NUMBER>-R<epoch>` for the epoch selected in Section 2. Prefer launcher exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD` when consistent with the selected epoch and head. Use `scripts/resolve-review-checkout --ensure` when a checkout must be created or reused. Never select the user's PR branch worktree.
+
+Record the full current head and actual merge-base for the current or new epoch as applicable. Re-query the head after gathering and before staging; do not combine revisions.
+
+If Section 2 selected a same-head no-op, return that result without gathering or publication.
 
 Compare the previous epoch's observed head and scope with the current observation. Use the previous artifact evidence as an index, not as proof that current behavior is unchanged. Inspect:
 
@@ -58,7 +72,7 @@ Compare the previous epoch's observed head and scope with the current observatio
 - callers, consumers, models, persistence state, and one-hop dependencies affected by those changes; and
 - prior evidence whose command result, external state, line anchor, historical assumption, or test conclusion may no longer hold.
 
-Record whether the update is additive, corrective, superseding, a rebase or history rewrite, or broadly invalidating. A SHA change alone neither proves a behavioral change nor invalidates review-series or finding identity.
+Record whether the update is additive, corrective, superseding, a rebase or history rewrite, or broadly invalidating. A SHA change alone neither proves a behavioral change nor invalidates review-series or finding identity. A same-head readiness retry reopens current-head evidence without treating the prior unable outcome as proof.
 
 ## 4. Build Changed And Dependency-Affected Scope
 
@@ -193,7 +207,7 @@ After a successful restoration, validate the restored destination before removin
 
 Only when all three replacements and destination validation succeed may the coordinator remove the marker, then the staging and backup directories. Successful marker removal commits the validated publication; retry and report any failure to remove the now-nonauthoritative sibling directories, but never apply them without a marker. An unrelated or unrecognized entry is never deleted.
 
-Do not clean up a checkout created by this invocation until publication succeeds. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and report its ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, apply Standard's checkout rule: remove only a checkout that this workflow itself created; preserve launcher-created and all other pre-existing checkouts.
+Do not clean up a disposable epoch checkout created by this invocation until publication succeeds. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and report its ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, apply Standard's checkout rule: remove only a disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree.
 
 ## 11. Return
 

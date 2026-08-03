@@ -2,9 +2,10 @@
 # prrr — pr-review-review: browse ~/.cdx-artifacts/pr-reviews
 #
 # Usage:
-#   prrr                 Pick a review (newest first), then pick an artifact
-#   prrr --new           Pick an open PR requesting your review, then run pr-review
-#   prrr <number|url>    Pick an artifact for that PR review
+#   prrr                        Pick a review (newest first), then pick an artifact
+#   prrr --new                  Pick an open PR requesting your review, then run pr-review
+#   prrr --clean [number|url]   Remove local artifacts/worktrunks for merged PRs
+#   prrr <number|url>           Pick an artifact for that PR review
 #
 # Artifact picker:
 #   enter  open in vim
@@ -22,7 +23,7 @@ readonly PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 readonly PR_REVIEW="${SCRIPT_DIR}/pr-review"
 readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/Documents/dev}"
 readonly EXIT_CANCELLED=130
-readonly USAGE="usage: ${SCRIPT_NAME} [--new | <PR-number-or-URL>]"
+readonly USAGE="usage: ${SCRIPT_NAME} [--new | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
   printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
@@ -400,8 +401,187 @@ resolve_from_ref() {
   esac
 }
 
+# Parse a series dir into owner, repo, and PR number via nameref outs.
+parse_review_identity() {
+  local review_dir=$1
+  local -n out_owner=$2
+  local -n out_repo=$3
+  local -n out_pr_number=$4
+  local repo_dir_name
+
+  repo_dir_name="$(basename "$(dirname "$review_dir")")"
+  [[ "$repo_dir_name" == *--* ]] || die "cannot determine repository from ${review_dir}"
+  out_owner="${repo_dir_name%%--*}"
+  out_repo="${repo_dir_name#*--}"
+  out_pr_number="$(basename "$review_dir")"
+  out_pr_number="${out_pr_number#pr-}"
+  [[ "$out_pr_number" =~ ^[1-9][0-9]*$ ]] || die "invalid review directory: ${review_dir}"
+}
+
+# Print absolute paths of every local pr-<n> series directory.
+list_review_dirs() {
+  local path
+
+  [[ -d "$ARTIFACTS_ROOT" ]] || return 0
+
+  while IFS= read -r path; do
+    [[ -d "$path" ]] || continue
+    is_review_dir "$path" || continue
+    printf '%s\n' "$path"
+  done < <(find "$ARTIFACTS_ROOT" -mindepth 2 -maxdepth 2 -type d -name 'pr-*' 2>/dev/null | sort)
+}
+
+# Print disposable epoch checkout branch names for a PR in a local clone.
+list_epoch_worktrees() {
+  local clone_dir=$1
+  local pr_number=$2
+  local branch
+
+  require_cmds wt jq
+
+  while IFS= read -r branch; do
+    [[ -n "$branch" ]] || continue
+    [[ "$branch" =~ ^pr-${pr_number}-R[1-9][0-9]*$ ]] || continue
+    printf '%s\n' "$branch"
+  done < <(
+    {
+      wt -C "$clone_dir" list --format json --branches 2>/dev/null \
+        | jq -r '.[].branch // empty'
+      git -C "$clone_dir" for-each-ref --format='%(refname:short)' 'refs/heads/pr-*' 2>/dev/null
+    } | sort -u
+  )
+}
+
+remove_epoch_worktrees() {
+  local clone_dir=$1
+  local pr_number=$2
+  local branch
+  local -a branches=()
+
+  while IFS= read -r branch; do
+    [[ -n "$branch" ]] || continue
+    branches+=("$branch")
+  done < <(list_epoch_worktrees "$clone_dir" "$pr_number")
+
+  if ((${#branches[@]} == 0)); then
+    printf '%s: no epoch worktrees for pr-%s in %s\n' "$SCRIPT_NAME" "$pr_number" "$clone_dir" >&2
+    return 0
+  fi
+
+  require_cmds wt
+  printf '%s: removing worktrees: %s\n' "$SCRIPT_NAME" "${branches[*]}" >&2
+  # Epoch checkouts are disposable evidence pinned to observed heads; force both
+  # dirty trees and unmerged-looking branches so merged-PR cleanup always lands.
+  wt -C "$clone_dir" remove --yes --foreground --force -D "${branches[@]}"
+}
+
+remove_review_artifacts() {
+  local review_dir=$1
+  local pr_number=$2
+  local series_parent sibling
+
+  series_parent="$(dirname "$review_dir")"
+
+  if [[ -d "$series_parent" ]]; then
+    while IFS= read -r sibling; do
+      [[ -e "$sibling" ]] || continue
+      printf '%s: removing %s\n' "$SCRIPT_NAME" "$sibling" >&2
+      rm -rf "$sibling"
+    done < <(find "$series_parent" -mindepth 1 -maxdepth 1 \
+      \( -name ".pr-${pr_number}.*" -o -name "pr-${pr_number}" \) 2>/dev/null)
+  fi
+
+  if [[ -d "$review_dir" ]]; then
+    printf '%s: removing %s\n' "$SCRIPT_NAME" "$review_dir" >&2
+    rm -rf "$review_dir"
+  fi
+
+  if [[ -d "$series_parent" ]] && [[ -z "$(ls -A "$series_parent" 2>/dev/null)" ]]; then
+    printf '%s: removing empty %s\n' "$SCRIPT_NAME" "$series_parent" >&2
+    rmdir "$series_parent" 2>/dev/null || true
+  fi
+}
+
+clean_one_review() {
+  local review_dir=$1
+  local owner repo pr_number clone_dir state_label
+
+  parse_review_identity "$review_dir" owner repo pr_number
+
+  if ! state_label="$(
+    gh pr view "$pr_number" --repo "${owner}/${repo}" --json state --jq '.state' 2>/dev/null
+  )"; then
+    printf '%s: skip %s/%s#%s (could not query GitHub)\n' \
+      "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" >&2
+    return 0
+  fi
+
+  if [[ "$state_label" != MERGED ]]; then
+    printf '%s: keep %s/%s#%s (%s)\n' \
+      "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" "$state_label" >&2
+    return 0
+  fi
+
+  printf '%s: cleaning merged %s/%s#%s\n' \
+    "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" >&2
+
+  if clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
+    remove_epoch_worktrees "$clone_dir" "$pr_number"
+  else
+    printf '%s: no local clone of %s/%s; skipping worktree cleanup\n' \
+      "$SCRIPT_NAME" "$owner" "$repo" >&2
+  fi
+
+  remove_review_artifacts "$review_dir" "$pr_number"
+}
+
+# Compare local reviews to GitHub and remove merged-PR artifacts/worktrunks.
+clean_merged_reviews() {
+  local ref=${1:-}
+  local review_dir
+  local -a targets=()
+  local cleaned=0
+
+  require_cmds gh
+
+  if [[ -n "$ref" ]]; then
+    review_dir="$(resolve_from_ref "$ref")" || return $?
+    targets+=("$review_dir")
+  else
+    while IFS= read -r review_dir; do
+      [[ -n "$review_dir" ]] || continue
+      targets+=("$review_dir")
+    done < <(list_review_dirs)
+  fi
+
+  if ((${#targets[@]} == 0)); then
+    printf '%s: no local reviews under %s\n' "$SCRIPT_NAME" "$ARTIFACTS_ROOT" >&2
+    return 0
+  fi
+
+  for review_dir in "${targets[@]}"; do
+    clean_one_review "$review_dir"
+    cleaned=$((cleaned + 1))
+  done
+
+  printf '%s: checked %d review(s)\n' "$SCRIPT_NAME" "$cleaned" >&2
+}
+
 main() {
   local review_dir status
+
+  if (($# >= 1)) && [[ "$1" == --clean ]]; then
+    if (($# > 2)); then
+      die "$USAGE"
+    fi
+    require_cmds gh
+    clean_merged_reviews "${2:-}" || status=$?
+    if [[ -n "${status:-}" ]]; then
+      ((status == EXIT_CANCELLED)) && exit 0
+      exit "$status"
+    fi
+    exit 0
+  fi
 
   if (($# > 1)); then
     die "$USAGE"

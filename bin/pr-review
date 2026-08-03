@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# Launch Cursor Agent in a WorkTrunk checkout with the local `pr-review` skill.
-# Run this from the repository containing the pull request.
+# Launch Cursor Agent in a disposable WorkTrunk epoch checkout with the local
+# `pr-review` skill. Run this from the repository containing the pull request.
 #
 # Usage:
 #   pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>
@@ -9,6 +9,7 @@
 set -eu
 
 PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
+RESOLVE_CHECKOUT="${HOME}/.codex/skills/pr-review/scripts/resolve-review-checkout"
 usage='usage: pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
 
 die() {
@@ -98,10 +99,25 @@ fi
 [ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
 "$PR_PARSE" "$pr_ref" >/dev/null || exit 1
 
+# Dry-run stays offline: show the disposable checkout naming pattern for R1.
+# Runtime resolution (series head, same-head no-op, next epoch) happens below.
 case "$pr_ref" in
-    *[!0-9]*) worktree_ref="$pr_ref" ;;
-    *) worktree_ref="pr:$pr_ref" ;;
+    *[!0-9]*)
+        pr_number=$("$PR_PARSE" "$pr_ref" | awk '{
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^PR_NUMBER=/) {
+                    sub(/^PR_NUMBER=/, "", $i)
+                    print $i
+                    exit
+                }
+            }
+        }')
+        ;;
+    *)
+        pr_number=$pr_ref
+        ;;
 esac
+worktree_ref="pr-${pr_number}-R1"
 
 prompt="/pr-review"
 if [ "$mode_seen" = true ]; then
@@ -120,7 +136,35 @@ if [ "$dry_run" = true ]; then
     exit 0
 fi
 
+[ -x "$RESOLVE_CHECKOUT" ] || die "missing checkout resolver: $RESOLVE_CHECKOUT"
 command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
 command -v agent >/dev/null 2>&1 || die "Cursor Agent (agent) is required but not found"
 
-exec wt switch --no-cd --execute agent "$worktree_ref" -- "$prompt"
+resolve_args=--ensure
+if [ "$full_rebuild" = true ]; then
+    resolve_args="$resolve_args --full-rebuild"
+fi
+if [ "$finding_seen" = true ]; then
+    resolve_args="$resolve_args --finding $finding"
+fi
+
+# shellcheck disable=SC2086
+resolved=$("$RESOLVE_CHECKOUT" $resolve_args "$pr_ref") || exit 1
+eval "$resolved"
+
+[ -n "${ACTION:-}" ] || die "checkout resolver returned no ACTION"
+[ -n "${CHECKOUT_BRANCH:-}" ] || die "checkout resolver returned no CHECKOUT_BRANCH"
+
+if [ "$ACTION" = noop ]; then
+    printf '%s\n' "$MESSAGE"
+    exit 0
+fi
+
+printf '%s\n' "$MESSAGE" >&2
+
+export PR_REVIEW_EPOCH="$EPOCH"
+export PR_REVIEW_CHECKOUT_BRANCH="$CHECKOUT_BRANCH"
+export PR_REVIEW_CHECKOUT_CREATED="$CHECKOUT_CREATED"
+export PR_REVIEW_OBSERVED_HEAD="$HEAD_SHA"
+
+exec wt switch --no-cd --execute agent "$CHECKOUT_BRANCH" -- "$prompt"

@@ -32,7 +32,7 @@ Prerequisites:
 - `agent` when using the launcher
 - GitHub auth configured for the target repo
 
-Use [scripts/gh-pr-parse](scripts/gh-pr-parse) to validate and parse the reference. Resolve the helper relative to this skill directory.
+Use [scripts/gh-pr-parse](scripts/gh-pr-parse) to validate and parse the reference. Use [scripts/resolve-review-checkout](scripts/resolve-review-checkout) to choose the disposable epoch checkout (`pr-<number>-R<epoch>`), detect same-head no-ops, and optionally create the WorkTrunk worktree. Resolve helpers relative to this skill directory.
 
 ## Inputs
 
@@ -41,9 +41,13 @@ Use [scripts/gh-pr-parse](scripts/gh-pr-parse) to validate and parse the referen
 - **Mode**: omitted or `--mode standard` for Standard; `--mode deep` for explicit Deep
 - **Update controls**: `--full-rebuild` or `--finding F<positive-integer>`
 
-Both forms must be run from the target repository so WorkTrunk can create or locate the PR checkout.
+Both forms must be run from the target repository so WorkTrunk can create or locate a disposable epoch checkout.
 
 Standard is the omitted-mode default. Deep must be selected explicitly and never results from automatic escalation.
+
+Review checkouts are disposable and epoch-scoped: `pr-<number>-R<epochOrdinal>` (for example `pr-7166-R1`). They are created at that epoch's `ObservedHead` and must never mutate the user's PR branch worktree. Canonical review identity remains the artifact series under `~/.cdx-artifacts/pr-reviews/`; checkouts are evidence only.
+
+When the current GitHub head equals the series' current `ObservedHead` and readiness is already `ready`, a default re-review is a no-op. Use `--full-rebuild` or `--finding` to force more work on an unchanged head. A prior `UNABLE TO REVIEW` on the same head may be retried without appending an epoch.
 
 `--finding` requires an existing review series and one existing ID matching `F0*[1-9][0-9]*`. Display the normalized ID with at least three digits, allow additional digits, and use Standard verification depth. It is incompatible with `--mode deep` and `--full-rebuild`. A full rebuild also requires an existing series.
 
@@ -84,7 +88,7 @@ Validate the staged artifact directory with [validate-review-artifacts](scripts/
 
 The coordinator alone owns mode and route selection, readiness, reviewer scope, cross-boundary ownership, stable finding IDs, canonical artifact writes, final compilation, publication, and checkout cleanup. Focused and synthesis reviewers return evidence and normalized proposals; they do not mutate canonical artifacts, derive the recommendation, expand scope, or delegate.
 
-The launcher enters a WorkTrunk checkout before invoking this skill. Treat that checkout, every reused checkout, and every checkout not created by this direct invocation as pre-existing. Preserve it. Remove only a checkout that this invocation created itself, and only after valid artifacts are published.
+The launcher resolves a disposable epoch checkout (`pr-<number>-R<epochOrdinal>`) before invoking this skill and exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD`. Prefer that checkout. Never switch to or mutate the user's PR branch worktree. Treat any non-epoch checkout and every reused checkout not created by this invocation as pre-existing and preserve it. Remove only a disposable epoch checkout this invocation created (`PR_REVIEW_CHECKOUT_CREATED=yes` or a checkout this workflow itself created), and only after valid artifacts are published.
 
 Keep GitHub, Linear, PR state, Git history, and the reviewed checkout read-only. Do not submit reviews, post comments, change issue state, mutate the pull request, or edit reviewed files.
 

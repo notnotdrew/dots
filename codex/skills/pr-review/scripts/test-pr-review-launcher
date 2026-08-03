@@ -63,25 +63,25 @@ assert_command() {
 
 usage_error='error: usage: pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
 
-assert_command "defaults to Standard mode" 0 'worktree: pr:42
+assert_command "defaults to Standard mode" 0 'worktree: pr-42-R1
 prompt: /pr-review 42' --dry-run 42
 
-assert_command "forwards explicit Standard mode" 0 'worktree: pr:42
+assert_command "forwards explicit Standard mode" 0 'worktree: pr-42-R1
 prompt: /pr-review --mode standard 42' --dry-run --mode standard 42
 
-assert_command "forwards Deep mode" 0 'worktree: pr:42
+assert_command "forwards Deep mode" 0 'worktree: pr-42-R1
 prompt: /pr-review --mode deep 42' --dry-run --mode deep 42
 
-assert_command "forwards an omitted-mode full rebuild" 0 'worktree: pr:42
+assert_command "forwards an omitted-mode full rebuild" 0 'worktree: pr-42-R1
 prompt: /pr-review --full-rebuild 42' --dry-run --full-rebuild 42
 
-assert_command "forwards an explicit-Standard full rebuild" 0 'worktree: pr:42
+assert_command "forwards an explicit-Standard full rebuild" 0 'worktree: pr-42-R1
 prompt: /pr-review --mode standard --full-rebuild 42' --dry-run --mode standard --full-rebuild 42
 
-assert_command "forwards a Deep full rebuild" 0 'worktree: pr:42
+assert_command "forwards a Deep full rebuild" 0 'worktree: pr-42-R1
 prompt: /pr-review --mode deep --full-rebuild 42' --dry-run --mode deep --full-rebuild 42
 
-assert_command "forwards a single-finding revision" 0 'worktree: pr:42
+assert_command "forwards a single-finding revision" 0 'worktree: pr-42-R1
 prompt: /pr-review --finding F001 42' --dry-run --finding F001 42
 
 assert_command "rejects an unknown mode" 1 'error: unknown mode: broad' --dry-run --mode broad 42
