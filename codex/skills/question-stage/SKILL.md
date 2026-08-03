@@ -34,6 +34,7 @@ Work from the task description alone and ask only the questions that materially 
 - Keep tradeoffs neutral
 - Ask 3-7 questions total
 - Each question must change where research should look, what system boundary matters, or what "done" means
+- Prefer the host's question UI (for example Cursor AskQuestion) over a fixed markdown questionnaire
 - After the user answers, restate the decisions in a compact handoff with explicit research targets
 - In a staged workflow, persist the resolved scope by default using `artifact-management`
 - If the task is simple enough that no meaningful design decisions exist, say so directly and tell the user they can proceed to `$research-codebase`
@@ -57,6 +58,9 @@ Work from the task description alone and ask only the questions that materially 
    - Give 2-3 plausible options per question when possible.
    - Phrase options as tradeoffs, not recommendations.
    - Prefer questions about ownership, target surface area, compatibility constraints, data boundaries, rollout scope, and non-goals.
+   - Prefer the host's question UI when available (for example Cursor's AskQuestion tool in CLI or IDE). Let that interface own layout, option selection, and turn-taking.
+   - Do not force a rigid markdown questionnaire when the host can collect answers natively.
+   - When falling back to plain chat, keep questions short and scannable; the fallback sketch below is guidance, not a required template.
 
 4. Stop after presenting the questions.
    - Wait for the user's answers before researching the codebase or doing any later-stage work.
@@ -69,33 +73,35 @@ Work from the task description alone and ask only the questions that materially 
    - In a staged workflow, locate or create the question artifact through `artifact-management`, update it in place on revisions, and return the artifact path.
    - For casual one-off help, inline output is enough if the user did not ask for persistence.
 
-## Report
+## Presentation
 
-Use this format when asking questions:
+**When asking questions**, content matters more than layout. Cover:
+
+- One-sentence goal
+- 3-7 decisions that change research targets, system boundaries, or done
+- 2-3 neutral tradeoff options per question when options help
+- Likely out-of-scope items and unknowns better left to research
+
+Host UI takes precedence. If AskQuestion (or an equivalent structured-question tool) is available, use it. Pass each decision as a question with short option labels; put tradeoffs in the option text or a brief lead-in. Ask one or a few questions per turn if the host works better that way — do not dump a markdown form that fights the UI.
+
+Plain-chat fallback when no question UI exists (adapt freely):
 
 ```markdown
-Based on [source], the goal is: **[one sentence]**.
+Goal: [one sentence]
 
-Before I research the codebase, I need your input on these decisions:
+1. [Decision]?
+   - [option] — [tradeoff]
+   - [option] — [tradeoff]
 
-**Q1.** [Decision that changes where work should look]
-- Option A: [approach] - [tradeoff]
-- Option B: [approach] - [tradeoff]
+2. [Decision]?
+   - [option] — [tradeoff]
+   - [option] — [tradeoff]
 
-**Q2.** [Decision that changes where work should look]
-- Option A: [approach] - [tradeoff]
-- Option B: [approach] - [tradeoff]
-
-**Scope boundaries**:
-- Not doing: [out-of-scope item]
-
-**Unknowns for research**:
-- [question research must answer]
-
-Once you answer these, I can target the research step precisely.
+Not doing: [out-of-scope item]
+Research will need to learn: [unknown]
 ```
 
-Use this format after the user answers:
+**After the user answers**, use this handoff shape (structure here is intentional; wording may vary):
 
 ```markdown
 ## Resolved Scope
@@ -124,33 +130,14 @@ Use this format after the user answers:
 
 **Input:** "I need to add audit logging for admin actions."
 
-**Output:**
+**Content to cover** (via AskQuestion or plain chat):
 
-```markdown
-Based on your task description, the goal is: **capture a reliable record of meaningful admin actions without expanding scope beyond the intended surfaces**.
-
-Before I research the codebase, I need your input on these decisions:
-
-**Q1.** Which admin actions count for this first pass?
-- Option A: Authentication and role changes only - narrower scope, faster validation
-- Option B: All mutating admin actions - broader coverage, more surfaces to inspect
-
-**Q2.** Where should audit records live?
-- Option A: Existing application database - easier correlation, tighter schema coupling
-- Option B: External logging pipeline - better separation, more integration points to inspect
-
-**Q3.** Is this task backward-compatible only?
-- Option A: No API or UI contract changes - research stays focused on internal wiring
-- Option B: UI and API changes are allowed - research must include admin surfaces and client expectations
-
-**Scope boundaries**:
+- Goal: capture a reliable record of meaningful admin actions without expanding beyond the intended surfaces
+- Which admin actions count for this first pass? (auth/role changes only vs all mutating admin actions)
+- Where should audit records live? (app DB vs external logging pipeline)
+- Backward-compatible only, or are UI/API changes allowed?
 - Not doing: end-user activity logging
-
-**Unknowns for research**:
-- Whether a shared event model or logging abstraction already exists
-
-Once you answer these, I can target the research step precisely.
-```
+- Research unknown: whether a shared event model or logging abstraction already exists
 
 ## Guidelines
 
@@ -158,5 +145,6 @@ Once you answer these, I can target the research step precisely.
 - Avoid asking for information that can be learned cheaply from later research
 - Do not ask generic preference questions unless they affect scope or system boundaries
 - If the user has already answered a decision implicitly, do not ask it again
+- Prefer host question UI over markdown forms; never restate the same options as a long markdown block after the UI already asked them
 - Keep the handoff obvious: after answers arrive, summarize the resolved decisions and name the next research target
 - If you persisted the handoff, keep the topic slug and artifact path stable across later edits

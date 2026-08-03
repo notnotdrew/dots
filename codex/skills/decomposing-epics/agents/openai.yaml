@@ -1,0 +1,4 @@
+interface:
+  display_name: "Decomposing Epics"
+  short_description: "Split an epic into sprint-sized vertical stories"
+  default_prompt: "Decompose this epic into an ordered backlog of demoable stories"

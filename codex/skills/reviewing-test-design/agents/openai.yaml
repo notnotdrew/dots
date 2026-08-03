@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reviewing Test Design"
+  short_description: "Score tests against Dave Farley's 8 properties"
+  default_prompt: "Review the test design of these tests and give me a Farley score"

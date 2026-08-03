@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grilling Ideas"
+  short_description: "Stress-test an idea one committed question at a time"
+  default_prompt: "Grill me on this idea until we reach shared understanding"

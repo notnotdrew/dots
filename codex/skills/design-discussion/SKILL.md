@@ -42,6 +42,7 @@ Also include Components and Key Interactions so the reviewer can validate the sy
 - Use concrete file references only when they help verify a factual claim
 - Surface misunderstandings or unresolved questions before moving toward planning
 - Walk the document section by section with explicit checkpoints before advancing
+- Prefer the host's question UI (for example Cursor AskQuestion) for section checkpoints, open questions, and final approval
 - Review the document in this order: `Current State`, `Desired End State`, optional `Components and Patterns to Follow`, optional `Key Interactions`, `Design Decisions`, `Open Questions`, and `What We're Not Doing`
 - If the user corrects a section, revise that section immediately, restate it, and do not continue until that revision is acknowledged
 - In a staged workflow, persist the design artifact by default using `artifact-management`
@@ -68,12 +69,15 @@ Also include Components and Key Interactions so the reviewer can validate the sy
    - Next present `Desired End State` as observable capabilities or outcomes.
    - Include `Components and Patterns to Follow` when existing exemplars, boundaries, or responsibilities need review.
    - Include `Key Interactions` when important scenarios cross components or interfaces.
-   - Present `Design Decisions` as a compact table.
+   - Present `Design Decisions` compactly (a table is fine in the artifact; conversational bullets are fine during the walkthrough).
    - Present `Open Questions` explicitly and stop there if any critical questions remain unresolved.
    - End with `What We're Not Doing` so scope boundaries are confirmed before planning.
 
 4. Enforce the checkpoints.
    - Treat each section as a review checkpoint before advancing to the next one.
+   - Prefer the host's question UI when available (for example Cursor's AskQuestion tool). Use it for approve / correct / continue, for resolving open questions, and for final design approval.
+   - Present the section content first, then collect the checkpoint response through the host UI. Do not wrap the whole walkthrough in a rigid markdown questionnaire that fights the UI.
+   - When falling back to plain chat, ask briefly whether to approve, correct, or continue.
    - If a section is corrected, revise it immediately and restate the corrected version before moving on.
    - Do not silently continue after a correction.
    - Do not hand off to planning while unresolved design questions remain.
@@ -83,9 +87,18 @@ Also include Components and Key Interactions so the reviewer can validate the sy
    - In staged QRDSPI work, update the artifact to `Status: approved` only when the human explicitly approves it.
    - For casual one-off design discussion, inline output is enough unless the user asks for a file.
 
-## Report
+## Presentation
 
-Use this format for the design discussion document:
+**During the walkthrough**, content and checkpoints matter more than chat layout. Cover the calibrated sections in order, stop for approval or correction after each one, and resolve open questions before final approval.
+
+Host UI takes precedence for interactive prompts. If AskQuestion (or an equivalent structured-question tool) is available, use it for:
+- section checkpoints (approve / correct / continue)
+- open design questions that need a human choice
+- final approval of the design artifact
+
+Do not restate the same options as a long markdown form after the UI already asked them.
+
+**For the persisted design document**, use this shape (structure here is intentional; wording may vary):
 
 ```markdown
 ## Design Framing
@@ -128,46 +141,17 @@ Use this format for the design discussion document:
 
 **Input:** "Use the billing retry research and draft the design discussion doc."
 
-**Output:**
+**Walkthrough behavior:** Present `Current State`, then checkpoint via AskQuestion or a short chat prompt. Continue section by section. Resolve any open questions the same way. Persist the approved document in the shape above.
 
-```markdown
-## Design Framing
+**Artifact content to cover:**
 
-- Paradigm: OOP-leaning service/module workflow
-- Depth: Multi-component feature
-
-## Current State
-
-Billing retry behavior is currently split between the retry policy module, background job execution, and gateway error handling. Retry scheduling already exists as a shared concern rather than being embedded in each caller.
-
-## Desired End State
-
-The system should support the approved retry scope with behavior that is externally verifiable, uses existing conventions where possible, and does not expand into unrelated billing flows.
-
-## Components and Patterns to Follow
-
-- Mirror the existing retry policy abstraction instead of introducing a parallel scheduling mechanism
-- Follow the current background job pattern used by billing workers
-
-## Key Interactions
-
-Failed charge events are classified, persisted, and then handed to background retry execution. Gateway response categories influence whether retries continue or terminate.
-
-## Design Decisions
-
-| Decision | Resolution | Rationale |
-|----------|------------|-----------|
-| Retry scope | Failed charges only | Keeps the first pass inside the approved boundary |
-| Surface area | Server-side only | Avoids premature UI expansion |
-
-## Open Questions
-
-- None.
-
-## What We're Not Doing
-
-- Subscription lifecycle redesign
-```
+- Framing: OOP-leaning service/module workflow; multi-component feature
+- Current state: retry policy, background job, gateway error handling already share scheduling concern
+- Desired end state: approved retry scope, externally verifiable, existing conventions, no unrelated billing expansion
+- Patterns: mirror existing retry policy and billing worker job pattern
+- Key interaction: classify → persist → background retry; gateway categories stop or continue retries
+- Decisions: failed charges only; server-side only
+- Not doing: subscription lifecycle redesign
 
 ## Guidelines
 
@@ -175,6 +159,7 @@ Failed charge events are classified, persisted, and then handed to background re
 - Distinguish clearly between facts from research and decisions made during synthesis
 - Keep the document focused on design alignment, not execution planning
 - Let the calibrated depth determine which optional sections appear
+- Prefer host question UI for checkpoints and open questions; keep the artifact shape stable for later stages
 - In staged QRDSPI work, encode approval in the artifact itself instead of assuming any external runner will manage approval state
 - If the inputs are not strong enough to support design alignment, say what is missing instead of smoothing over the gap
 - When research surfaced exemplars worth following, name them explicitly so later stages can preserve them

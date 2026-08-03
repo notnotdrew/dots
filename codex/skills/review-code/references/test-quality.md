@@ -36,6 +36,18 @@ For each test, ask:
 - tests of simple delegation, getters, or generated code
 - assertions that mirror the implementation too closely
 
+Mirror tests deserve their own check, because they pass review easily. The symptom is an assertion whose expected value appears verbatim in the source under test, separated only by simple property access, with no branching or transformation in between.
+
+Ask the discriminator question: would deleting this test let any real bug go undetected?
+
+- "only if I changed one literal and forgot the matching one" — tautological, flag for removal
+- "an integration test would catch it anyway" — tautological, flag for removal
+- names a real branching or transformation defect — keep
+
+Keep a mirror test only when both hold: the contract is consumed by a system outside this codebase, and no higher-level test already pins it. If the test was added as a regression for a real reported bug, keep it regardless.
+
+For the full catalog, including the excuses that do not survive scrutiny, see [anti-patterns](../../reviewing-test-design/references/anti-patterns.md).
+
 ## Preserve High-Value Tests
 
 Keep tests that cover:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Dev Tasks"
+  short_description: "Scope non-user-facing work with a verifiable done"
+  default_prompt: "Write a dev task for this refactor with a verifiable definition of done"

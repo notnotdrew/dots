@@ -37,6 +37,7 @@ Split phases at shared interfaces, data migrations, or rollout boundaries so eac
 - Preserve non-goals and phase names so the detailed plan can expand this outline directly
 - Use a short pre-mortem for each phase: ask what could make this phase unsafe, unclear, or hard to verify, then split the phase if that risk is real
 - Prefer phases that are small enough to complete in a single focused implementation session
+- Prefer the host's question UI (for example Cursor AskQuestion) for outline approval and revision choices
 
 ## Workflow
 
@@ -59,6 +60,10 @@ Split phases at shared interfaces, data migrations, or rollout boundaries so eac
 
 4. Present the outline.
    - Deliver the phases in a concise reviewable format.
+   - Prefer the host's question UI when available (for example Cursor's AskQuestion tool) to collect approval or revision intent after presenting the outline.
+   - Typical choices: approve as-is, reorder, split a phase, merge phases, or revise scope.
+   - Do not wrap the outline review in a rigid markdown questionnaire that fights the host UI.
+   - When falling back to plain chat, ask briefly what to change or whether to approve.
    - Stop and wait for the user's response before expanding into a detailed plan.
 
 5. Revise until approved.
@@ -66,15 +71,25 @@ Split phases at shared interfaces, data migrations, or rollout boundaries so eac
    - Split or merge phases if the user wants different granularity.
    - Update the outline when scope or assumptions change.
    - After each revision, stop and wait for approval before expanding into detailed planning.
+   - Collect those revision choices through the host question UI when available.
    - In staged QRDSPI work, set the structure artifact to `Status: approved` only after the human explicitly approves it.
 
 6. Persist only when needed.
    - In a staged workflow, persist the structure artifact by default through `artifact-management` using the `structure--<topic-slug>.md` prefix, and return the path you updated.
    - For casual one-off outlining, inline output is enough unless the user asks for a file.
 
-## Report
+## Presentation
 
-Use this format for the structure outline:
+**During review**, present the outline clearly, then let the host UI own approval and revision choices. Content matters more than chat layout for the interactive prompt.
+
+Host UI takes precedence for:
+- approve vs revise
+- reorder / split / merge choices when the user wants changes
+- final approval before `$plan-implementation`
+
+Do not restate the same options as a long markdown form after the UI already asked them.
+
+**For the persisted structure artifact**, use this shape (structure here is intentional; wording may vary):
 
 ```markdown
 ## [Task Name] Structure Outline
@@ -108,51 +123,14 @@ Use this format for the structure outline:
 
 **Input:** "Use the design doc to outline implementation phases for billing retries."
 
-**Output:**
+**Review behavior:** Present the phase skeleton, then checkpoint via AskQuestion or a short chat prompt (approve / reorder / split / merge / revise). Persist the approved outline in the shape above.
 
-```markdown
-## Billing Retries Structure Outline
+**Artifact content to cover:**
 
-This outline breaks the billing retry work into 3 phases so each step is independently verifiable and safe to stop after.
-
-### Phase 1: Centralize Retry Policy Inputs
-
-**Goal**: Establish one source of truth for retry classification and scheduling inputs.
-**Changes**: Retry policy module, billing configuration, related tests
-**Depends on**: Nothing
-**Verification**:
-- Automated: billing unit test suite covering retry policy behavior
-- Manual: confirm existing retry-triggering flows still classify failures correctly
-**Risk**: Medium - touches shared billing rules used by multiple flows
-
-### Phase 2: Route Failed Charges Through Shared Retry Execution
-
-**Goal**: Move failed charge handling onto the approved retry path.
-**Changes**: Billing worker, retry job, gateway integration layer
-**Depends on**: Phase 1
-**Verification**:
-- Automated: integration coverage for failed charge scheduling and retry execution
-- Manual: trigger a retryable failure and confirm a retry is scheduled
-**Risk**: High - crosses job execution and external gateway behavior
-
-### Phase 3: Expose Operational Visibility
-
-**Goal**: Make retry outcomes observable within the approved server-side scope.
-**Changes**: Billing event logging, admin reporting surface, support docs
-**Depends on**: Phase 2
-**Verification**:
-- Automated: checks for persisted retry status transitions
-- Manual: inspect retry history for a failed charge
-**Risk**: Low - mostly additive visibility work
-
-## Sequencing Rationale
-
-The shared retry rules come first so later phases do not duplicate behavior. Execution changes depend on that policy foundation, and operational visibility comes last because it reflects the final retry path rather than shaping it.
-
-## What We're Not Doing
-
-- Subscription lifecycle redesign
-```
+- 3 phases: centralize retry policy inputs → route failed charges through shared retry execution → expose operational visibility
+- Each phase has goal, touched surfaces, dependency, automated + manual verification, and risk
+- Sequencing: shared rules first, execution next, visibility last
+- Not doing: subscription lifecycle redesign
 
 ## Guidelines
 
@@ -160,6 +138,7 @@ The shared retry rules come first so later phases do not duplicate behavior. Exe
 - If a phase cannot be verified on its own, it is probably too large or incorrectly grouped
 - Keep the outline focused on sequencing and safety, not implementation detail
 - Carry forward explicit non-goals so they do not quietly expand during planning
+- Prefer host question UI for approval and revision choices; keep the outline skeleton stable for `$plan-implementation`
 - Phase names should be stable enough that `$plan-implementation` can reuse them directly
 - If the design is still unresolved, stop and return to alignment instead of inventing a phase structure
 - Preserve the same topic slug and artifact root when writing the structure artifact

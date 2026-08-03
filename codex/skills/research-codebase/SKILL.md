@@ -15,6 +15,19 @@ Before deeper research, restate the research question, targets, and scope bounda
 When the workflow is persisted, use `artifact-management` to locate the question artifact first and to write the research artifact as the default handoff.
 When you need a persisted deliverable, format it with [templates/research-document.md](templates/research-document.md) instead of inventing a new structure.
 
+## Completeness
+
+Research must be complete. Partial reads, skimming, and unmarked gaps are the main failure mode of this skill.
+
+Read files in full. Do not skim the top of a file with a line limit unless it exceeds a stated size threshold, and in that case read it in chunks and say that you did.
+
+When enumerating a finite set — struct fields, enum variants, function parameters, config keys, schema columns, route handlers, exported symbols — the enumeration must be either:
+
+- complete, with every member listed alongside its type and a `file:line` reference, or
+- explicitly truncated, naming the members you covered, the count you skipped, and the source for the full definition
+
+`...`, "etc.", "and so on", "and others", and "among others" are not substitutes for either. In an enumeration they are an admission of incomplete research.
+
 ## Choose Your Approach
 
 **The user provided a scoping artifact or decisions document**
@@ -60,7 +73,9 @@ Restate the question, derive a small set of research targets, and stay inside th
    - Gather evidence for each research target by finding the relevant files, modules, tests, docs, and configuration.
    - Read the most important source files directly.
    - Use parallel exploration where it helps, but keep it in evidence-gathering mode until the active targets are covered.
-   - Wait for the active exploration threads to finish before moving into synthesis.
+   - State completeness requirements explicitly when delegating. An explorer knows how to search; it does not know you need every member. Say so: "enumerate every field of the `User` struct with type and `file:line`; do not abbreviate with `...` or `etc.`, and if you skip any, state which and why."
+   - Require full file reads when delegating a file summary, with the same size-threshold carve-out as above.
+   - Wait for the active exploration threads to finish before moving into synthesis. "Finished" means complete findings came back, not just that the thread returned.
    - Track data flow, control flow, dependencies, and notable conventions.
 
 4. Verify the findings.
@@ -68,6 +83,9 @@ Restate the question, derive a small set of research targets, and stay inside th
    - Resolve conflicting findings by reading the code directly.
    - Confirm each research target is either answered by evidence or explicitly marked unresolved.
    - Make sure file references are accurate and useful.
+   - Scan the combined findings for ellipsis-shaped admissions of incompleteness: `...`, "etc.", "and so on", "and others", "among others".
+   - Check every enumeration against the rules in [Completeness](#completeness), and check for partial file reads that were never explained.
+   - Fill any gap you find by re-reading the source or re-running the exploration with a corrective prompt. Do not synthesize a report with unmarked gaps.
 
 5. Synthesize the research.
    - Summarize what exists in concise neutral language.

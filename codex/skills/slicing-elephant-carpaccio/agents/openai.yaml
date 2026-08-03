@@ -1,0 +1,4 @@
+interface:
+  display_name: "Slicing Elephant Carpaccio"
+  short_description: "Slice a story into thin demoable increments"
+  default_prompt: "Slice this feature into thin vertical increments I can build one at a time"

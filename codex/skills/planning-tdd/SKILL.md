@@ -96,6 +96,16 @@ Do not include:
 
 Execution belongs to `practicing-tdd`.
 
+### 6. Self-Check The Plan
+
+Before presenting the plan, verify:
+
+- does every phase start with failing tests?
+- does every phase have clear "done when" criteria and an exact test command?
+- are the dependencies between phases correct?
+- does any cycle contain implementation code, GREEN guidance, or REFACTOR commentary? Remove it.
+- does any cycle's RED test pass purely by writing a literal into source, with no transformation between the literal and the assertion? Remove or replace it per [Test Cycle Validity](#test-cycle-validity).
+
 ## Expected Output
 
 The final plan should include:
@@ -110,6 +120,25 @@ The final plan should include:
 - manual verification per phase
 
 Load [examples](references/examples.md) when you need a concrete model for the expected phase and cycle shape.
+
+## Test Cycle Validity
+
+Every cycle must define a transformation under test: an input that goes through a function which branches, computes, queries, or transforms before producing the asserted output. If the RED test would pass by writing a literal into the source, with no transformation between that literal and the assertion, the cycle is mis-specified.
+
+Before adding a cycle, answer: what production defect would this test catch that an integration test of the consumer would not also catch?
+
+If the only answer is "the static data has the wrong shape," replace the cycle with either:
+
+- a higher-level cycle that tests the consumer's behavior over that data — the evaluator, the renderer, the resolver, whatever actually transforms it
+- no cycle at all, but only when a higher-level test already pins the behavior. Record that test's `file:line` in the plan as the source of coverage.
+
+The static data is documented by the source itself and the type checker pins its shape, but the wiring is not free coverage. It needs a named test.
+
+Tautological cycles are the one thing you may drop silently. Every other coverage gap, including "nothing downstream pins this yet," gets escalated rather than dropped.
+
+Pinning the registered shape of a static catalog is not a TDD cycle. It is a tautology with `test` as a keyword.
+
+See [anti-patterns](../reviewing-test-design/references/anti-patterns.md) for the full pattern catalog and the excuses that do not survive scrutiny.
 
 ## Guidelines
 

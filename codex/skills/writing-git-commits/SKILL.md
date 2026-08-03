@@ -100,6 +100,42 @@ Body rules:
 - explain what changed and why
 - do not narrate low-level implementation details the diff already shows
 
+Use bullets for genuinely parallel items and prose for narrative explanation. Do not bullet-list a single thought.
+
+#### The diff-redundancy test
+
+Ask of every sentence: could a future engineer derive this from `git log --stat -p` alone?
+
+If yes, delete it. If the whole body fails, rewrite it to capture why rather than what. Drop to subject-only only when the change is genuinely trivial.
+
+The body's monopoly is on what the diff cannot show:
+
+- the motivation, constraint, or external trigger behind the change
+- alternatives considered and rejected, and why
+- invariants or constraints not visible in the code
+- subtle behavior changes a casual reader would miss
+- historical or external context, such as a vendor changing an API on a given date
+
+A body that paraphrases the diff ("Modified X to add Y, updated Z") adds nothing. Cut it.
+
+#### The cross-reference test
+
+Every reference to another commit, PR, or ticket must either trigger automation or carry context the reader needs and cannot get elsewhere. Otherwise it is noise.
+
+Keep operational references:
+
+- `Fixes #N`, `Closes #N`, `Resolves #N` — these auto-close the issue
+- `Reverts <sha>` — explains that this commit undoes another, with the reason
+- `Refs #N` — only when the referenced issue holds essential context not duplicated here
+
+Cut decorative references:
+
+- "Part of epic ENG-789" — irrelevant to understanding this commit
+- "Follow-up to PR #456" — if that PR matters, explain why in the body itself
+- "Related to #N" — if it is related, say how
+- "As discussed in #234" — useless without summarizing what was discussed
+- "See also #N" — almost never load-bearing
+
 ### 6. Match the response to the user’s ask
 
 If the user asked for a commit message only:
@@ -126,6 +162,8 @@ Check:
 - blank line exists before the body
 - body lines wrap at 72 characters
 - body explains what and why
+- every body sentence survives the diff-redundancy test
+- every reference survives the cross-reference test
 - issue references appear at the end when used
 - no AI attribution appears anywhere
 
