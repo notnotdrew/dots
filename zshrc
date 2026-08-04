@@ -22,6 +22,10 @@ alias rk='bin/rake'
 alias vi='vim'
 alias vim='vim'
 alias vrc='vim ~/.vimrc'
+alias wtc='wt switch --create'
+alias wtd='wt switch develop'
+alias wts='wt switch'
+alias wtsd='wt switch develop'
 alias zrc='vim ~/.zshrc'
 
 export BAT_THEME="base16"
