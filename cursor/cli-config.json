@@ -1,0 +1,221 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(\"/Users/drewprice/.codex/skills/pr-review/scripts/gh-pr-parse\")",
+      "Shell(\"/Users/drewprice/.codex/skills/pr-review/scripts/pr-review-worktree\")",
+      "Shell(\"/Users/drewprice/.codex/skills/pr-review/scripts/validate-review-artifacts\")",
+      "Shell(\"codex/skills/pr-review/scripts/test-review-artifacts\")",
+      "Shell(/Users/drewprice/.codex/skills/pr-review/scripts/**:*)",
+      "Shell(/Users/drewprice/.codex/skills/pr-review/scripts/gh-pr-parse)",
+      "Shell(/Users/drewprice/.codex/skills/pr-review/scripts/validate-review-artifacts)",
+      "Shell(actionlint)",
+      "Shell(agent)",
+      "Shell(awk)",
+      "Shell(basename)",
+      "Shell(bin/pr-review)",
+      "Shell(bin/rails)",
+      "Shell(bin/rake)",
+      "Shell(bin/rspec)",
+      "Shell(bin/rubocop)",
+      "Shell(brew)",
+      "Shell(bundle)",
+      "Shell(cd)",
+      "Shell(codex/skills/pr-review/scripts/check-skill-links)",
+      "Shell(codex/skills/pr-review/scripts/check-skill-package)",
+      "Shell(codex/skills/pr-review/scripts/gh-pr-parse)",
+      "Shell(codex/skills/pr-review/scripts/test-pr-review-launcher)",
+      "Shell(codex/skills/pr-review/scripts/test-review-artifacts)",
+      "Shell(command)",
+      "Shell(diff)",
+      "Shell(echo)",
+      "Shell(exit)",
+      "Shell(find)",
+      "Shell(fzf)",
+      "Shell(gh)",
+      "Shell(git -C)",
+      "Shell(git blame)",
+      "Shell(git cat-file)",
+      "Shell(git check-ignore)",
+      "Shell(git diff)",
+      "Shell(git log)",
+      "Shell(git ls-files)",
+      "Shell(git merge-base)",
+      "Shell(git remote)",
+      "Shell(git rev-parse)",
+      "Shell(git show)",
+      "Shell(git status)",
+      "Shell(grep)",
+      "Shell(hb)",
+      "Shell(head)",
+      "Shell(jq)",
+      "Shell(linear)",
+      "Shell(ls)",
+      "Shell(mas)",
+      "Shell(mise)",
+      "Shell(mkdir)",
+      "Shell(mv)",
+      "Shell(pr-review)",
+      "Shell(printf)",
+      "Shell(pup)",
+      "Shell(pwd)",
+      "Shell(readlink)",
+      "Shell(rg)",
+      "Shell(shasum)",
+      "Shell(shellcheck)",
+      "Shell(slack)",
+      "Shell(sort)",
+      "Shell(tail)",
+      "Shell(test)",
+      "Shell(tr)",
+      "Shell(true)",
+      "Shell(wc)",
+      "Shell(which)",
+      "Shell(worktrunk)",
+      "Shell(wt)",
+      "WebFetch(docs.honeybadger.io)",
+      "WebFetch(docs.slack.dev)",
+      "WebFetch(github.com)",
+      "WebFetch(worktrunk.dev)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/**)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.standard-review-staging.71770/findings-ledger.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.standard-review-staging.71770/perfect-review.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7375.standard-review-staging.73227/context-brief.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7375.standard-review-staging.73227/findings-ledger.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7375.standard-review-staging.73227/perfect-review.md)",
+      "Shell(./bin/prrr)",
+      "Shell(cat)",
+      "Shell(sed)",
+      "Shell(type)",
+      "Shell(cp)",
+      "Shell(chmod)",
+      "Shell(nl)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7361.standard-review-staging.9483/findings-ledger.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7361.standard-review-staging.9483/perfect-review.md)",
+      "Shell(git stash)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.review-staging.f001-r3-20260731182129-13858/findings-ledger.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.review-staging.f001-r3-20260731182129-13858/perfect-review.md)",
+      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7166.review-staging.20260803164648-74237/perfect-review.md)"
+    ],
+    "deny": []
+  },
+  "version": 1,
+  "editor": {
+    "vimMode": false
+  },
+  "display": {
+    "showLineNumbers": false,
+    "showThinkingBlocks": false,
+    "showStatusIndicators": false,
+    "showStatusLineRunningTime": false,
+    "zenMode": true
+  },
+  "notifications": true,
+  "hints": true,
+  "modelSlashCommands": true,
+  "rewind": true,
+  "model": {
+    "modelId": "auto-smart",
+    "displayModelId": "auto-smart",
+    "displayName": "Auto Balance",
+    "displayNameShort": "Auto Balance",
+    "aliases": [],
+    "maxMode": false
+  },
+  "hasChangedDefaultModel": true,
+  "modelParameters": {
+    "auto-smart": [
+      {
+        "id": "optimize_for",
+        "value": "balanced"
+      }
+    ],
+    "gpt-5.6-sol": [
+      {
+        "id": "context",
+        "value": "272k"
+      },
+      {
+        "id": "reasoning",
+        "value": "medium"
+      },
+      {
+        "id": "fast",
+        "value": "false"
+      }
+    ],
+    "gpt-5.6-terra": [
+      {
+        "id": "context",
+        "value": "272k"
+      },
+      {
+        "id": "reasoning",
+        "value": "medium"
+      },
+      {
+        "id": "fast",
+        "value": "false"
+      }
+    ]
+  },
+  "selectedModel": {
+    "modelId": "auto-smart",
+    "parameters": [
+      {
+        "id": "optimize_for",
+        "value": "balanced"
+      }
+    ]
+  },
+  "modelSelectionHistory": [
+    "auto-smart",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra"
+  ],
+  "privacyCache": {
+    "ghostMode": true,
+    "privacyMode": 2,
+    "updatedAt": 1785946490292
+  },
+  "autoReviewAvailabilityCache": {
+    "backendUrl": "https://api2.cursor.sh",
+    "authCacheKey": "auth:github|user_01JKFB37Y9C4SE11595GVSC1K7",
+    "teamId": 15454445,
+    "available": true,
+    "updatedAt": 1785188267429
+  },
+  "serverConfigCache": {
+    "backendUrl": "https://api2.cursor.sh",
+    "authCacheKey": "auth:github|user_01JKFB37Y9C4SE11595GVSC1K7",
+    "teamId": 15454445,
+    "agentUrlConfig": {
+      "agentUrl": "https://agentn.global.api5.cursor.sh",
+      "agentnUrl": "https://agentn.global.api5.cursor.sh"
+    },
+    "cliSandboxDefaultEnabled": false,
+    "serverHttp2Config": 0,
+    "updatedAt": 1785946489566
+  },
+  "authInfo": {
+    "email": "drewsprice@gmail.com",
+    "displayName": "",
+    "teamId": 15454445,
+    "teamName": "ScreenSteps",
+    "userId": 159184346,
+    "authId": "github|user_01JKFB37Y9C4SE11595GVSC1K7"
+  },
+  "network": {
+    "useHttp1ForAgent": false
+  },
+  "approvalMode": "allowlist",
+  "autoAcceptWebSearch": false,
+  "sandbox": {
+    "mode": "disabled",
+    "networkAccess": "user_config_with_defaults"
+  },
+  "runEverythingSettingsPromptStreak": 1,
+  "attribution": {
+    "attributeCommitsToAgent": false,
+    "attributePRsToAgent": true
+  }
+}

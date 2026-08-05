@@ -28,6 +28,15 @@ codex/state*
 codex/tmp/
 codex/vendor_imports/
 codex/version.json
+cursor/agent-cli-state.json
+cursor/ai-tracking/
+cursor/chats/
+cursor/extensions/
+cursor/managed/
+cursor/projects/
+cursor/statsig-cache.json
+cursor/unified_repo_list.json
+cursor/skills-cursor/.sync-manifest.json
 nvim/thesaurus/*.txt
 vim/.netrwhist
 vim/plugged

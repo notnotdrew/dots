@@ -16,6 +16,7 @@ declare -A FOLDERS=(
   [bin]="$HOME/bin"
   [codex]="$HOME/.codex"
   [cdx-artifacts]="$HOME/.cdx-artifacts"
+  [cursor]="$HOME/.cursor"
 )
 
 set -u
