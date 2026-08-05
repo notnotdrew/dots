@@ -97,7 +97,7 @@ let g:ale_linters_ignore =
 " linters.
 let g:ale_linters_explicit = 1
 let g:ale_ruby_rubocop_executable = 'bundle'
-let g:ale_ruby_rubocop_options = '--autocorrect-all'
+let g:ale_ruby_rubocop_auto_correct_all = 1
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
 let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
 let g:test#javascript#jest#executable = 'yarn test'
