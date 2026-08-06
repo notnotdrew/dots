@@ -2,15 +2,22 @@
 # prrr — pr-review-review: browse ~/.cdx-artifacts/pr-reviews
 #
 # Usage:
-#   prrr                        Pick a review (newest first), then pick an artifact
-#   prrr --new                  Pick an open PR requesting your review, then run pr-review
+#   prrr                        Home picker: start a new review, or open a local one
 #   prrr --clean [number|url]   Remove local artifacts/worktrunks for merged PRs
 #   prrr <number|url>           Pick an artifact for that PR review
+#
+# Home picker:
+#   +        open PR requesting your review, not reviewed locally yet
+#   *        local review whose PR still requests your review
+#   enter    start the review (+ rows) or browse artifacts (local rows)
+#   ctrl-n   start/re-run a review for the highlighted row, or for a typed
+#            PR number or URL when nothing matches
 #
 # Artifact picker:
 #   enter  open in vim
 #   tab    open Cursor agent (ask mode) ready to discuss the file
 #   space  re-run the PR review
+#   ctrl-r resume the most recent agent session for this PR
 
 set -euo pipefail
 
@@ -23,7 +30,7 @@ readonly PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 readonly PR_REVIEW="${SCRIPT_DIR}/pr-review"
 readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/Documents/dev}"
 readonly EXIT_CANCELLED=130
-readonly USAGE="usage: ${SCRIPT_NAME} [--new | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
+readonly USAGE="usage: ${SCRIPT_NAME} [--clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
   printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
@@ -63,34 +70,6 @@ review_title() {
         ;;
     esac
   done < "$context_brief"
-}
-
-# Print "label<TAB>abspath" lines for every pr-<n> series dir, newest first.
-list_reviews() {
-  local path mtime label title
-  local -a rows=()
-
-  [[ -d "$ARTIFACTS_ROOT" ]] || return 0
-
-  while IFS= read -r path; do
-    [[ -d "$path" ]] || continue
-    is_review_dir "$path" || continue
-    mtime="$(stat -f '%m' "$path")"
-    label="${path#"${ARTIFACTS_ROOT}/"}"
-    title="$(review_title "$path")"
-    if [[ -n "$title" ]]; then
-      label="${label}  ${title}"
-    fi
-    rows+=("${mtime}"$'\t'"${label}"$'\t'"${path}")
-  done < <(find "$ARTIFACTS_ROOT" -mindepth 2 -maxdepth 2 -type d -name 'pr-*' 2>/dev/null)
-
-  if ((${#rows[@]} == 0)); then
-    return 0
-  fi
-
-  printf '%s\n' "${rows[@]}" \
-    | sort -t $'\t' -k1,1nr \
-    | cut -f2-
 }
 
 # Normalize a git remote URL to owner/repo (GitHub only).
@@ -152,34 +131,72 @@ resolve_clone_dir() {
   return 1
 }
 
-# Print "label<TAB>url" for open PRs requesting the current user's review.
-# Labels mark PRs that already have a local review dir under ARTIFACTS_ROOT.
+# Print "owner/repo<TAB>number<TAB>title<TAB>url" for open PRs requesting your review.
+# Soft-fails so the picker still works when gh is missing, logged out, or offline.
 list_review_requested_prs() {
-  local name_with_owner number title url owner repo marker artifact_dir
+  command -v gh >/dev/null 2>&1 || return 0
 
-  require_cmds gh
+  gh search prs \
+    --review-requested=@me \
+    --state=open \
+    --sort=updated \
+    --order=desc \
+    --limit=50 \
+    --json url,title,number,repository \
+    --jq '.[] | "\(.repository.nameWithOwner)\t\(.number)\t\(.title)\t\(.url)"' \
+    2>/dev/null || true
+}
+
+# Print "action<TAB>label<TAB>payload" rows for the home picker: PRs awaiting a
+# first review (+) first, then local reviews newest first, with '*' on the local
+# reviews whose PR still requests your review.
+list_home_choices() {
+  local name_with_owner number title url owner repo artifact_dir
+  local path mtime label review_title_text marker
+  local -A awaiting=()
+  local -a start_rows=() local_rows=()
 
   while IFS=$'\t' read -r name_with_owner number title url; do
     [[ -n "$url" ]] || continue
     owner="${name_with_owner%%/*}"
     repo="${name_with_owner#*/}"
     artifact_dir="${ARTIFACTS_ROOT}/${owner}--${repo}/pr-${number}"
-    if [[ -d "$artifact_dir" ]]; then
+    awaiting["$artifact_dir"]=1
+    # Reviewed locally already: annotate the local row instead of listing twice.
+    [[ -d "$artifact_dir" ]] && continue
+    start_rows+=("start"$'\t'"+ ${name_with_owner} #${number}  ${title}"$'\t'"${url}")
+  done < <(list_review_requested_prs)
+
+  if ((${#start_rows[@]} > 0)); then
+    printf '%s\n' "${start_rows[@]}"
+  fi
+
+  [[ -d "$ARTIFACTS_ROOT" ]] || return 0
+
+  while IFS= read -r path; do
+    [[ -d "$path" ]] || continue
+    is_review_dir "$path" || continue
+    mtime="$(stat -f '%m' "$path")"
+    label="${path#"${ARTIFACTS_ROOT}/"}"
+    review_title_text="$(review_title "$path")"
+    if [[ -n "$review_title_text" ]]; then
+      label="${label}  ${review_title_text}"
+    fi
+    if [[ -n "${awaiting[$path]:-}" ]]; then
       marker='*'
     else
       marker=' '
     fi
-    printf '%s\t%s\n' "${marker} ${name_with_owner} #${number}  ${title}" "$url"
-  done < <(
-    gh search prs \
-      --review-requested=@me \
-      --state=open \
-      --sort=updated \
-      --order=desc \
-      --limit=50 \
-      --json url,title,number,repository \
-      --jq '.[] | "\(.repository.nameWithOwner)\t\(.number)\t\(.title)\t\(.url)"'
-  )
+    local_rows+=("${mtime}"$'\t'"open"$'\t'"${marker} ${label}"$'\t'"${path}")
+  done < <(find "$ARTIFACTS_ROOT" -mindepth 2 -maxdepth 2 -type d -name 'pr-*' 2>/dev/null)
+
+  if ((${#local_rows[@]} == 0)); then
+    return 0
+  fi
+
+  printf '%s\n' "${local_rows[@]}" \
+    | sort -t $'\t' -k1,1nr \
+    | cut -f2-
 }
 
 # Print "basename<TAB>abspath" for files in a review dir.
@@ -193,53 +210,14 @@ list_artifacts() {
   done < <(find "$review_dir" -maxdepth 1 -type f ! -name '.*' | sort)
 }
 
-pick_review() {
-  local selection review_lines
+# Resolve clone + exec pr-review for a GitHub PR URL.
+start_review_from_url() {
+  local pr_url=$1
+  local parsed owner repo clone_dir
 
-  require_cmds fzf
-  require_tty "interactive terminal required for picker"
-
-  review_lines="$(list_reviews)"
-  [[ -n "$review_lines" ]] || die "no reviews under ${ARTIFACTS_ROOT}"
-
-  selection="$(
-    printf '%s\n' "$review_lines" | fzf \
-      --delimiter=$'\t' \
-      --with-nth=1 \
-      --prompt='pr-review> ' \
-      --header='Select a PR review (newest first)' \
-      --no-multi \
-      || true
-  )"
-
-  [[ -n "$selection" ]] || return "$EXIT_CANCELLED"
-  printf '%s\n' "${selection#*$'\t'}"
-}
-
-# Pick a review-requested PR, cd to its local clone, then exec bin/pr-review.
-pick_and_start_review() {
-  local pr_lines selection pr_url parsed owner repo clone_dir
-
-  require_cmds fzf gh
   [[ -x "$PR_REVIEW" ]] || die "missing launcher: $PR_REVIEW"
   [[ -x "$PR_PARSE" ]] || die "missing parser: $PR_PARSE"
-  require_tty "interactive terminal required for picker"
 
-  pr_lines="$(list_review_requested_prs)"
-  [[ -n "$pr_lines" ]] || die "no open PRs requesting your review"
-
-  selection="$(
-    printf '%s\n' "$pr_lines" | fzf \
-      --delimiter=$'\t' \
-      --with-nth=1 \
-      --prompt='review-requested> ' \
-      --header='enter: start pr-review  |  * = local review artifact' \
-      --no-multi \
-      || true
-  )"
-  [[ -n "$selection" ]] || return "$EXIT_CANCELLED"
-
-  pr_url="${selection#*$'\t'}"
   parsed="$("$PR_PARSE" "$pr_url")" || exit 1
   # shellcheck disable=SC2086
   eval "$parsed"
@@ -253,6 +231,164 @@ pick_and_start_review() {
   printf '%s: starting pr-review in %s\n' "$SCRIPT_NAME" "$clone_dir" >&2
   cd "$clone_dir" || die "failed to cd into ${clone_dir}"
   exec "$PR_REVIEW" "$pr_url"
+}
+
+# Start a review for a home picker row, whichever section it came from.
+start_review_from_row() {
+  local row=$1
+  local action payload owner repo pr_number
+
+  action="${row%%$'\t'*}"
+  payload="${row#*$'\t'}"
+  payload="${payload#*$'\t'}"
+
+  case "$action" in
+    start)
+      start_review_from_url "$payload"
+      ;;
+    open)
+      parse_review_identity "$payload" owner repo pr_number
+      start_review_from_url "https://github.com/${owner}/${repo}/pull/${pr_number}"
+      ;;
+    *)
+      die "unexpected home picker action: ${action}"
+      ;;
+  esac
+}
+
+# Print owner/repo for a bare PR number: prefer the current checkout, then any
+# repo with a local review for that number. Confirms the PR exists with gh so a
+# number from an unrelated checkout still lands on the right repo.
+repo_slug_for_pr_number() {
+  local pr_number=$1
+  local remote slug review_dir series_dir
+  local -a candidates=()
+
+  if remote="$(git remote get-url origin 2>/dev/null)" \
+    && slug="$(github_repo_from_remote "$remote")"; then
+    candidates+=("$slug")
+  fi
+
+  while IFS= read -r review_dir; do
+    [[ -d "$review_dir" ]] || continue
+    series_dir="$(basename "$(dirname "$review_dir")")"
+    [[ "$series_dir" == *--* ]] || continue
+    candidates+=("${series_dir%%--*}/${series_dir#*--}")
+  done < <(find "$ARTIFACTS_ROOT" -mindepth 2 -maxdepth 2 -type d -name "pr-${pr_number}" 2>/dev/null)
+
+  ((${#candidates[@]} > 0)) || return 1
+
+  if ! command -v gh >/dev/null 2>&1; then
+    printf '%s\n' "${candidates[0]}"
+    return 0
+  fi
+
+  for slug in "${candidates[@]}"; do
+    if gh pr view "$pr_number" --repo "$slug" --json number >/dev/null 2>&1; then
+      printf '%s\n' "$slug"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Start a review for a typed PR reference: a full GitHub PR URL, or a number.
+start_review_from_ref() {
+  local ref=$1
+  local repo_slug
+
+  case "$ref" in
+    https://github.com/*/pull/*)
+      start_review_from_url "$ref"
+      ;;
+    '' | 0)
+      die "expected a PR number or GitHub PR URL"
+      ;;
+    *[!0-9]*)
+      die "expected a PR number or GitHub PR URL, got: ${ref}"
+      ;;
+    *)
+      if ! repo_slug="$(repo_slug_for_pr_number "$ref")"; then
+        die "cannot find PR #${ref}; run from its repo, or type the full PR URL"
+      fi
+      start_review_from_url "https://github.com/${repo_slug}/pull/${ref}"
+      ;;
+  esac
+}
+
+# Home picker: browse a local review, or start a new one.
+pick_home() {
+  local choice_lines result header status=0
+  local query key selection payload new_count awaiting_count local_count
+  local -a result_lines=()
+
+  require_cmds fzf
+  require_tty "interactive terminal required for picker"
+
+  choice_lines="$(list_home_choices)"
+  if [[ -z "$choice_lines" ]]; then
+    die "nothing to show (no local reviews under ${ARTIFACTS_ROOT}, and no open review-requested PRs)"
+  fi
+
+  new_count="$(printf '%s\n' "$choice_lines" | grep -c $'^start\t' || true)"
+  awaiting_count="$(printf '%s\n' "$choice_lines" | grep -c $'^open\t\\*' || true)"
+  local_count="$(printf '%s\n' "$choice_lines" | grep -c $'^open\t' || true)"
+
+  header="$(
+    printf '%s\n%s' \
+      "enter: open  ·  ctrl-n: start or re-run a review  ·  esc: quit" \
+      "+ ${new_count} new  ·  * ${awaiting_count} awaiting your review  ·  ${local_count} local"
+  )"
+
+  result="$(
+    printf '%s\n' "$choice_lines" | fzf \
+      --delimiter=$'\t' \
+      --with-nth=2 \
+      --prompt='prrr> ' \
+      --header="$header" \
+      --no-multi \
+      --print-query \
+      --expect=ctrl-n
+  )" || status=$?
+
+  # fzf: 0 selected, 1 no match, 2 error, 130 aborted.
+  ((status == 130)) && return "$EXIT_CANCELLED"
+  ((status > 1)) && die "fzf failed (exit ${status})"
+
+  mapfile -t result_lines <<< "$result"
+  query="${result_lines[0]-}"
+  key="${result_lines[1]-}"
+  selection="${result_lines[2]-}"
+
+  # Trim so a stray space in the query does not look like a PR reference.
+  query="${query#"${query%%[![:space:]]*}"}"
+  query="${query%"${query##*[![:space:]]}"}"
+
+  if [[ "$key" == ctrl-n ]]; then
+    if [[ -n "$selection" ]]; then
+      start_review_from_row "$selection"
+    elif [[ -n "$query" ]]; then
+      start_review_from_ref "$query"
+    else
+      die "ctrl-n needs a highlighted row, or a typed PR number or URL"
+    fi
+  fi
+
+  [[ -n "$selection" ]] || return "$EXIT_CANCELLED"
+
+  case "${selection%%$'\t'*}" in
+    start)
+      start_review_from_row "$selection"
+      ;;
+    open)
+      payload="${selection#*$'\t'}"
+      pick_artifact "${payload#*$'\t'}"
+      ;;
+    *)
+      die "unexpected home picker action"
+      ;;
+  esac
 }
 
 discuss_artifact() {
@@ -301,6 +437,100 @@ rerun_review() {
   exec "$PR_REVIEW" "$pr_url"
 }
 
+# Escape a string for use inside a single-quoted SQL literal.
+sql_single_quote() {
+  local value=$1
+  printf "%s" "${value//\'/\'\'}"
+}
+
+# True when a Cursor chat store mentions this PR's review launch or discuss prompt.
+chat_store_matches_pr() {
+  local db=$1
+  local review_needle=$2
+  local discuss_needle=$3
+  local review_sql discuss_sql discuss_phrase_sql
+
+  review_sql="$(sql_single_quote "$review_needle")"
+  discuss_sql="$(sql_single_quote "$discuss_needle")"
+  discuss_phrase_sql="$(sql_single_quote 'be ready to discuss it')"
+
+  [[ "$(
+    sqlite3 -readonly "$db" \
+      "SELECT 1 FROM blobs WHERE instr(data, CAST('${review_sql}' AS BLOB)) > 0 LIMIT 1;"
+  )" == 1 ]] && return 0
+
+  [[ "$(
+    sqlite3 -readonly "$db" \
+      "SELECT 1 FROM blobs
+       WHERE instr(data, CAST('${discuss_sql}' AS BLOB)) > 0
+         AND instr(data, CAST('${discuss_phrase_sql}' AS BLOB)) > 0
+       LIMIT 1;"
+  )" == 1 ]]
+}
+
+# Print the newest chat id for this PR under clone_dir's Cursor workspace, or return 1.
+latest_pr_agent_chat_id() {
+  local owner=$1
+  local repo=$2
+  local pr_number=$3
+  local clone_dir=$4
+  local chats_root="${HOME}/.cursor/chats"
+  local ws_hash review_needle discuss_needle chat_dir db meta_file
+  local updated chat_id best_updated=0 best_id=""
+
+  require_cmds md5 sqlite3 jq
+
+  ws_hash="$(md5 -q -s "$clone_dir")"
+  [[ -d "${chats_root}/${ws_hash}" ]] || return 1
+
+  review_needle="/pr-review https://github.com/${owner}/${repo}/pull/${pr_number}"
+  discuss_needle="${ARTIFACTS_ROOT}/${owner}--${repo}/pr-${pr_number}/"
+
+  for chat_dir in "${chats_root}/${ws_hash}"/*/; do
+    [[ -d "$chat_dir" ]] || continue
+    db="${chat_dir}store.db"
+    [[ -f "$db" ]] || continue
+    meta_file="${chat_dir}meta.json"
+    [[ -f "$meta_file" ]] || continue
+
+    updated="$(jq -r 'if .hasConversation == false then empty else (.updatedAtMs // 0) end' "$meta_file" 2>/dev/null || true)"
+    [[ -n "$updated" ]] || continue
+    [[ "$updated" =~ ^[0-9]+$ ]] || continue
+    ((updated > best_updated)) || continue
+
+    chat_store_matches_pr "$db" "$review_needle" "$discuss_needle" || continue
+
+    chat_id="$(basename "${chat_dir%/}")"
+    [[ "$chat_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
+    best_updated=$updated
+    best_id="$chat_id"
+  done
+
+  [[ -n "$best_id" ]] || return 1
+  printf '%s\n' "$best_id"
+}
+
+resume_pr_agent_session() {
+  local review_dir=$1
+  local owner repo pr_number clone_dir chat_id
+
+  require_cmds agent
+
+  parse_review_identity "$review_dir" owner repo pr_number
+
+  if ! clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
+    die "no local clone of ${owner}/${repo} (checked cwd and ${DEV_ROOT}/${owner}/${repo}; set PRRR_DEV_ROOT to override)"
+  fi
+
+  if ! chat_id="$(latest_pr_agent_chat_id "$owner" "$repo" "$pr_number" "$clone_dir")"; then
+    die "no agent session found for ${owner}/${repo}#${pr_number}"
+  fi
+
+  printf '%s: resuming agent session %s for %s/%s#%s\n' \
+    "$SCRIPT_NAME" "$chat_id" "$owner" "$repo" "$pr_number" >&2
+  exec agent --workspace "$clone_dir" --resume "$chat_id"
+}
+
 pick_artifact() {
   local review_dir=$1
   local artifact_lines result key selection artifact_path
@@ -311,15 +541,15 @@ pick_artifact() {
   artifact_lines="$(list_artifacts "$review_dir")"
   [[ -n "$artifact_lines" ]] || die "no artifacts in ${review_dir}"
 
-  # enter → vim; tab → agent discuss session (ask/read-only); space → re-review
+  # enter → vim; tab → discuss; space → re-review; ctrl-r → resume last agent session
   result="$(
     printf '%s\n' "$artifact_lines" | fzf \
       --delimiter=$'\t' \
       --with-nth=1 \
       --prompt='artifact> ' \
-      --header="enter: vim  |  tab: discuss with agent  |  space: re-review PR  |  ${review_dir#"${ARTIFACTS_ROOT}/"}" \
+      --header="enter: vim  |  tab: discuss  |  ctrl-r: resume agent  |  space: re-review  |  ${review_dir#"${ARTIFACTS_ROOT}/"}" \
       --no-multi \
-      --expect=tab,space \
+      --expect=tab,space,ctrl-r \
       --bind 'enter:become(vim {2})' \
       || true
   )"
@@ -329,6 +559,9 @@ pick_artifact() {
   case "$key" in
     space)
       rerun_review "$review_dir"
+      ;;
+    ctrl-r)
+      resume_pr_agent_session "$review_dir"
       ;;
     tab)
       ;;
@@ -588,12 +821,7 @@ main() {
   fi
 
   if (($# == 1)) && [[ "$1" == --new ]]; then
-    pick_and_start_review || status=$?
-    if [[ -n "${status:-}" ]]; then
-      ((status == EXIT_CANCELLED)) && exit 0
-      exit "$status"
-    fi
-    exit 0
+    die "--new was removed; run ${SCRIPT_NAME} with no args and pick a + row to start a review"
   fi
 
   if (($# == 1)) && [[ "$1" == -* ]]; then
@@ -601,11 +829,15 @@ main() {
   fi
 
   if (($# == 0)); then
-    review_dir="$(pick_review)" || status=$?
-  else
-    review_dir="$(resolve_from_ref "$1")" || status=$?
+    pick_home || status=$?
+    if [[ -n "${status:-}" ]]; then
+      ((status == EXIT_CANCELLED)) && exit 0
+      exit "$status"
+    fi
+    exit 0
   fi
 
+  review_dir="$(resolve_from_ref "$1")" || status=$?
   if [[ -n "${status:-}" ]]; then
     ((status == EXIT_CANCELLED)) && exit 0
     exit "$status"
