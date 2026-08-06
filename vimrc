@@ -107,6 +107,12 @@ let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a 
 " FZF: exclude Next.js build output from Ctrl-P (:Files)
 let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --glob "!.git/" --glob "!.next/"'
 
+" Pin coc to Homebrew node: its extension sandbox needs a global `crypto`
+" (node >= 19), and mise can put an older node on $PATH per project.
+if executable('/opt/homebrew/bin/node')
+  let g:coc_node_path = '/opt/homebrew/bin/node'
+endif
+
 let g:coc_global_extensions = [
   \ 'coc-json',
   \ 'coc-tsserver',

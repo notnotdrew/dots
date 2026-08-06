@@ -61,3 +61,8 @@ HEROKU_AC_ZSH_SETUP_PATH=/Users/drewprice/Library/Caches/heroku/autocomplete/zsh
 . "$HOME/.local/bin/env"
 
 if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
+# The following lines have been added by Docker Desktop to enable Docker CLI completions.
+fpath=(/Users/drewprice/.docker/completions $fpath)
+autoload -Uz compinit
+compinit
+# End of Docker CLI completions
