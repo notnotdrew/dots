@@ -16,7 +16,8 @@
 # Artifact picker:
 #   enter  open in vim
 #   tab    open Cursor agent (ask mode) ready to discuss the file
-#   space  re-run the PR review
+#   space  re-run the PR review (standard)
+#   ctrl-d deep review with --full-rebuild (same-head needs a forced epoch)
 #   ctrl-r resume the most recent agent session for this PR
 
 set -euo pipefail
@@ -414,27 +415,46 @@ discuss_artifact() {
     "Read ${artifact_path} carefully and be ready to discuss it. When ready, give a short briefing on what the artifact is and its key points, then wait for my questions."
 }
 
+# Re-run pr-review for an existing series.
+# Optional mode: standard|deep (default: omitted). Deep always includes
+# --full-rebuild so a same-head ready series can append a Deep epoch instead
+# of no-oping; prior epochs and finding history are preserved.
 rerun_review() {
   local review_dir=$1
-  local repo_dir_name owner repo pr_number clone_dir pr_url
+  local mode=${2:-}
+  local owner repo pr_number clone_dir pr_url
+  local -a review_args=()
 
   [[ -x "$PR_REVIEW" ]] || die "missing launcher: $PR_REVIEW"
 
-  repo_dir_name="$(basename "$(dirname "$review_dir")")"
-  [[ "$repo_dir_name" == *--* ]] || die "cannot determine repository from ${review_dir}"
-  owner="${repo_dir_name%%--*}"
-  repo="${repo_dir_name#*--}"
-  pr_number="$(basename "$review_dir")"
-  pr_number="${pr_number#pr-}"
+  case "$mode" in
+    '' | standard | deep) ;;
+    *)
+      die "unknown review mode: ${mode}"
+      ;;
+  esac
+
+  parse_review_identity "$review_dir" owner repo pr_number
   pr_url="https://github.com/${owner}/${repo}/pull/${pr_number}"
 
   if ! clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
     die "no local clone of ${owner}/${repo} (checked cwd and ${DEV_ROOT}/${owner}/${repo}; set PRRR_DEV_ROOT to override)"
   fi
 
-  printf '%s: re-running pr-review in %s\n' "$SCRIPT_NAME" "$clone_dir" >&2
+  if [[ -n "$mode" ]]; then
+    review_args+=(--mode "$mode")
+  fi
+  if [[ "$mode" == deep ]]; then
+    review_args+=(--full-rebuild)
+  fi
+  review_args+=("$pr_url")
+
+  printf '%s: re-running pr-review%s in %s\n' \
+    "$SCRIPT_NAME" \
+    "${mode:+ (${mode})}" \
+    "$clone_dir" >&2
   cd "$clone_dir" || die "failed to cd into ${clone_dir}"
-  exec "$PR_REVIEW" "$pr_url"
+  exec "$PR_REVIEW" "${review_args[@]}"
 }
 
 # Escape a string for use inside a single-quoted SQL literal.
@@ -444,19 +464,24 @@ sql_single_quote() {
 }
 
 # True when a Cursor chat store mentions this PR's review launch or discuss prompt.
+# Review launches may include flags (e.g. --mode deep) between /pr-review and the URL.
 chat_store_matches_pr() {
   local db=$1
-  local review_needle=$2
+  local pr_url=$2
   local discuss_needle=$3
-  local review_sql discuss_sql discuss_phrase_sql
+  local pr_url_sql discuss_sql discuss_phrase_sql review_prefix_sql
 
-  review_sql="$(sql_single_quote "$review_needle")"
+  pr_url_sql="$(sql_single_quote "$pr_url")"
   discuss_sql="$(sql_single_quote "$discuss_needle")"
   discuss_phrase_sql="$(sql_single_quote 'be ready to discuss it')"
+  review_prefix_sql="$(sql_single_quote '/pr-review')"
 
   [[ "$(
     sqlite3 -readonly "$db" \
-      "SELECT 1 FROM blobs WHERE instr(data, CAST('${review_sql}' AS BLOB)) > 0 LIMIT 1;"
+      "SELECT 1 FROM blobs
+       WHERE instr(data, CAST('${review_prefix_sql}' AS BLOB)) > 0
+         AND instr(data, CAST('${pr_url_sql}' AS BLOB)) > 0
+       LIMIT 1;"
   )" == 1 ]] && return 0
 
   [[ "$(
@@ -475,7 +500,7 @@ latest_pr_agent_chat_id() {
   local pr_number=$3
   local clone_dir=$4
   local chats_root="${HOME}/.cursor/chats"
-  local ws_hash review_needle discuss_needle chat_dir db meta_file
+  local ws_hash pr_url discuss_needle chat_dir db meta_file
   local updated chat_id best_updated=0 best_id=""
 
   require_cmds md5 sqlite3 jq
@@ -483,7 +508,7 @@ latest_pr_agent_chat_id() {
   ws_hash="$(md5 -q -s "$clone_dir")"
   [[ -d "${chats_root}/${ws_hash}" ]] || return 1
 
-  review_needle="/pr-review https://github.com/${owner}/${repo}/pull/${pr_number}"
+  pr_url="https://github.com/${owner}/${repo}/pull/${pr_number}"
   discuss_needle="${ARTIFACTS_ROOT}/${owner}--${repo}/pr-${pr_number}/"
 
   for chat_dir in "${chats_root}/${ws_hash}"/*/; do
@@ -498,7 +523,7 @@ latest_pr_agent_chat_id() {
     [[ "$updated" =~ ^[0-9]+$ ]] || continue
     ((updated > best_updated)) || continue
 
-    chat_store_matches_pr "$db" "$review_needle" "$discuss_needle" || continue
+    chat_store_matches_pr "$db" "$pr_url" "$discuss_needle" || continue
 
     chat_id="$(basename "${chat_dir%/}")"
     [[ "$chat_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
@@ -541,15 +566,15 @@ pick_artifact() {
   artifact_lines="$(list_artifacts "$review_dir")"
   [[ -n "$artifact_lines" ]] || die "no artifacts in ${review_dir}"
 
-  # enter → vim; tab → discuss; space → re-review; ctrl-r → resume last agent session
+  # enter → vim; tab → discuss; space → re-review; ctrl-d → deep; ctrl-r → resume
   result="$(
     printf '%s\n' "$artifact_lines" | fzf \
       --delimiter=$'\t' \
       --with-nth=1 \
       --prompt='artifact> ' \
-      --header="enter: vim  |  tab: discuss  |  ctrl-r: resume agent  |  space: re-review  |  ${review_dir#"${ARTIFACTS_ROOT}/"}" \
+      --header="enter: vim  |  tab: discuss  |  ctrl-r: resume agent  |  space: re-review  |  ctrl-d: deep review (full rebuild)  |  ${review_dir#"${ARTIFACTS_ROOT}/"}" \
       --no-multi \
-      --expect=tab,space,ctrl-r \
+      --expect=tab,space,ctrl-r,ctrl-d \
       --bind 'enter:become(vim {2})' \
       || true
   )"
@@ -559,6 +584,9 @@ pick_artifact() {
   case "$key" in
     space)
       rerun_review "$review_dir"
+      ;;
+    ctrl-d)
+      rerun_review "$review_dir" deep
       ;;
     ctrl-r)
       resume_pr_agent_session "$review_dir"
