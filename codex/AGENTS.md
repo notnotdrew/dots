@@ -13,6 +13,7 @@ Global Codex defaults. Repository-local `AGENTS.md` files may add to or override
 
 - ALWAYS match the surrounding style and conventions of the file being edited.
 - ALWAYS write additions so they read as if they belonged all along; leave history to git, not to asymmetric seams in the code.
+- ALWAYS remove code so the result reads as if the deleted bit never existed; no tombstones, commented-out leftovers, or empty scaffolding left behind.
 - ALWAYS validate assumptions with tests, assertions, or direct inspection before relying on them.
 - ALWAYS prefer test-first changes when behavior can be captured safely with automated tests.
 - ALWAYS consider security implications for non-trivial changes.
