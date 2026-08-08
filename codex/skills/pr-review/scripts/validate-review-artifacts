@@ -913,6 +913,7 @@ awk -v ledger_file="$ledger_file" \
     }
     FILENAME == review_file && in_final_findings && /^- Finding: / {
         final_id = substr($0, 12)
+        current_final_id = final_id
         if (!valid_finding_id(final_id)) {
             artifact_error("malformed finding ID: " final_id)
         } else {
@@ -922,6 +923,18 @@ awk -v ledger_file="$ledger_file" \
                 artifact_error("final finding is not under a principle section: " final_id)
             }
         }
+    }
+    FILENAME == review_file && in_final_findings && current_final_id && /^  - Scenario: / {
+        final_scenario[current_final_id] = substr($0, 15)
+    }
+    FILENAME == review_file && in_final_findings && current_final_id && /^  - Why: / {
+        final_why[current_final_id] = substr($0, 10)
+    }
+    FILENAME == review_file && in_final_findings && current_final_id && /^  - Fix: / {
+        final_fix[current_final_id] = substr($0, 10)
+    }
+    FILENAME == review_file && in_final_findings && current_final_id && /^  - Anchor: / {
+        final_anchor[current_final_id] = substr($0, 13)
     }
     FILENAME == review_file && /^## Outcome[[:space:]]*$/ {
         in_outcome = 1
@@ -1034,6 +1047,18 @@ awk -v ledger_file="$ledger_file" \
             }
             if (final_findings[finding_id] != 1) {
                 artifact_error("final finding must appear exactly once: " finding_id)
+            }
+            if (!(finding_id in final_scenario) || final_scenario[finding_id] == "") {
+                artifact_error("final finding missing Scenario: " finding_id)
+            }
+            if (!(finding_id in final_why) || final_why[finding_id] == "") {
+                artifact_error("final finding missing Why: " finding_id)
+            }
+            if (!(finding_id in final_fix) || final_fix[finding_id] == "") {
+                artifact_error("final finding missing Fix: " finding_id)
+            }
+            if (!(finding_id in final_anchor) || final_anchor[finding_id] == "") {
+                artifact_error("final finding missing Anchor: " finding_id)
             }
         }
         for (finding_id in dispositions) {

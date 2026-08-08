@@ -62,9 +62,15 @@ After the ordered verdicts, add a section only for each principle with retained 
 ### Reliability
 
 - Finding: F001
+  - Scenario: <one-line, human-understandable scenario that would produce the issue>
+  - Why: <one line on what actually produces the issue>
+  - Fix: <one line on a high-level potential fix>
+  - Anchor: <file:line in the PR where a review comment could be anchored>
 ```
 
 List every finding that is verified in the current ledger and current epoch exactly once under its assigned principle, and reference no other ledger record or stale historical state. Omit empty principle sections; if every list is empty, omit the Findings section.
+
+Every retained finding carries `Scenario`, `Why`, `Fix`, and `Anchor`. Keep each to a single high-level line; the more explanation required, the less useful it is. Derive `Scenario`, `Why`, and `Fix` from the ledger finding's `Claim`, `Impact`, and `AffectedBehavior`, and derive `Anchor` from its `Scope` or `Evidence` source locations, choosing the most representative changed line when several apply.
 
 ## Verification Gaps
 
