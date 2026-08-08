@@ -176,7 +176,7 @@
   "privacyCache": {
     "ghostMode": true,
     "privacyMode": 2,
-    "updatedAt": 1786149304259
+    "updatedAt": 1786150306630
   },
   "autoReviewAvailabilityCache": {
     "backendUrl": "https://api2.cursor.sh",
@@ -195,7 +195,7 @@
     },
     "cliSandboxDefaultEnabled": false,
     "serverHttp2Config": 0,
-    "updatedAt": 1786149302275
+    "updatedAt": 1786150304410
   },
   "authInfo": {
     "email": "drewsprice@gmail.com",
