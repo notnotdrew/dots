@@ -68,11 +68,31 @@ precmd() {
   else
     face_color="%F{green}"
   fi
+
+  # Worktrunk names worktrees "<repo>.<branch>" (slashes become dashes), which
+  # repeats the branch that vcs_info already shows. Drop the suffix.
+  prompt_dir=${(%):-%1~}
+  local branch=${vcs_info_msg_0_#:}
+  if [[ -n $branch ]]; then
+    prompt_dir=${prompt_dir%.${branch}}
+    prompt_dir=${prompt_dir%.${branch//\//-}}
+  fi
+
+  # Truncate long branch names for the prompt (keep the ticket-ish prefix).
+  prompt_branch=
+  if [[ -n $branch ]]; then
+    local max_branch_len=26
+    if (( ${#branch} > max_branch_len )); then
+      prompt_branch=":${branch[1,max_branch_len-1]}…"
+    else
+      prompt_branch=":$branch"
+    fi
+  fi
 }
 
 # Enable prompt substitution and set the prompt
 setopt PROMPT_SUBST
-PROMPT='${face_color}${faces[$faceindex]} %f%1~%F{cyan}${vcs_info_msg_0_}%f ❯ '
+PROMPT='${face_color}${faces[$faceindex]} %f${prompt_dir}%F{cyan}${prompt_branch}%f ❯ '
 
 # Set vcs_info to display the branch name
 zstyle ':vcs_info:git:*' formats ':%b'
