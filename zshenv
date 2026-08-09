@@ -8,3 +8,5 @@ export DOTS_PATH="$HOME/dots"
 export EDITOR="vim"
 export KEYTIMEOUT=1 # Quicker switch between insert/command
 export VISUAL="$EDITOR"
+
+eval "$(/opt/homebrew/bin/brew shellenv)"
