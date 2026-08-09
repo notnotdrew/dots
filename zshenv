@@ -1,5 +1,6 @@
 # Add ~/bin to PATH if it exists and isn't already included
 [[ -d "$HOME/bin" && ":$PATH:" != *":$HOME/bin:"* ]] && export PATH="$HOME/bin:$PATH"
+[[ -d "$HOME/.local/bin" && ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
 
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
