@@ -173,38 +173,6 @@
     "gpt-5.6-terra"
   ],
   "exploreSubagentModel": "default",
-  "privacyCache": {
-    "ghostMode": true,
-    "privacyMode": 2,
-    "updatedAt": 1786150306630
-  },
-  "autoReviewAvailabilityCache": {
-    "backendUrl": "https://api2.cursor.sh",
-    "authCacheKey": "auth:github|user_01JKFB37Y9C4SE11595GVSC1K7",
-    "teamId": 15454445,
-    "available": true,
-    "updatedAt": 1785188267429
-  },
-  "serverConfigCache": {
-    "backendUrl": "https://api2.cursor.sh",
-    "authCacheKey": "auth:github|user_01JKFB37Y9C4SE11595GVSC1K7",
-    "teamId": 15454445,
-    "agentUrlConfig": {
-      "agentUrl": "https://agentn.global.api5.cursor.sh",
-      "agentnUrl": "https://agentn.global.api5.cursor.sh"
-    },
-    "cliSandboxDefaultEnabled": false,
-    "serverHttp2Config": 0,
-    "updatedAt": 1786150304410
-  },
-  "authInfo": {
-    "email": "drewsprice@gmail.com",
-    "displayName": "",
-    "teamId": 15454445,
-    "teamName": "ScreenSteps",
-    "userId": 159184346,
-    "authId": "github|user_01JKFB37Y9C4SE11595GVSC1K7"
-  },
   "network": {
     "useHttp1ForAgent": false
   },
@@ -214,8 +182,6 @@
     "mode": "disabled",
     "networkAccess": "user_config_with_defaults"
   },
-  "runEverythingSettingsPromptStreak": 0,
-  "runEverythingSettingsPromptCooldownUntilMs": 1786552453920,
   "attribution": {
     "attributeCommitsToAgent": false,
     "attributePRsToAgent": true

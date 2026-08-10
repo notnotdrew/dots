@@ -61,4 +61,7 @@ managed/
 statsig-cache.json
 agent-cli-state.json
 unified_repo_list.json
-skills-cursor/.sync-manifest.json
+# Stop syncing built-in Cursor skills (managed block un-ignores them above)
+skills-cursor/
+# Plan files are machine-local scratch (managed block un-ignores them above)
+plans/

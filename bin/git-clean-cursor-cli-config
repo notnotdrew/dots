@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Clean filter for cursor/cli-config.json.
+# Strips Cursor-managed cache / ephemeral fields so they are not committed.
+set -euo pipefail
+
+command -v jq >/dev/null 2>&1 || {
+  printf '%s: error: jq is required\n' "$(basename "$0")" >&2
+  exit 1
+}
+
+jq 'del(
+  .privacyCache,
+  .autoReviewAvailabilityCache,
+  .serverConfigCache,
+  .authInfo,
+  .runEverythingSettingsPromptStreak,
+  .runEverythingSettingsPromptCooldownUntilMs
+)'

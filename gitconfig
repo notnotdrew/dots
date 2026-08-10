@@ -30,3 +30,7 @@
 	useHttpPath = true
 [init]
 	defaultBranch = main
+[filter "cursor-cli-config"]
+	clean = /Users/drewprice/bin/git-clean-cursor-cli-config
+	smudge = cat
+	required = false

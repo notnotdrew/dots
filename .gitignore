@@ -33,10 +33,11 @@ cursor/ai-tracking/
 cursor/chats/
 cursor/extensions/
 cursor/managed/
+cursor/plans/
 cursor/projects/
 cursor/statsig-cache.json
 cursor/unified_repo_list.json
-cursor/skills-cursor/.sync-manifest.json
+cursor/skills-cursor/
 nvim/thesaurus/*.txt
 vim/.netrwhist
 vim/plugged
