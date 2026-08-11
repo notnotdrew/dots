@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+# Deploy Rails to development, staging, or production via GitHub Actions.
+#
+# Usage: bin/deploy [<env> [<branch>]] [--wait] [--open] [--force] [--help]
+#
+#   env     development | staging | production (prompted if omitted)
+#   branch  git ref to deploy (defaults to develop for non-prod, main for production)
+#
+# Options:
+#   --wait   Poll the workflow run until it completes
+#   --open   Open the workflow run URL in a browser
+#   --force  Skip soft confirmation prompts
+#   --help   Show this help
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly WORKFLOW_NAME="Build and Deploy Rails App"
+readonly DEFAULT_BRANCH="develop"
+readonly PRODUCTION_DEFAULT_BRANCH="main"
+readonly BASE_BRANCH="develop"
+readonly ALLOWED_ENVS=("development" "staging" "production")
+readonly PRODUCTION_BRANCHES=("main" "main-hotfix")
+
+DO_WAIT=false
+DO_OPEN=false
+DO_FORCE=false
+ENV_NAME=""
+BRANCH_NAME=""
+INPUT_HAD_ENV=false
+DEPLOY_REF=""
+
+die() {
+  echo "${SCRIPT_NAME}: error: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<EOF
+Usage: ${SCRIPT_NAME} [<env> [<branch>]] [--wait] [--open] [--force]
+
+Deploy the Rails app by triggering the "${WORKFLOW_NAME}" GitHub Actions workflow.
+
+Arguments:
+  env      development, staging, or production (prompted if omitted)
+  branch   branch or tag to deploy (defaults to ${DEFAULT_BRANCH} for non-prod,
+           ${PRODUCTION_DEFAULT_BRANCH} for production, when env is given)
+           Production only allows: ${PRODUCTION_BRANCHES[*]}
+
+Options:
+  --wait   Wait for the workflow run to finish
+  --open   Open the workflow run URL in a browser
+  --force  Skip soft confirmation prompts
+  --help   Show this help
+
+Examples:
+  ${SCRIPT_NAME}
+  ${SCRIPT_NAME} development
+  ${SCRIPT_NAME} staging feature/my-branch
+  ${SCRIPT_NAME} production
+  ${SCRIPT_NAME} production main-hotfix
+  ${SCRIPT_NAME} development develop --wait --open
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "'$1' is required but was not found"
+}
+
+require_gh_auth() {
+  if ! command -v gh >/dev/null 2>&1; then
+    cat >&2 <<EOF
+${SCRIPT_NAME}: error: GitHub CLI (gh) was not found.
+
+Install it, then log in:
+
+  brew install gh          # macOS
+  # Linux: https://github.com/cli/cli#installation
+
+  gh auth login
+
+Then re-run: ${SCRIPT_NAME} $*
+EOF
+    exit 1
+  fi
+
+  if gh auth status --hostname github.com >/dev/null 2>&1; then
+    return 0
+  fi
+
+  cat >&2 <<EOF
+${SCRIPT_NAME}: error: GitHub CLI is installed but not authenticated.
+
+Log in, then re-run:
+
+  gh auth login
+  ${SCRIPT_NAME} $*
+EOF
+  exit 1
+}
+
+confirm() {
+  local prompt="$1"
+  local reply
+
+  if [[ "$DO_FORCE" == true ]]; then
+    return 0
+  fi
+
+  if [[ ! -t 0 ]]; then
+    die "refusing to continue without confirmation in a non-interactive shell (re-run with --force)"
+  fi
+
+  read -r -p "${prompt} [y/N] " reply
+  [[ "$reply" =~ ^[Yy]$ ]]
+}
+
+parse_args() {
+  local positional=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --wait)
+        DO_WAIT=true
+        shift
+        ;;
+      --open)
+        DO_OPEN=true
+        shift
+        ;;
+      --force)
+        DO_FORCE=true
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      -*)
+        die "unknown option: $1 (try --help)"
+        ;;
+      *)
+        positional+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if [[ ${#positional[@]} -gt 2 ]]; then
+    die "too many arguments (try --help)"
+  fi
+
+  if [[ ${#positional[@]} -ge 1 ]]; then
+    ENV_NAME="${positional[0]}"
+    INPUT_HAD_ENV=true
+  fi
+  if [[ ${#positional[@]} -ge 2 ]]; then
+    BRANCH_NAME="${positional[1]}"
+  fi
+}
+
+env_allowed() {
+  local candidate="$1"
+  local allowed
+
+  for allowed in "${ALLOWED_ENVS[@]}"; do
+    if [[ "$candidate" == "$allowed" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+production_branch_allowed() {
+  local candidate="$1"
+  local allowed
+
+  for allowed in "${PRODUCTION_BRANCHES[@]}"; do
+    if [[ "$candidate" == "$allowed" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+default_branch_for_env() {
+  if [[ "$ENV_NAME" == "production" ]]; then
+    echo "$PRODUCTION_DEFAULT_BRANCH"
+  else
+    echo "$DEFAULT_BRANCH"
+  fi
+}
+
+prompt_for_env() {
+  local reply
+
+  if [[ ! -t 0 ]]; then
+    die "env is required in a non-interactive shell"
+  fi
+
+  echo "Select Rails environment:"
+  echo "  1) development"
+  echo "  2) staging"
+  echo "  3) production"
+  read -r -p "Choice [1/2/3]: " reply
+
+  case "$reply" in
+    1 | development) ENV_NAME="development" ;;
+    2 | staging) ENV_NAME="staging" ;;
+    3 | production) ENV_NAME="production" ;;
+    *) die "invalid environment choice: ${reply}" ;;
+  esac
+}
+
+prompt_for_branch() {
+  local reply
+  local default_branch
+
+  default_branch="$(default_branch_for_env)"
+
+  if [[ ! -t 0 ]]; then
+    die "branch is required in a non-interactive shell"
+  fi
+
+  if [[ "$ENV_NAME" == "production" ]]; then
+    read -r -p "Branch to deploy (${PRODUCTION_BRANCHES[*]}) [${default_branch}]: " reply
+  else
+    read -r -p "Branch or tag to deploy [${default_branch}]: " reply
+  fi
+  BRANCH_NAME="${reply:-$default_branch}"
+}
+
+validate_production_branch() {
+  [[ "$ENV_NAME" == "production" ]] || return 0
+
+  production_branch_allowed "$BRANCH_NAME" ||
+    die "production only supports branches: ${PRODUCTION_BRANCHES[*]} (got '${BRANCH_NAME}')"
+
+  if [[ "$BRANCH_NAME" == "main-hotfix" ]]; then
+    echo
+    echo "You are deploying production from main-hotfix (not main)."
+    confirm "Proceed with main-hotfix deploy to production?" || die "deploy cancelled"
+  fi
+}
+
+resolve_inputs() {
+  local default_branch
+
+  if [[ -z "$ENV_NAME" ]]; then
+    prompt_for_env
+  fi
+
+  env_allowed "$ENV_NAME" || die "unsupported env '${ENV_NAME}' (allowed: ${ALLOWED_ENVS[*]})"
+
+  default_branch="$(default_branch_for_env)"
+
+  if [[ -z "$BRANCH_NAME" ]]; then
+    if [[ "$INPUT_HAD_ENV" == true ]]; then
+      BRANCH_NAME="$default_branch"
+    else
+      prompt_for_branch
+    fi
+  fi
+
+  validate_production_branch
+}
+
+remind_previous_deploy() {
+  echo
+  echo "Confirm any previously-deployed branches on '${ENV_NAME}' are finished being used"
+  echo "before continuing (check #deployment-${ENV_NAME} if unsure)."
+  confirm "Continue with deploy to ${ENV_NAME}?" || die "deploy cancelled"
+}
+
+ensure_remote_ref() {
+  echo "→ Fetching origin..."
+  git fetch origin --quiet
+
+  if git rev-parse --verify --quiet "refs/remotes/origin/${BRANCH_NAME}" >/dev/null; then
+    DEPLOY_REF="origin/${BRANCH_NAME}"
+  elif git rev-parse --verify --quiet "refs/tags/${BRANCH_NAME}" >/dev/null; then
+    DEPLOY_REF="refs/tags/${BRANCH_NAME}"
+  elif git ls-remote --exit-code --heads origin "${BRANCH_NAME}" >/dev/null 2>&1; then
+    git fetch origin "refs/heads/${BRANCH_NAME}:refs/remotes/origin/${BRANCH_NAME}" --quiet
+    DEPLOY_REF="origin/${BRANCH_NAME}"
+  elif git ls-remote --exit-code --tags origin "refs/tags/${BRANCH_NAME}" >/dev/null 2>&1; then
+    git fetch origin "refs/tags/${BRANCH_NAME}:refs/tags/${BRANCH_NAME}" --quiet
+    DEPLOY_REF="refs/tags/${BRANCH_NAME}"
+  else
+    die "branch or tag '${BRANCH_NAME}' was not found on origin"
+  fi
+}
+
+warn_if_missing_base() {
+  local base_ref="origin/${BASE_BRANCH}"
+
+  if ! git rev-parse --verify --quiet "$base_ref" >/dev/null; then
+    echo "warning: ${base_ref} not found locally after fetch; skipping freshness check" >&2
+    return 0
+  fi
+
+  if git merge-base --is-ancestor "$base_ref" "$DEPLOY_REF"; then
+    echo "✓ ${BRANCH_NAME} contains ${base_ref}"
+    return 0
+  fi
+
+  echo
+  echo "warning: '${BRANCH_NAME}' does not contain ${base_ref}." >&2
+  echo "The branch being deployed may be behind ${BASE_BRANCH}." >&2
+  confirm "Deploy anyway?" || die "deploy cancelled"
+}
+
+latest_matching_run_url() {
+  # run-name is "Build and Deploy Rails - ${lower_env}"
+  gh run list \
+    --workflow="$WORKFLOW_NAME" \
+    --branch="$BRANCH_NAME" \
+    --limit 10 \
+    --json url,event,displayTitle,createdAt \
+    --jq "map(select(.event == \"workflow_dispatch\" and (.displayTitle | contains(\"- ${ENV_NAME}\")))) | .[0].url // empty"
+}
+
+trigger_workflow() {
+  local run_url=""
+  local run_id=""
+  local output=""
+  local attempt
+
+  echo "→ Triggering '${WORKFLOW_NAME}'"
+  echo "  env:    ${ENV_NAME}"
+  echo "  branch: ${BRANCH_NAME}"
+
+  output="$(
+    gh workflow run "$WORKFLOW_NAME" \
+      --ref "$BRANCH_NAME" \
+      -f "lower_env=${ENV_NAME}" \
+      -f "run_db_migration=true" 2>&1
+  )" || die "failed to trigger workflow:${output:+ }${output}"
+
+  if [[ -n "$output" ]]; then
+    echo "$output"
+    if [[ "$output" =~ https://github.com/[^[:space:]]+/actions/runs/[0-9]+ ]]; then
+      run_url="${BASH_REMATCH[0]}"
+    fi
+  fi
+
+  if [[ -z "$run_url" ]]; then
+    for attempt in 1 2 3 4 5 6; do
+      run_url="$(latest_matching_run_url || true)"
+      [[ -n "$run_url" ]] && break
+      sleep 2
+    done
+  fi
+
+  [[ -n "$run_url" ]] || die "workflow triggered, but could not resolve the run URL"
+
+  run_id="${run_url##*/}"
+  echo "→ Workflow run: ${run_url}"
+
+  if [[ "$DO_OPEN" == true ]]; then
+    if command -v open >/dev/null 2>&1; then
+      open "$run_url"
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$run_url" >/dev/null 2>&1
+    else
+      echo "warning: could not open a browser; visit ${run_url}" >&2
+    fi
+  fi
+
+  if [[ "$DO_WAIT" == true ]]; then
+    echo "→ Waiting for workflow to finish..."
+    gh run watch "$run_id" --exit-status
+    echo "✓ Deploy finished successfully"
+  else
+    echo "Monitor the run in GitHub Actions (refresh if needed)."
+    echo "When done, post in #deployment-${ENV_NAME} (e.g. rails: ${BRANCH_NAME}) and mark with :checkered_flag:."
+  fi
+}
+
+main() {
+  require_command git
+  require_gh_auth "$@"
+
+  parse_args "$@"
+  resolve_inputs
+  remind_previous_deploy
+  ensure_remote_ref
+  warn_if_missing_base
+  trigger_workflow
+}
+
+main "$@"
