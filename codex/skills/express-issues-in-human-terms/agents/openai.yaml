@@ -1,0 +1,4 @@
+interface:
+  display_name: "Express Issues in Human Terms"
+  short_description: "Rewrite findings into decision-ready human briefs"
+  default_prompt: "Use $express-issues-in-human-terms to rewrite these findings into Title / Anchor / Scenario / Why / Fix / Case against briefs"
