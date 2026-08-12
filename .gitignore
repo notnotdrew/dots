@@ -43,3 +43,4 @@ vim/.netrwhist
 vim/plugged
 yarn/global/node_modules
 zsh/secrets.zsh
+worktrunk/approvals.toml.lock

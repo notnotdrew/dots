@@ -10,6 +10,7 @@
 .codex/state*
 .codex/tmp/
 .codex/version.json
+.cursor/skills/
 tags
 
 .config/wt.toml

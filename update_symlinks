@@ -17,6 +17,7 @@ declare -A FOLDERS=(
   [codex]="$HOME/.codex"
   [cdx-artifacts]="$HOME/.cdx-artifacts"
   [cursor]="$HOME/.cursor"
+  [worktrunk]="$HOME/.config/worktrunk"
 )
 
 set -u

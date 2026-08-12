@@ -1,0 +1,6 @@
+[projects."github.com/screensteps/screensteps-live"]
+approved-commands = [
+    "wt step copy-ignored --require-include",
+    "bundle install",
+    "bundle exec lefthook install",
+]
