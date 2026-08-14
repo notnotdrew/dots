@@ -16,12 +16,11 @@ Plug 'RRethy/vim-illuminate' " Highlight other uses of the word under the cursor
 Plug 'airblade/vim-gitgutter' " Git diff markers in the sign column
 Plug 'andrewradev/splitjoin.vim' " Switch between single-line and multiline forms of code
 Plug 'bronson/vim-trailing-whitespace' " Highlights trailing whitespace in red
-Plug 'dense-analysis/ale' " Async linter
+Plug 'dense-analysis/ale' " Async linter / fixer (owns RuboCop diagnostics)
 Plug 'inside/vim-search-pulse' " Easily locate the cursor after a search
 Plug 'junegunn/fzf' " Necessary for fzf.vim
 Plug 'junegunn/fzf.vim' " fzf + vim
 Plug 'luochen1990/rainbow' " Rainbow parentheses
-Plug 'neoclide/coc.nvim', {'branch': 'release'}
 Plug 'prisma/vim-prisma' " Prisma support for Vim
 Plug 'roman/golden-ratio' " Automatic resizing of windows to the golden ratio
 Plug 'ruanyl/vim-gh-line' " Open current line on GitHub
@@ -38,6 +37,9 @@ Plug 'vim-test/vim-test' " It's tests
 Plug 'wsdjeg/vim-fetch' " Handle line and column numbers in file names
 
 call plug#end() " Automatically executes filetype plugin indent on and syntax enable
+
+" Dots checkout root (vimrc lives at <dots>/vimrc).
+let g:dots_root = fnamemodify(resolve(expand('<sfile>:p')), ':h')
 
 " Options
 " --------------
@@ -70,18 +72,30 @@ set signcolumn=yes " Always show signcolumn
 " ----------------
 let &t_SI = "\e[5 q" " Blinking line in insert mode
 let &t_EI = "\e[2 q" " Block cursor in normal mode
+" ALE owns lint + fix. (CoC was removed: it collided with ALE diagnostics.)
+" Run ALE commands through mise so the project Ruby is used even when vim
+" inherited a PATH without mise activation (e.g. non-interactive shells).
+if executable('mise')
+  let g:ale_command_wrapper = exepath('mise') . ' x --'
+elseif executable('/opt/homebrew/bin/mise')
+  let g:ale_command_wrapper = '/opt/homebrew/bin/mise x --'
+endif
 let g:ale_fix_on_save = 1
-let g:ale_fixers =
-  \ {
-  \ 'css': ['prettier'],
-  \ 'eruby': ['erblint'],
-  \ 'ruby': ['rubocop'],
-  \ }
+let g:ale_linters_explicit = 1
+let g:ale_echo_msg_format = '[%linter%] %code: %%s'
+let g:ale_virtualtext_cursor = 'current'
+let g:ale_ruby_rubocop_executable = 'bundle'
 let g:ale_linters =
   \ {
   \ 'eruby': ['erblint'],
   \ 'ruby': ['rubocop'],
   \ 'vim': ['vint'],
+  \ }
+let g:ale_fixers =
+  \ {
+  \ 'css': ['prettier'],
+  \ 'eruby': ['erblint'],
+  \ 'ruby': ['rubocop_changed'],
   \ }
 let g:ale_linters_ignore =
   \ {
@@ -93,11 +107,22 @@ let g:ale_linters_ignore =
   \ 'jsonc': ['*']
   \ }
 
-" TODO: once the list of linters is reasonably settled, re-enable explicit
-" linters.
-let g:ale_linters_explicit = 1
-let g:ale_ruby_rubocop_executable = 'bundle'
-let g:ale_ruby_rubocop_auto_correct_all = 1
+" Autofix only hunks that touch lines changed vs HEAD (see bin/rubocop-fix-changed).
+function! RubocopFixChanged(buffer) abort
+  let l:script = g:dots_root . '/bin/rubocop-fix-changed'
+  let l:path = expand('#' . a:buffer . ':p')
+  return {
+  \   'command': ale#Escape(l:script) . ' --stdin ' . ale#Escape(l:path)
+  \ }
+endfunction
+
+call ale#fix#registry#Add(
+  \ 'rubocop_changed',
+  \ 'RubocopFixChanged',
+  \ ['ruby'],
+  \ 'Autocorrect RuboCop offenses on lines changed vs HEAD only'
+  \ )
+
 let g:gitgutter_set_sign_backgrounds = 1 " Don't highlight gitgutter
 let g:have_nerd_font = 1 " Use an installed Nerd Font from terminal
 let g:test#javascript#jest#executable = 'yarn test'
@@ -106,21 +131,6 @@ let g:test#strategy = 'vimterminal' " Runs test commands with term_start() in a 
 
 " FZF: exclude Next.js build output from Ctrl-P (:Files)
 let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --glob "!.git/" --glob "!.next/"'
-
-" Pin coc to Homebrew node: its extension sandbox needs a global `crypto`
-" (node >= 19), and mise can put an older node on $PATH per project.
-if executable('/opt/homebrew/bin/node')
-  let g:coc_node_path = '/opt/homebrew/bin/node'
-endif
-
-let g:coc_global_extensions = [
-  \ 'coc-json',
-  \ 'coc-tsserver',
-  \ 'coc-diagnostic',
-  \ 'coc-eslint',
-  \ 'coc-prettier',
-  \ 'coc-snippets'
-  \ ]
 
 " Commands
 " ----------------
@@ -162,24 +172,11 @@ nnoremap <Leader>v :w<CR>:TestLast --tag feature<CR>
 nnoremap <C-P> <CR>:Files<CR>
 nnoremap <C-B> <CR>:Buffers<CR>
 
-" Spell
-nnoremap <silent> <leader>sp :CocCommand cSpell.addWordToUserDictionary<CR>
-
 " Linter
 nnoremap <leader>ld :ALEDisableRule<CR>
 nnoremap <leader>lf :ALEFix<CR>
-
-"" Insert mode
-
-inoremap <silent><expr> <TAB> coc#pum#visible()
-      \ ? coc#pum#next(1)
-      \ : CheckBackspace() ? "\<TAB>" : coc#refresh()
-inoremap <silent><expr> <S-TAB> coc#pum#visible()
-      \ ? coc#pum#prev(1)
-      \ : "\<C-h>"
-inoremap <silent><expr> <CR> coc#pum#visible()
-      \ ? coc#pum#confirm()
-      \ : "\<CR>"
+nnoremap <silent> <leader>ln :ALENextWrap<CR>
+nnoremap <silent> <leader>lp :ALEPreviousWrap<CR>
 
 "" Visual mode
 
@@ -191,11 +188,6 @@ vnoremap <silent> // y/\V<C-r>=escape(@",'/\')<CR><CR>
 
 " Functions
 " --------------
-
-function! CheckBackspace() abort
-  let l:col = col('.') - 1
-  return !l:col || getline('.')[l:col - 1]  =~# '\s'
-endfunction
 
 function! ALEDisableRule()
   let l:line = line('.')
@@ -209,8 +201,14 @@ function! ALEDisableRule()
   let l:rules = []
 
   for l:item in l:loclist
-    if l:item.lnum == l:line && has_key(l:item, 'text')
-      " Extract the first word-like pattern that resembles a rule name
+    if l:item.lnum != l:line
+      continue
+    endif
+
+    " Prefer ALE's structured code (RuboCop cop name) when present.
+    if has_key(l:item, 'code') && !empty(l:item.code)
+      call add(l:rules, l:item.code)
+    elseif has_key(l:item, 'text')
       let l:rule = matchstr(l:item.text, '\v\zs[^:]+')
       if !empty(l:rule)
         call add(l:rules, l:rule)

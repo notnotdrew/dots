@@ -1,0 +1,119 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Autocorrect RuboCop offenses, but keep only patches that touch changed lines.
+# Pre-existing offenses on untouched lines are left alone.
+#
+# Usage:
+#   rubocop-fix-changed path/to/a.rb
+#   rubocop-fix-changed --worktree path/to/a.rb   # default line source
+#   rubocop-fix-changed --staged path/to/a.rb
+#   rubocop-fix-changed --stdin path/to/a.rb < contents
+#
+# With --stdin, changed lines are always computed from HEAD vs stdin content.
+# Extra RuboCop flags after `--`.
+#
+# For CI / pre-commit checks, use rubocop-changed instead.
+
+require_relative "lib/rubocop_changed_common"
+
+include RubocopChangedCommon
+
+def parse_args(argv)
+  options = {
+    stdin: false,
+    line_source: nil,
+    files: [],
+    rubocop_args: []
+  }
+
+  args = argv.dup
+  if args.delete("--fix") || args.delete("-A")
+    abort "rubocop-fix-changed always fixes; drop --fix / -A"
+  end
+
+  options[:stdin] = true if args.delete("--stdin")
+  options[:line_source] = :staged if args.delete("--staged")
+  options[:line_source] = :worktree if args.delete("--worktree")
+  options[:line_source] ||= :worktree
+
+  options[:files], options[:rubocop_args] = split_files_and_rubocop_args(args)
+  options[:files] = staged_ruby_files if options[:files].empty? && !options[:stdin]
+
+  if options[:stdin] && options[:files].size != 1
+    abort "--stdin requires exactly one file path"
+  end
+
+  options
+end
+
+def fix_mode(files, rubocop_args, line_source:, stdin:)
+  if stdin
+    path = files.fetch(0)
+    original = $stdin.read
+    changed = changed_lines_for_stdin(path, original)
+    lines = changed[normalize_path(path)] || Set.new
+
+    if lines.empty?
+      print original
+      exit 0
+    end
+
+    stdout, stderr, _status = run_rubocop_stdin(path, original, rubocop_args, autocorrect: true)
+    corrected = strip_rubocop_stdin_payload(stdout)
+
+    if corrected.empty? && !original.empty?
+      warn stderr unless stderr.strip.empty?
+      print original
+      exit 0
+    end
+
+    filtered = apply_hunks_selectively(
+      original,
+      corrected,
+      lines,
+      label: relative_path(path)
+    )
+    print filtered
+    exit 0
+  end
+
+  exit 0 if files.empty?
+
+  changed_lines = changed_lines_by_file(files, line_source: line_source)
+
+  files.each do |file|
+    abs = normalize_path(file)
+    lines = changed_lines[abs] || Set.new
+    next if lines.empty?
+    next unless File.file?(abs)
+
+    original = File.read(abs)
+    stdout, stderr, _status = run_rubocop_stdin(file, original, rubocop_args, autocorrect: true)
+    corrected = strip_rubocop_stdin_payload(stdout)
+
+    if corrected.empty? && !original.empty?
+      warn stderr unless stderr.strip.empty?
+      next
+    end
+
+    filtered = apply_hunks_selectively(
+      original,
+      corrected,
+      lines,
+      label: relative_path(file)
+    )
+    next if filtered == original
+
+    File.write(abs, filtered)
+    puts "Corrected changed-line offenses in #{relative_path(file)}"
+  end
+end
+
+options = parse_args(ARGV)
+fix_mode(
+  options[:files],
+  options[:rubocop_args],
+  line_source: options[:line_source],
+  stdin: options[:stdin]
+)
