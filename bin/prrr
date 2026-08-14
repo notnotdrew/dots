@@ -3,6 +3,7 @@
 #
 # Usage:
 #   prrr                        Home picker: start a new review, or open a local one
+#   prrr start <number|url>     Start (or re-run) a review for that PR
 #   prrr --clean [number|url]   Remove local artifacts/worktrunks for merged PRs
 #   prrr <number|url>           Pick an artifact for that PR review
 #
@@ -31,7 +32,7 @@ readonly PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 readonly PR_REVIEW="${SCRIPT_DIR}/pr-review"
 readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/Documents/dev}"
 readonly EXIT_CANCELLED=130
-readonly USAGE="usage: ${SCRIPT_NAME} [--clean [PR-number-or-URL] | <PR-number-or-URL>]"
+readonly USAGE="usage: ${SCRIPT_NAME} [start <PR-number-or-URL> | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
   printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
@@ -844,12 +845,19 @@ main() {
     exit 0
   fi
 
+  if (($# >= 1)) && [[ "$1" == start ]]; then
+    if (($# != 2)); then
+      die "usage: ${SCRIPT_NAME} start <PR-number-or-URL>"
+    fi
+    start_review_from_ref "$2"
+  fi
+
   if (($# > 1)); then
     die "$USAGE"
   fi
 
   if (($# == 1)) && [[ "$1" == --new ]]; then
-    die "--new was removed; run ${SCRIPT_NAME} with no args and pick a + row to start a review"
+    die "--new was removed; use: ${SCRIPT_NAME} start <PR-number-or-URL>"
   fi
 
   if (($# == 1)) && [[ "$1" == -* ]]; then
