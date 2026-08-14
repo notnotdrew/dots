@@ -1,0 +1,171 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Run RuboCop and fail only on offenses that touch staged added/changed lines.
+# Pre-existing offenses on untouched lines are ignored (no autocorrect).
+#
+# Usage (from a repo, via PATH or project bin/):
+#   rubocop-changed path/to/a.rb path/to/b.rb
+#   rubocop-changed --staged   # all staged *.rb / *.rake (when no files given)
+#
+# Extra RuboCop flags after `--`:
+#   rubocop-changed app/models/foo.rb -- --parallel
+
+require "json"
+require "open3"
+require "set"
+
+def repo_root
+  @repo_root ||= begin
+    output, status = Open3.capture2("git", "rev-parse", "--show-toplevel")
+    abort "not inside a Git repository" unless status.success?
+
+    output.strip
+  end
+end
+
+def normalize_path(path)
+  File.expand_path(path, repo_root)
+end
+
+def relative_path(path)
+  abs = normalize_path(path)
+  abs.delete_prefix("#{repo_root}/")
+end
+
+def staged_ruby_files
+  output, status = Open3.capture2(
+    "git", "-C", repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACMR",
+    "--", "*.rb", "*.rake"
+  )
+  abort "git diff failed" unless status.success?
+
+  output.lines.map(&:chomp).reject(&:empty?)
+end
+
+def parse_files_and_rubocop_args(argv)
+  if argv.delete("--staged")
+    # keep going; files may still be passed
+  end
+
+  split_at = argv.index("--")
+  if split_at
+    files = argv[0...split_at]
+    rubocop_args = argv[(split_at + 1)..]
+  else
+    files = argv
+    rubocop_args = []
+  end
+
+  files = staged_ruby_files if files.empty?
+  [files, rubocop_args]
+end
+
+# Returns { absolute_path => Set<line_number> } for lines added in the index.
+def changed_lines_by_file(files)
+  return {} if files.empty?
+
+  rel_files = files.map { |file| relative_path(file) }
+  output, status = Open3.capture2(
+    "git", "-C", repo_root, "diff", "--cached", "-U0", "--", *rel_files
+  )
+  abort "git diff --cached failed" unless status.success?
+
+  result = Hash.new { |hash, key| hash[key] = Set.new }
+  current_file = nil
+
+  output.each_line do |line|
+    if (match = line.match(%r{\A\+\+\+ b/(.+)\n\z}))
+      path = match[1]
+      current_file = path == "/dev/null" ? nil : normalize_path(path)
+      next
+    end
+
+    next unless current_file
+    next unless (match = line.match(/\A@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/))
+
+    start_line = match[1].to_i
+    count = (match[2] || 1).to_i
+    next if count.zero?
+
+    start_line.upto(start_line + count - 1) { |line_number| result[current_file] << line_number }
+  end
+
+  result
+end
+
+def run_rubocop(files, rubocop_args)
+  cmd = [
+    File.join(repo_root, "bin/rubocop"),
+    "--force-exclusion",
+    "--format", "json",
+    *rubocop_args,
+    "--",
+    *files.map { |file| relative_path(file) }
+  ]
+
+  stdout, stderr, status = Open3.capture3(*cmd, chdir: repo_root)
+  # RuboCop exits non-zero when offenses exist; JSON is still on stdout.
+  [stdout, stderr, status]
+end
+
+def offense_on_changed_line?(offense, changed_lines)
+  location = offense.fetch("location")
+  start_line = location["start_line"] || location["line"]
+  return false unless start_line
+
+  # Only the line the offense is anchored on counts. Scope-level cops such as
+  # Metrics/ClassLength report a range covering the whole class, so matching the
+  # full range would flag them for any edit inside the file.
+  changed_lines.include?(start_line)
+end
+
+files, rubocop_args = parse_files_and_rubocop_args(ARGV.dup)
+exit 0 if files.empty?
+
+changed_lines = changed_lines_by_file(files)
+files_with_changes = files.select { |file| changed_lines[normalize_path(file)].any? }
+exit 0 if files_with_changes.empty?
+
+stdout, stderr, _status = run_rubocop(files_with_changes, rubocop_args)
+
+if stdout.strip.empty?
+  warn stderr unless stderr.strip.empty?
+  abort "rubocop produced no JSON output"
+end
+
+begin
+  report = JSON.parse(stdout)
+rescue JSON::ParserError => error
+  warn stdout
+  warn stderr
+  abort "failed to parse rubocop JSON: #{error.message}"
+end
+
+relevant = []
+report.fetch("files", []).each do |file_report|
+  path = normalize_path(file_report.fetch("path"))
+  lines = changed_lines[path]
+  next if lines.nil? || lines.empty?
+
+  file_report.fetch("offenses", []).each do |offense|
+    next unless offense_on_changed_line?(offense, lines)
+
+    relevant << [relative_path(path), offense]
+  end
+end
+
+if relevant.empty?
+  puts "RuboCop: no offenses on staged changed lines (#{files_with_changes.size} file(s))."
+  exit 0
+end
+
+puts "RuboCop: offenses on staged changed lines:"
+relevant.each do |path, offense|
+  loc = offense.fetch("location")
+  line = loc["start_line"] || loc["line"]
+  column = loc["start_column"] || loc["column"] || 1
+  puts "  #{path}:#{line}:#{column}: #{offense['severity']}: #{offense['message']} (#{offense['cop_name']})"
+end
+
+exit 1
