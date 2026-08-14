@@ -20,6 +20,12 @@ declare -A FOLDERS=(
   [worktrunk]="$HOME/.config/worktrunk"
 )
 
+# File symlinks, mapped from source (relative to $DIR) to destination
+declare -A FILES=(
+  [karabiner/karabiner.json]="$HOME/.config/karabiner/karabiner.json"
+  [karabiner/iterm-dictation-toggle.json]="$HOME/.config/karabiner/assets/complex_modifications/iterm-dictation-toggle.json"
+)
+
 set -u
 
 link_item() {
@@ -28,6 +34,8 @@ link_item() {
 
   echo
   echo "Linking $src → $dest"
+
+  mkdir -p "$(dirname "$dest")"
 
   if [ -e "$dest" ] || [ -L "$dest" ]; then
     read -p "$dest exists, overwrite? (y/n) " -n 1 -r
@@ -53,4 +61,9 @@ done
 # Link folders
 for folder in "${!FOLDERS[@]}"; do
   link_item "$DIR/$folder" "${FOLDERS[$folder]}"
+done
+
+# Link individual files
+for file in "${!FILES[@]}"; do
+  link_item "$DIR/$file" "${FILES[$file]}"
 done

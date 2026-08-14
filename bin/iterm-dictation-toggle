@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Toggle system Dictation in iTerm2 around Secure Keyboard Entry (SKE).
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+# Karabiner rule: ~/dots/karabiner/iterm-dictation-toggle.json
+#   → ~/.config/karabiner/assets/complex_modifications/ (symlinked)
+#
+# Start: turn SKE off (if on), start Dictation
+# Stop:  stop Dictation, turn SKE on (Kolide-friendly)
+#
+# Bound to Left Option double-tap via Karabiner.
+set -euo pipefail
+
+STATE_FILE="${TMPDIR:-/tmp}/iterm-dictation-ske.session"
+
+notify() {
+  local title="$1"
+  local body="$2"
+  osascript -e "display notification \"${body}\" with title \"${title}\"" >/dev/null 2>&1 || true
+}
+
+osascript_start() {
+  osascript <<'APPLESCRIPT'
+tell application "System Events"
+  if not (exists process "iTerm2") then error "iTerm2 is not running"
+
+  -- Prefer acting when iTerm2 is frontmost; still allow if it exists
+  set frontName to name of first process whose frontmost is true
+
+  tell process "iTerm2"
+    set frontmost to true
+    delay 0.15
+
+    set skeItem to menu item "Secure Keyboard Entry" of menu 1 of menu bar item "iTerm2" of menu bar 1
+    set skeOn to false
+    try
+      set markChar to value of attribute "AXMenuItemMarkChar" of skeItem
+      if markChar is not missing value and markChar is not "" then set skeOn to true
+    end try
+
+    if skeOn then
+      click skeItem
+      delay 0.25
+    end if
+  end tell
+
+  tell process "iTerm2"
+    tell menu 1 of menu bar item "Edit" of menu bar 1
+      if exists menu item "Start Dictation…" then
+        click menu item "Start Dictation…"
+      else if exists menu item "Start Dictation" then
+        click menu item "Start Dictation"
+      else if exists menu item "Dictation…" then
+        click menu item "Dictation…"
+      else
+        -- Fall back: synthesize the system Dictation shortcut (Left/Right Command twice)
+        tell application "System Events"
+          repeat 2 times
+            key down command
+            key up command
+          end repeat
+        end tell
+      end if
+    end tell
+  end tell
+end tell
+APPLESCRIPT
+}
+
+osascript_stop() {
+  osascript <<'APPLESCRIPT'
+tell application "System Events"
+  if not (exists process "iTerm2") then error "iTerm2 is not running"
+
+  tell process "iTerm2"
+    set frontmost to true
+    delay 0.1
+
+    tell menu 1 of menu bar item "Edit" of menu bar 1
+      if exists menu item "Stop Dictation" then
+        click menu item "Stop Dictation"
+        delay 0.15
+      else if exists menu item "Stop Dictation…" then
+        click menu item "Stop Dictation…"
+        delay 0.15
+      end if
+    end tell
+
+    set skeItem to menu item "Secure Keyboard Entry" of menu 1 of menu bar item "iTerm2" of menu bar 1
+    set skeOn to false
+    try
+      set markChar to value of attribute "AXMenuItemMarkChar" of skeItem
+      if markChar is not missing value and markChar is not "" then set skeOn to true
+    end try
+
+    if not skeOn then
+      click skeItem
+    end if
+  end tell
+end tell
+APPLESCRIPT
+}
+
+if [[ -f "$STATE_FILE" ]]; then
+  if osascript_stop; then
+    rm -f "$STATE_FILE"
+    notify "Dictation" "Stopped — Secure Keyboard Entry restored"
+  else
+    notify "Dictation" "Failed to stop — check Accessibility for osascript"
+    exit 1
+  fi
+else
+  if osascript_start; then
+    : >"$STATE_FILE"
+    notify "Dictation" "Started — Secure Keyboard Entry off"
+  else
+    notify "Dictation" "Failed to start — check Accessibility for osascript"
+    exit 1
+  fi
+fi
