@@ -83,7 +83,7 @@ endif
 let g:ale_fix_on_save = 1
 let g:ale_linters_explicit = 1
 let g:ale_echo_msg_format = '[%linter%] %code: %%s'
-let g:ale_virtualtext_cursor = 'current'
+let g:ale_virtualtext_cursor = 'all' " Virtual text on every flagged line, not just the cursor's
 let g:ale_ruby_rubocop_executable = 'bundle'
 let g:ale_linters =
   \ {
