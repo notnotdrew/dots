@@ -61,6 +61,23 @@ Preferred correction:
 - prefer fixture builders or factories already used in the repo
 - make test data complete enough for downstream code to behave realistically
 
+## Anti-Pattern: Asserting `not_to raise_error`
+
+A test whose only claim is that a call did not raise is usually worthless. Completing the call and asserting the successful outcome already proves no error was raised.
+
+Bad signs:
+
+- `expect { subject }.not_to raise_error` as a standalone example
+- a "does not raise" example paired with another example that asserts the real result of the same behavior
+
+Preferred correction:
+
+- drop the `not_to raise_error` example
+- assert the observable success outcome instead
+- reserve `raise_error` for cases where raising is the behavior under test
+
+Note: RuboCop RSpec does not ban bare `not_to raise_error`. `RSpec/UnspecifiedException` only flags bare `.to raise_error`. Treat this as a test-design rule, not a linter rule.
+
 ## Quick Gate
 
 Before adding a mock or helper, ask:

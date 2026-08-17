@@ -59,6 +59,7 @@ Bad properties:
 - multiple behaviors in one test
 - assertions on implementation details
 - mocks standing in for your own code
+- `expect { ... }.not_to raise_error` — redundant when a positive assertion of the same call's outcome already proves it succeeded
 
 Catchable defect check. Before writing, answer in one sentence: what production defect would cause this test to fail? If the only answer is "a literal got out of sync with itself," the test is tautological. Re-scope the cycle to a consumer transformation instead. Do not write a test you can satisfy by typing a literal into the source, even when a plan asks for it. See [anti-patterns](../reviewing-test-design/references/anti-patterns.md).
 
@@ -115,8 +116,9 @@ Before finalizing a test, check:
 3. Am I mocking only real system boundaries?
 4. Would this test still be valuable after an internal refactor?
 5. Is there a transformation between the source and the assertion, or does the test just mirror a literal?
+6. If I asserted `not_to raise_error`, would a positive outcome assertion already prove the same thing?
 
-If any answer is no, rewrite the test before proceeding.
+If any answer is no (or #6 is yes), rewrite the test before proceeding.
 
 "The plan told me to assert this literal" is not an exemption. A mirror of the source is not a test; re-scope the cycle and say why.
 
@@ -144,3 +146,4 @@ Don't:
 - keep dead exploratory production code around as reference
 - test mocks, DOM structure, or private state when behavior is what matters
 - batch multiple behaviors into one large cycle
+- write specs that only assert `not_to raise_error` when a following positive assertion already proves success
