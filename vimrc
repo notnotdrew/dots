@@ -45,7 +45,8 @@ let g:dots_root = fnamemodify(resolve(expand('<sfile>:p')), ':h')
 " --------------
 set background=dark " Set dark background (works with many colorschemes)
 set colorcolumn=79 " Show vertical column
-set completeopt=menuone,noselect " [TRIAL] Set completeopt to have a better completion experience
+set complete+=o " Feed 'omnifunc' (vim-ruby, html, css, js) into <C-n> alongside buffer keywords
+set completeopt=menuone,noinsert " Menu even for one match; nothing lands in the buffer until confirmed
 set cursorline " Highlight current line
 set expandtab " Convert tabs to spaces
 set hidden " Keep unsaved buffers open when switching files
@@ -82,7 +83,7 @@ elseif executable('/opt/homebrew/bin/mise')
 endif
 let g:ale_fix_on_save = 1
 let g:ale_linters_explicit = 1
-let g:ale_echo_msg_format = '[%linter%] %code: %%s'
+let g:ale_echo_msg_format = '%code: %%s' " Cop name then message; %code: % is elided when a problem has no code
 let g:ale_virtualtext_cursor = 'all' " Virtual text on every flagged line, not just the cursor's
 let g:ale_ruby_rubocop_executable = 'bundle'
 let g:ale_linters =
@@ -178,6 +179,18 @@ nnoremap <leader>lf :ALEFix<CR>
 nnoremap <silent> <leader>ln :ALENextWrap<CR>
 nnoremap <silent> <leader>lp :ALEPreviousWrap<CR>
 
+"" Insert mode
+
+inoremap <silent><expr> <TAB> pumvisible()
+      \ ? "\<C-n>"
+      \ : CheckBackspace() ? "\<TAB>" : "\<C-n>"
+inoremap <silent><expr> <S-TAB> pumvisible()
+      \ ? "\<C-p>"
+      \ : "\<C-h>"
+inoremap <silent><expr> <CR> pumvisible()
+      \ ? "\<C-y>"
+      \ : "\<CR>"
+
 "" Visual mode
 
 " Global search for visual selection
@@ -188,6 +201,13 @@ vnoremap <silent> // y/\V<C-r>=escape(@",'/\')<CR><CR>
 
 " Functions
 " --------------
+
+" True at the start of a line or after whitespace, where <TAB> should indent
+" rather than open the completion menu.
+function! CheckBackspace() abort
+  let l:col = col('.') - 1
+  return !l:col || getline('.')[l:col - 1] =~# '\s'
+endfunction
 
 function! ALEDisableRule()
   let l:line = line('.')
