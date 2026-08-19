@@ -167,6 +167,12 @@ export PR_REVIEW_CHECKOUT_BRANCH="$CHECKOUT_BRANCH"
 export PR_REVIEW_CHECKOUT_CREATED="$CHECKOUT_CREATED"
 export PR_REVIEW_OBSERVED_HEAD="$HEAD_SHA"
 
-# Stay in allowlist mode. Auto-review's classifier supersedes the local allowlist,
-# so it prompts for every review artifact write under ~/.cdx-artifacts/pr-reviews.
-exec wt switch --no-cd --execute agent "$CHECKOUT_BRANCH" -- "$prompt"
+# Auto-review's classifier supersedes the local allowlist, so artifact writes need
+# to look in-workspace. Both the pr-<number> series dir and the sibling staging
+# dirs live under <owner>--<repo>, so that is the root to add. It may not exist on
+# a first review, and --add-dir needs a real path.
+ARTIFACTS_DIR="${HOME}/.cdx-artifacts/pr-reviews/${OWNER}--${REPO}"
+mkdir -p "$ARTIFACTS_DIR"
+
+exec wt switch --no-cd --execute agent "$CHECKOUT_BRANCH" -- \
+    --auto-review --add-dir "$ARTIFACTS_DIR" -- "$prompt"
