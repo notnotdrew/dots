@@ -167,4 +167,6 @@ export PR_REVIEW_CHECKOUT_BRANCH="$CHECKOUT_BRANCH"
 export PR_REVIEW_CHECKOUT_CREATED="$CHECKOUT_CREATED"
 export PR_REVIEW_OBSERVED_HEAD="$HEAD_SHA"
 
+# Stay in allowlist mode. Auto-review's classifier supersedes the local allowlist,
+# so it prompts for every review artifact write under ~/.cdx-artifacts/pr-reviews.
 exec wt switch --no-cd --execute agent "$CHECKOUT_BRANCH" -- "$prompt"

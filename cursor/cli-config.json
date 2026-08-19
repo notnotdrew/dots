@@ -77,11 +77,6 @@
       "WebFetch(github.com)",
       "WebFetch(worktrunk.dev)",
       "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/**)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.standard-review-staging.71770/findings-ledger.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.standard-review-staging.71770/perfect-review.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7375.standard-review-staging.73227/context-brief.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7375.standard-review-staging.73227/findings-ledger.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7375.standard-review-staging.73227/perfect-review.md)",
       "Shell(./bin/prrr)",
       "Shell(cat)",
       "Shell(sed)",
@@ -89,12 +84,7 @@
       "Shell(cp)",
       "Shell(chmod)",
       "Shell(nl)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7361.standard-review-staging.9483/findings-ledger.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7361.standard-review-staging.9483/perfect-review.md)",
-      "Shell(git stash)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.review-staging.f001-r3-20260731182129-13858/findings-ledger.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7339.review-staging.f001-r3-20260731182129-13858/perfect-review.md)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/screensteps--screensteps-live/.pr-7166.review-staging.20260803164648-74237/perfect-review.md)"
+      "Shell(git stash)"
     ],
     "deny": []
   },

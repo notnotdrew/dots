@@ -8,11 +8,24 @@ command -v jq >/dev/null 2>&1 || {
   exit 1
 }
 
-jq 'del(
-  .privacyCache,
-  .autoReviewAvailabilityCache,
-  .serverConfigCache,
-  .authInfo,
-  .runEverythingSettingsPromptStreak,
-  .runEverythingSettingsPromptCooldownUntilMs
-)'
+# Permission entries naming a single PR-review staging dir or a per-project
+# agent-tools file only apply to the machine and run that created them.
+ephemeral_path_pattern='/\.pr-[0-9]|/\.cursor/projects/'
+
+jq --arg ephemeral_path_pattern "$ephemeral_path_pattern" '
+  del(
+    .privacyCache,
+    .autoReviewAvailabilityCache,
+    .serverConfigCache,
+    .authInfo,
+    .runEverythingSettingsPromptStreak,
+    .runEverythingSettingsPromptCooldownUntilMs
+  )
+  | if (.permissions.allow | type) == "array" then
+      .permissions.allow |= map(
+        select((type == "string" and test($ephemeral_path_pattern)) | not)
+      )
+    else
+      .
+    end
+'
