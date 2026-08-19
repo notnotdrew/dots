@@ -775,6 +775,13 @@ run_implement_and_pr() {
 LAUNCHD_RUNNER="${INCHWORM_LAUNCHD_RUNNER:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm/inchworm-launchd}"
 LAUNCHD_PLIST="${INCHWORM_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/com.inchworm.plist}"
 LAUNCHD_LABEL="com.inchworm"
+# Apple Silicon: do not copy /bin/bash. It is x86_64+arm64e; keeping the
+# platform signature hits a launch constraint, and re-signing it hits the
+# preview arm64e ABI check. Homebrew bash is thin arm64. Ad-hoc re-signing as
+# com.inchworm.launchd gives the copy a cdhash distinct from its source so the
+# FDA grant covers only this runner.
+LAUNCHD_RUNNER_IDENTIFIER="com.inchworm.launchd"
+LAUNCHD_RUNNER_SOURCE="/opt/homebrew/bin/bash"
 
 resolve_launchd_template() {
   local candidate dir
@@ -823,6 +830,34 @@ write_launchd_plist() {
   mv "$tmp" "$dest"
 }
 
+launchd_runner_identifier() {
+  local runner=$1
+  [[ -x "$runner" ]] || return 1
+  # --verbose is required; plain --display omits the Identifier line.
+  codesign --display --verbose=2 "$runner" 2>&1 | sed -n 's/^Identifier=//p'
+}
+
+build_launchd_runner() {
+  local runner=$1
+  local bash_src=$2
+
+  mkdir -p "$(dirname "$runner")"
+  cp "$bash_src" "$runner"
+  chmod 755 "$runner"
+
+  codesign --remove-signature "$runner" >/dev/null 2>&1 || true
+  if ! codesign --force --sign - --identifier "$LAUNCHD_RUNNER_IDENTIFIER" "$runner" >/dev/null 2>&1; then
+    die "could not ad-hoc sign $runner (is codesign available?)"
+  fi
+  if ! codesign --verify "$runner" >/dev/null 2>&1; then
+    die "ad-hoc signature on $runner did not verify"
+  fi
+  # Catch an unrunnable runner here rather than at the next 8am tick.
+  if ! "$runner" -c 'exit 0' >/dev/null 2>&1; then
+    die "runner $runner (from $bash_src) cannot execute after signing"
+  fi
+}
+
 reload_launchd_agent() {
   local plist=$1
   local uid
@@ -837,9 +872,10 @@ reload_launchd_agent() {
 
 cmd_launchd_setup() {
   local runner_dir
-  local bash_src="/bin/bash"
+  local bash_src
   local open_settings=1
   local do_reload=1
+  local runner_rebuilt=0
   local template inchworm_bin
 
   while [[ $# -gt 0 ]]; do
@@ -862,8 +898,12 @@ cmd_launchd_setup() {
     esac
   done
 
+  bash_src="$LAUNCHD_RUNNER_SOURCE"
   if [[ ! -x "$bash_src" ]]; then
-    die "missing $bash_src (needed to build the launchd runner)"
+    die "missing $bash_src (try: brew install bash)"
+  fi
+  if ! lipo -archs "$bash_src" 2>/dev/null | tr ' ' '\n' | grep -qx arm64; then
+    die "$bash_src must include an arm64 slice (Apple Silicon only)"
   fi
 
   if ! template=$(resolve_launchd_template); then
@@ -872,9 +912,14 @@ cmd_launchd_setup() {
 
   runner_dir=$(dirname "$LAUNCHD_RUNNER")
   mkdir -p "$runner_dir"
-  # Fresh copy so the on-disk binary identity stays a dedicated FDA target.
-  cp "$bash_src" "$LAUNCHD_RUNNER"
-  chmod 755 "$LAUNCHD_RUNNER"
+  # Rebuilding changes the cdhash and revokes the Full Disk Access grant, so
+  # reuse an already correctly signed runner across repeat setup runs.
+  if [[ "$(launchd_runner_identifier "$LAUNCHD_RUNNER" 2>/dev/null)" == "$LAUNCHD_RUNNER_IDENTIFIER" ]]; then
+    runner_rebuilt=0
+  else
+    build_launchd_runner "$LAUNCHD_RUNNER" "$bash_src"
+    runner_rebuilt=1
+  fi
 
   inchworm_bin="${SCRIPT_DIR}/inchworm"
   if [[ -L "$LAUNCHD_PLIST" ]]; then
@@ -882,7 +927,13 @@ cmd_launchd_setup() {
   fi
   write_launchd_plist "$template" "$LAUNCHD_PLIST" "$LAUNCHD_RUNNER" "$inchworm_bin"
 
-  printf 'inchworm: launchd runner → %s\n' "$LAUNCHD_RUNNER"
+  if [[ "$runner_rebuilt" -eq 1 ]]; then
+    printf 'inchworm: launchd runner → %s (rebuilt, ad-hoc signed as %s)\n' \
+      "$LAUNCHD_RUNNER" "$LAUNCHD_RUNNER_IDENTIFIER"
+  else
+    printf 'inchworm: launchd runner → %s (reused; Full Disk Access grant intact)\n' \
+      "$LAUNCHD_RUNNER"
+  fi
   printf 'inchworm: launchd plist  → %s\n' "$LAUNCHD_PLIST"
   printf 'inchworm: ProgramArguments:\n'
   printf '  %s\n' "$LAUNCHD_RUNNER"
@@ -893,6 +944,10 @@ cmd_launchd_setup() {
   printf '  %s\n' "$LAUNCHD_RUNNER"
   printf 'System Settings → Privacy & Security → Full Disk Access → +\n'
   printf 'Then ⌘⇧G and paste the path above.\n'
+  if [[ "$runner_rebuilt" -eq 1 ]]; then
+    printf 'The runner was re-signed, so any previous grant no longer applies —\n'
+    printf 'remove the stale entry and re-add the path above.\n'
+  fi
 
   if [[ "$do_reload" -eq 1 ]]; then
     if reload_launchd_agent "$LAUNCHD_PLIST"; then

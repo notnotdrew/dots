@@ -12,12 +12,14 @@ inchworm launchd-setup
 
 That:
 
-1. Copies `/bin/bash` → `~/.local/share/inchworm/inchworm-launchd` (FDA target)
+1. Copies Homebrew `bash` (`/opt/homebrew/bin/bash`) → `~/.local/share/inchworm/inchworm-launchd` and ad-hoc signs it as `com.inchworm.launchd` (FDA target)
 2. Renders `launchd/com.inchworm.plist.template` → `~/Library/LaunchAgents/com.inchworm.plist`
 3. Reloads the LaunchAgent (`bootout` / `bootstrap`)
 4. Opens Full Disk Access settings
 
-Grant Full Disk Access to **only** the runner binary (`⌘⇧G`, paste the path printed by setup). Do not add `/bin/bash` unless the runner alone still hits `EPERM`.
+Grant Full Disk Access to **only** the runner binary (`⌘⇧G`, paste the path printed by setup). Never add `/bin/bash` — that would FDA-enable every bash job, and the runner no longer shares its identity.
+
+Setup reuses an existing correctly signed runner. Re-signing changes the cdhash and silently voids the FDA grant, so a rebuild prints a reminder to remove the stale System Settings entry and re-add the path.
 
 Confirm: `launchctl print gui/$(id -u)/com.inchworm`
 
@@ -40,9 +42,20 @@ macOS Full Disk Access is per executable. A `#!/usr/bin/env bash` script is usua
 
 The generated plist therefore runs:
 
-1. `~/.local/share/inchworm/inchworm-launchd` — copy of `/bin/bash` (FDA target)
+1. `~/.local/share/inchworm/inchworm-launchd` — re-signed Homebrew `bash` copy (FDA target)
 2. absolute path to this checkout’s `bin/inchworm`
 3. `run`
+
+### Why it is not a copy of `/bin/bash`
+
+A verbatim copy cannot work on Apple Silicon, in either direction:
+
+- **Keep the inherited signature.** The copy still claims identifier `com.apple.bash`, and AMFI enforces a launch constraint restricting that identity to `/bin/bash`. launchd execs it and it dies in ~30ms: `OS_REASON_CODESIGNING | Launch Constraint Violation`.
+- **Re-sign it ad-hoc.** `/bin/bash` is `x86_64 arm64e` with no plain `arm64` slice, and the arm64e slice uses a preview ABI only platform binaries may run. Once re-signed it is no longer a platform binary, so exec fails with `not running binary built against preview arm64e ABI` (`OS_REASON_EXEC`).
+
+The runner is copied from Homebrew bash (`/opt/homebrew/bin/bash`, thin `arm64`) and ad-hoc signed as `com.inchworm.launchd`. That sheds any platform identity and gives the copy a cdhash distinct from its source, so the FDA grant covers this runner alone. Apple Silicon only; Intel is not supported.
+
+Setup smoke-tests the signed runner (`runner -c 'exit 0'`) so a broken runner fails at install rather than at the next 8am tick.
 
 ## Environment
 

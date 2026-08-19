@@ -2693,6 +2693,18 @@ test_launchd_setup_installs_runner_binary() {
   if file "$runner" 2>/dev/null | grep -qi 'shell script'; then
     problems="${problems}runner must be a binary (bash copy), not a shell script"$'\n'
   fi
+  # Must not keep Apple's com.apple.bash platform identity: AMFI enforces a launch
+  # constraint that kills such a binary outside /bin/bash (OS_REASON_CODESIGNING).
+  runner_identity=$(codesign --display --verbose=2 "$runner" 2>&1 | sed -n 's/^Identifier=//p')
+  if [ "$runner_identity" = "com.apple.bash" ]; then
+    problems="${problems}runner must be re-signed, not left as com.apple.bash"$'\n'
+  fi
+  if [ "$runner_identity" != "com.inchworm.launchd" ]; then
+    problems="${problems}expected runner identifier com.inchworm.launchd, got: $runner_identity"$'\n'
+  fi
+  if ! codesign --verify "$runner" >/dev/null 2>&1; then
+    problems="${problems}runner ad-hoc signature must verify"$'\n'
+  fi
   if [ ! -f "$plist" ]; then
     problems="${problems}expected generated plist at $plist"$'\n'
   else
