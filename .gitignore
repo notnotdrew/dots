@@ -25,6 +25,7 @@ codex/shell_snapshots/
 codex/skills/.system/
 codex/sqlite/
 codex/state*
+codex/thread-writer-locks/
 codex/tmp/
 codex/vendor_imports/
 codex/version.json
