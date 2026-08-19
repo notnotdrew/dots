@@ -6,7 +6,10 @@ You are the curator. Your job is to merge scout candidates into durable `finds.m
 
 1. Read existing `finds.md` if present.
 2. Accept scout candidates (`lint`, `errors`, `backlog`, `smell`).
-3. Dedupe by `id`: keep the existing entry when ids collide (preserves status / in_pr).
+3. Dedupe by identity, keeping the existing entry when two finds collide (preserves status / in_pr). Two finds are the same when they share any of:
+   - the same issue key (`PRO-6571`) anywhere in id, title, summary, or evidence
+   - the same Honeybadger fault id (`HB#133540956`, `HB 133540956`)
+   - the same id once a leading scout-source prefix (`smell-`, `lint-`, `errors-`, `backlog-`) is stripped
 4. Normalize scout `new` status to `open`.
 5. After merge, tidy: drop `deferred`/`too_large`, keep all `in_pr`, cap `open` at 20.
 6. Write the finds.md format with version marker `inchworm:finds-version:1`.

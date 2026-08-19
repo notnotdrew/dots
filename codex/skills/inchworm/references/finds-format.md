@@ -27,4 +27,4 @@ Minimum shape:
 - `too_large` — ignored by pick; dropped on next discover tidy
 - `in_pr` — ignored by pick; kept across tidy
 
-Curator merge: keep existing entries, add new candidate ids, dedupe by `id`. After merge, tidy drops `deferred`/`too_large`, keeps all `in_pr`, and caps `open` at 20 (best ranks first).
+Curator merge: keep existing entries and add new candidates, collapsing any that share an identity — the same issue key, the same Honeybadger fault id, or the same id after a leading scout-source prefix is stripped. After merge, tidy drops `deferred`/`too_large`, keeps all `in_pr`, and caps `open` at 20 (best ranks first).

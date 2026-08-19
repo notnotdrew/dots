@@ -2772,6 +2772,81 @@ test_inchworm_skill_mentions_launchd() {
   pass "$test_name"
 }
 
+test_run_curator_dedupes_shared_identity_finds() {
+  # Scouts reach the same work from different angles, so exact-id dedupe is not
+  # enough: one Linear issue found by two scouts, or one Honeybadger fault reported
+  # twice, must collapse into a single find instead of being picked on back-to-back
+  # days. Identity = shared issue key, shared HB fault, or same source-stripped id.
+  test_name="Phase 5: curator collapses finds sharing an issue key, HB fault, or id"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "dedupe"
+
+  # Control: no shared identity, must survive on its own.
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"smell-unrelated","source":"smell","title":"Unrelated find","summary":"shares nothing","rank":9,"status":"open"}]'
+  # Same Linear issue as the backlog entry; same base id as the backlog entry.
+  printf '%s\n' '[{"id":"pro-9001-widget-lint","source":"lint","title":"Widget lint angle","summary":"Linear PRO-9001 from lint","rank":2,"status":"open","evidence":"Linear PRO-9001"},{"id":"lint-shared-slug","source":"lint","title":"Shared slug lint","summary":"same slug as backlog entry","rank":4,"status":"open"}]' \
+    >"$fixture_dir/lint.json"
+  # Two angles on one Honeybadger fault.
+  printf '%s\n' '[{"id":"errors-widget-boom","source":"errors","title":"Widget boom","summary":"hard failure","rank":3,"status":"open","evidence":"HB#987654321 (12 notices)"},{"id":"widget-boom-transient","source":"errors","title":"Widget boom transient","summary":"same fault, retry angle","rank":5,"status":"open","evidence":"HB 987654321 last seen today"}]' \
+    >"$fixture_dir/errors.json"
+  printf '%s\n' '[{"id":"backlog-pro-9001-widget","source":"backlog","title":"Widget cleanup","summary":"PRO-9001 agreed cleanup","rank":1,"status":"open","evidence":"https://linear.app/x/issue/PRO-9001/widget-cleanup"},{"id":"shared-slug","source":"backlog","title":"Shared slug backlog","summary":"same slug as lint entry","rank":6,"status":"open"}]' \
+    >"$fixture_dir/backlog.json"
+
+  out_file="$TEST_ROOT/run-dedupe-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  problems=""
+
+  if [ ! -f "$finds_md" ]; then
+    problems="${problems}missing finds.md"$'\n'
+  else
+    count_of() {
+      grep -cE "^## F-$1\$" "$finds_md" 2>/dev/null || true
+    }
+    issue_pair=$(( $(count_of 'backlog-pro-9001-widget') + $(count_of 'pro-9001-widget-lint') ))
+    if [ "$issue_pair" -ne 1 ]; then
+      problems="${problems}expected exactly 1 find for Linear PRO-9001, got $issue_pair"$'\n'
+    fi
+    fault_pair=$(( $(count_of 'errors-widget-boom') + $(count_of 'widget-boom-transient') ))
+    if [ "$fault_pair" -ne 1 ]; then
+      problems="${problems}expected exactly 1 find for HB fault 987654321, got $fault_pair"$'\n'
+    fi
+    slug_pair=$(( $(count_of 'lint-shared-slug') + $(count_of 'shared-slug') ))
+    if [ "$slug_pair" -ne 1 ]; then
+      problems="${problems}expected exactly 1 find for the shared base id, got $slug_pair"$'\n'
+    fi
+    if [ "$(count_of 'smell-unrelated')" -ne 1 ]; then
+      problems="${problems}unrelated find must survive dedupe untouched"$'\n'
+    fi
+    total=$(grep -cE '^## F-' "$finds_md" 2>/dev/null || true)
+    if [ "$total" -ne 4 ]; then
+      problems="${problems}expected 4 finds after dedupe (3 groups + control), got $total"$'\n'
+    fi
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
 test_run_curator_drops_deferred_too_large_and_caps_open() {
   # Phase 5 noisy finds tidy:
   # - DROP deferred + too_large after merge
@@ -3217,6 +3292,7 @@ run_test test_status_shows_repo_window_and_draft
 run_test test_launchd_plist_and_install_notes
 run_test test_launchd_setup_installs_runner_binary
 run_test test_inchworm_skill_mentions_launchd
+run_test test_run_curator_dedupes_shared_identity_finds
 run_test test_run_curator_drops_deferred_too_large_and_caps_open
 run_test test_run_success_removes_worktree_keeps_branch
 run_test test_run_stale_worktree_path_still_opens_draft_pr

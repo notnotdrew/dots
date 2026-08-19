@@ -10,6 +10,14 @@ require "fileutils"
 
 SCOUT_SOURCES = %w[smell lint errors backlog].freeze
 
+SOURCE_PREFIX_RE = /\A(?:#{SCOUT_SOURCES.join('|')})-/.freeze
+ISSUE_KEY_RE = /\b([A-Z]{2,6}-\d+)\b/.freeze
+HB_FAULT_RE = /\bHB[#\s]*(\d{6,})\b/i.freeze
+# Uppercase-dash-number pairs that look like issue keys but are not.
+NON_ISSUE_PREFIXES = %w[
+  UTF SHA MD5 AES RFC ISO HTTP HTTPS RGB RGBA UTC IPV X86 ARM SSE AVX BASE
+].freeze
+
 def path_hash(abs_path)
   Digest::SHA256.hexdigest(abs_path)[0, 16]
 end
@@ -137,17 +145,46 @@ def parse_finds_md(path)
   finds
 end
 
-def merge_finds(existing, candidates)
-  by_id = {}
-  existing.each do |find|
-    by_id[find["id"]] = find
-  end
-  candidates.each do |candidate|
-    next if by_id.key?(candidate["id"])
+# Scouts reach the same work from different angles — one Linear issue surfaced by
+# both the backlog and lint scouts, one Honeybadger fault reported twice — so
+# exact-id dedupe leaves near-duplicate finds that get picked on consecutive days.
+# Identity is therefore any strong shared marker, not just the id.
+def identity_tokens(find)
+  tokens = []
+  base = find["id"].to_s.downcase.sub(SOURCE_PREFIX_RE, "")
+  tokens << "id:#{base}" unless base.empty?
 
-    by_id[candidate["id"]] = candidate
+  haystack = [find["id"], find["title"], find["summary"], find["evidence"]].join(" ")
+  haystack.upcase.scan(ISSUE_KEY_RE) do |key,|
+    next if NON_ISSUE_PREFIXES.include?(key.split("-").first)
+
+    tokens << "issue:#{key}"
   end
-  by_id.values
+  haystack.scan(HB_FAULT_RE) { |fault_id,| tokens << "hb:#{fault_id}" }
+  tokens.uniq
+end
+
+# First occurrence wins, so stored finds keep their status (in_pr, deferred) over
+# an incoming duplicate. A dropped duplicate still aliases its own tokens onto the
+# survivor, so a third variant sharing only the duplicate's id collapses too.
+def merge_finds(existing, candidates)
+  merged = []
+  token_index = {}
+
+  claim = lambda do |find|
+    tokens = identity_tokens(find)
+    existing_idx = tokens.map { |token| token_index[token] }.compact.first
+    idx = existing_idx
+    unless idx
+      merged << find
+      idx = merged.length - 1
+    end
+    tokens.each { |token| token_index[token] ||= idx }
+  end
+
+  existing.each { |find| claim.call(find) }
+  candidates.each { |candidate| claim.call(candidate) }
+  merged
 end
 
 # After merge: drop deferred/too_large; keep all in_pr (and other non-open); cap open at 20.
