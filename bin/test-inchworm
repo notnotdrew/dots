@@ -734,6 +734,7 @@ run_inchworm() {
   fi
   PATH="$TEST_ROOT/fake-bin:$PATH" \
     INCHWORM_AGENT="${INCHWORM_AGENT:-$TEST_ROOT/fake-bin/agent}" \
+    INCHWORM_CURSOR_PROJECTS_DIR="${INCHWORM_CURSOR_PROJECTS_DIR:-$TEST_ROOT/cursor-projects}" \
     "$INCHWORM" "$@"
 }
 
@@ -1217,6 +1218,81 @@ test_run_eligible_implements_and_opens_draft_pr() {
 
   if [ -n "$problems" ]; then
     fail "$test_name" "$problems" "output:" "$(cat "$out_file")" "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_pretrusts_implement_worktree() {
+  # A fresh worktree is never trusted, and the agent CLI refuses to start in an
+  # untrusted directory while --trust is forbidden. inchworm must write the trust
+  # marker itself, keyed by a slug of the worktree's physical path.
+  test_name="implement worktree is pre-trusted for the agent before it runs"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "trust-worktree"
+  projects_dir="$TEST_ROOT/cursor-projects-trust"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"smell-trust","source":"smell","title":"Trust marker find","summary":"Worktree must be pre-trusted","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-trust-worktree-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    export INCHWORM_CURSOR_PROJECTS_DIR="$projects_dir"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+
+  problems=""
+  worktree_path=$(expected_worktree_path_for "$repo_dir" "smell-trust" "20260818")
+  worktree_dir_name=$(basename "$worktree_path")
+
+  # The physical path is what the agent slugifies, and TEST_ROOT may sit behind a
+  # symlink (/var -> /private/var), so match on the recorded workspacePath.
+  marker=$(grep -rl -F "$worktree_dir_name" "$projects_dir" 2>/dev/null | head -n 1)
+  if [ -z "$marker" ]; then
+    problems="${problems}expected a .workspace-trusted marker naming $worktree_dir_name under $projects_dir"$'\n'
+  else
+    case "$(basename "$marker")" in
+      .workspace-trusted) ;;
+      *) problems="${problems}marker must be named .workspace-trusted, got: $(basename "$marker")"$'\n' ;;
+    esac
+    if ! grep -q '"workspacePath"' "$marker"; then
+      problems="${problems}marker must record workspacePath"$'\n'
+    fi
+    if ! grep -q '"trustedAt"' "$marker"; then
+      problems="${problems}marker must record trustedAt"$'\n'
+    fi
+    # Slug is derived from the physical path: alphanumerics kept, everything else
+    # collapsed to single dashes.
+    slug_dir=$(basename "$(dirname "$marker")")
+    if printf '%s' "$slug_dir" | grep -qE '[^a-zA-Z0-9-]|--|^-|-$'; then
+      problems="${problems}marker dir must be a dash-slug of the path, got: $slug_dir"$'\n'
+    fi
+    recorded=$(sed -n 's/.*"workspacePath": "\([^"]*\)".*/\1/p' "$marker")
+    if [ "$slug_dir" != "$(printf '%s' "$recorded" | sed 's/[^a-zA-Z0-9]/-/g; s/--*/-/g; s/^-*//; s/-*$//')" ]; then
+      problems="${problems}marker dir $slug_dir does not match slug of recorded path $recorded"$'\n'
+    fi
+  fi
+  # Markers must land in the overridden projects dir, never the real ~/.cursor.
+  if [ ! -d "$projects_dir" ]; then
+    problems="${problems}expected projects dir $projects_dir to be created"$'\n'
+  fi
+  if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent argv must not include --yolo/--force/--trust"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "markers:" "$(find "$projects_dir" -type f 2>/dev/null || true)"
     return
   fi
   pass "$test_name"
@@ -3105,6 +3181,7 @@ run_test test_run_refuses_before_window
 run_test test_run_refuses_same_day_relaunch
 run_test test_run_skips_blocking_draft_without_stamp
 run_test test_run_eligible_implements_and_opens_draft_pr
+run_test test_run_pretrusts_implement_worktree
 run_test test_run_implement_failure_defers_without_pr_or_second_pick
 run_test test_run_implement_too_large_marks_without_pr
 run_test test_finds_path_hash_isolates_repos

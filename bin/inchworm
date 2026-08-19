@@ -25,6 +25,7 @@ CONFIG_FILE="${CONFIG_DIR}/config.yml"
 DATA_DIR="${INCHWORM_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm}"
 GH_BIN="${INCHWORM_GH:-gh}"
 GITIGNORE_GLOBAL="${INCHWORM_GITIGNORE_GLOBAL:-$HOME/.gitignore_global}"
+CURSOR_PROJECTS_DIR="${INCHWORM_CURSOR_PROJECTS_DIR:-${CURSOR_DATA_DIR:-$HOME/.cursor}/projects}"
 
 die() {
   printf '%s: error: %s\n' "$SCRIPT_NAME" "$*" >&2
@@ -382,7 +383,44 @@ create_implement_worktree() {
     git -C "$repo_path" worktree add "$worktree_path" "$branch_name"
   else
     git -C "$repo_path" worktree add -b "$branch_name" "$worktree_path" "$base_ref"
+  fi || return 1
+
+  ensure_workspace_trusted "$worktree_path" "$repo_path"
+}
+
+# The agent CLI refuses to start in an untrusted directory, and a fresh worktree is
+# never trusted — fatal here because the run is non-interactive and --trust is
+# forbidden. Trust is a marker file keyed by a slug of the workspace's *physical*
+# path (the agent resolves symlinks), so resolve before slugifying.
+workspace_trust_slug() {
+  printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/-/g; s/--*/-/g; s/^-*//; s/-*$//'
+}
+
+# Mirrors the marker the CLI writes itself when a workspace inherits trust from a
+# parent, so a worktree we created from an already-trusted repo starts unattended.
+ensure_workspace_trusted() {
+  local worktree_path=$1
+  local repo_path=$2
+  local physical slug marker_dir marker
+
+  physical=$(CDPATH= cd "$worktree_path" 2>/dev/null && pwd -P) || return 0
+  slug=$(workspace_trust_slug "$physical")
+  [[ -n "$slug" ]] || return 0
+
+  marker_dir="${CURSOR_PROJECTS_DIR}/${slug}"
+  marker="${marker_dir}/.workspace-trusted"
+  [[ -f "$marker" ]] && return 0
+
+  if ! mkdir -p "$marker_dir" 2>/dev/null; then
+    printf 'inchworm: warning: could not create %s (agent may refuse the worktree)\n' \
+      "$marker_dir" >&2
+    return 0
   fi
+  printf '{\n  "trustedAt": "%s",\n  "workspacePath": "%s",\n  "trustMethod": "inherited",\n  "sourceWorkspacePath": "%s"\n}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" "$physical" "$repo_path" >"$marker" || {
+    printf 'inchworm: warning: could not write %s (agent may refuse the worktree)\n' \
+      "$marker" >&2
+  }
 }
 
 # Remove implement worktree registration; keep inchworm/* branch.
