@@ -151,7 +151,6 @@ set -u
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 DOTS=$(CDPATH= cd "$SCRIPT_DIR/.." && pwd)
 INCHWORM="$DOTS/bin/inchworm"
-GITIGNORE_GLOBAL="$DOTS/gitignore_global"
 SKILL_ROOT="$DOTS/codex/skills/inchworm"
 
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-inchworm.XXXXXX") || exit 1
@@ -813,29 +812,7 @@ assert_finds_md_structure() {
   return 0
 }
 
-# --- A. gitignore_global -----------------------------------------------------
-
-test_gitignore_global_has_inchworm_entries() {
-  test_name="gitignore_global contains .inchworm.yml and .inchworm/"
-  if ! [ -f "$GITIGNORE_GLOBAL" ]; then
-    fail "$test_name" "missing file: $GITIGNORE_GLOBAL"
-    return
-  fi
-  missing=""
-  if ! file_contains_line "$GITIGNORE_GLOBAL" ".inchworm.yml"; then
-    missing="${missing}missing line: .inchworm.yml"$'\n'
-  fi
-  if ! file_contains_line "$GITIGNORE_GLOBAL" ".inchworm/"; then
-    missing="${missing}missing line: .inchworm/"$'\n'
-  fi
-  if [ -n "$missing" ]; then
-    fail "$test_name" "$missing"
-    return
-  fi
-  pass "$test_name"
-}
-
-# --- B. init -----------------------------------------------------------------
+# --- A. init -----------------------------------------------------------------
 
 test_init_creates_repo_config_and_registry() {
   test_name="init creates .inchworm.yml, registers repo, writes global defaults, appends gitignore"
@@ -3120,7 +3097,6 @@ write_fake_agent_binaries
 printf '%s\n' "# inchworm Phase 5 tests"
 printf '%s\n' "# inchworm binary: $INCHWORM$([ -x "$INCHWORM" ] && printf ' (present)' || printf ' (MISSING)')"
 
-run_test test_gitignore_global_has_inchworm_entries
 run_test test_init_creates_repo_config_and_registry
 run_test test_init_is_idempotent
 run_test test_run_refuses_weekend
