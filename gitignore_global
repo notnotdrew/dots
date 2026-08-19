@@ -15,3 +15,6 @@ tags
 
 .config/wt.toml
 .worktreeinclude
+
+.inchworm.yml
+.inchworm/

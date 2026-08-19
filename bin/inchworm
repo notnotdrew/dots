@@ -1,0 +1,1027 @@
+#!/usr/bin/env bash
+# Phase 5 coordinator: discover → implement → draft PR → Standard review → optional fix → ping → LaunchAgent
+#
+# Usage:
+#   inchworm init
+#   inchworm run
+#   inchworm status
+
+set -euo pipefail
+
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME
+readonly SCRIPT_DIR
+
+YAML_HELPER="${SCRIPT_DIR}/lib/inchworm_yaml.rb"
+FINDS_HELPER="${SCRIPT_DIR}/lib/inchworm_finds.rb"
+REVIEW_HELPER="${SCRIPT_DIR}/lib/inchworm_review.rb"
+readonly YAML_HELPER
+readonly FINDS_HELPER
+readonly REVIEW_HELPER
+
+CONFIG_DIR="${INCHWORM_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/inchworm}"
+CONFIG_FILE="${CONFIG_DIR}/config.yml"
+DATA_DIR="${INCHWORM_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm}"
+GH_BIN="${INCHWORM_GH:-gh}"
+GITIGNORE_GLOBAL="${INCHWORM_GITIGNORE_GLOBAL:-$HOME/.gitignore_global}"
+
+die() {
+  printf '%s: error: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: inchworm <init|run|status|launchd-setup>
+
+  init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
+  run            Eligible repos: stamp + discover + implement + draft PR + review/fix/ping
+  status         Show registered repos, last_run_date, create window, draft gate
+  launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
+
+New machine:
+  1. Ensure ~/bin/inchworm is on PATH (e.g. dots update_symlinks)
+  2. inchworm launchd-setup
+  3. Grant Full Disk Access to the printed runner path only
+  4. inchworm status   # confirm create window / registered repos
+
+New repo:
+  1. cd /path/to/repo
+  2. inchworm init
+  3. Optional: edit .inchworm.yml guidance (repo notes for agents)
+EOF
+}
+
+# Prefer mise Ruby even under LaunchAgent (minimal PATH, no shell init).
+resolve_mise() {
+  local candidate
+  if command -v mise >/dev/null 2>&1; then
+    command -v mise
+    return 0
+  fi
+  for candidate in \
+    "${HOME}/.local/bin/mise" \
+    /opt/homebrew/bin/mise \
+    /usr/local/bin/mise
+  do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ruby_helper() {
+  local helper=$1
+  shift
+  local mise_bin
+  if mise_bin=$(resolve_mise); then
+    "$mise_bin" exec -- ruby "$helper" "$@"
+  else
+    ruby "$helper" "$@"
+  fi
+}
+
+ruby_yaml() { ruby_helper "$YAML_HELPER" "$@"; }
+ruby_finds() { ruby_helper "$FINDS_HELPER" "$@"; }
+ruby_review() { ruby_helper "$REVIEW_HELPER" "$@"; }
+
+# Default Standard pr-review launcher: INCHWORM_PR_REVIEW, else sibling bin/pr-review, else PATH.
+resolve_pr_review_bin() {
+  if [[ -n "${INCHWORM_PR_REVIEW:-}" ]]; then
+    printf '%s\n' "$INCHWORM_PR_REVIEW"
+    return
+  fi
+  if [[ -x "${SCRIPT_DIR}/pr-review" ]]; then
+    printf '%s\n' "${SCRIPT_DIR}/pr-review"
+    return
+  fi
+  if command -v pr-review >/dev/null 2>&1; then
+    command -v pr-review
+    return
+  fi
+  printf '%s\n' "${SCRIPT_DIR}/pr-review"
+}
+
+# Read optional .inchworm.yml `guidance` (plain text for agents). Empty/missing → "".
+load_repo_guidance() {
+  local repo_yml=$1
+  local raw
+
+  if [[ ! -f "$repo_yml" ]]; then
+    return 0
+  fi
+  raw=$(ruby_yaml get "$repo_yml" "guidance")
+  if [[ "$raw" == "null" || -z "${raw//[[:space:]]/}" ]]; then
+    return 0
+  fi
+  printf '%s' "$raw"
+}
+
+# Append a "## Repo guidance" block when guidance is non-empty.
+append_repo_guidance_block() {
+  local guidance=$1
+  if [[ -z "${guidance//[[:space:]]/}" ]]; then
+    return 0
+  fi
+  printf '\n## Repo guidance\n\n%s\n' "$guidance"
+}
+
+# Shared scout contract: JSON array per candidate-schema (id, source, title, summary, rank, status).
+scout_prompt_for() {
+  local source=$1
+  local out_file=$2
+  local guidance=${3:-}
+  local role_blurb
+  case "$source" in
+    smell)
+      role_blurb="Scan for small, high-value cleanup finds: unused helpers, dead branches, obvious duplication that fits a thin PR."
+      ;;
+    lint)
+      role_blurb="Surface actionable lint / static-analysis debt that is safe to fix in isolation."
+      ;;
+    errors)
+      role_blurb="Surface recurring runtime or CI errors that look fixable without product redesign."
+      ;;
+    backlog)
+      role_blurb="Pull small, already-agreed backlog items that are ready to implement as a thin PR."
+      ;;
+    *)
+      role_blurb="Propose small, concrete, rankable finds."
+      ;;
+  esac
+
+  cat <<EOF
+You are the ${source} scout for inchworm.
+
+${role_blurb}
+
+Emit source: "${source}". Prefer few concrete finds. If none, write an empty array.
+
+Write your answer as a JSON array to the file ${out_file} — nothing else belongs in that file. Each object must include:
+id (slug without F- prefix), source ("${source}"), title, summary, rank (integer, lower is better), status ("open" or "new"); optional evidence (string).
+EOF
+  append_repo_guidance_block "$guidance"
+}
+
+# Run one live scout. Candidates come from the scout's output file; stdout is a
+# fallback for agents that print the array instead of writing it.
+run_live_scout() {
+  local repo_path=$1
+  local source=$2
+  local out_file=$3
+  local guidance=${4:-}
+  local agent_bin="${INCHWORM_AGENT:-agent}"
+  local prompt raw status=0 extracted
+
+  prompt=$(scout_prompt_for "$source" "$out_file" "$guidance")
+  raw=$(
+    cd "$repo_path" || exit 1
+    "$agent_bin" -p "$prompt"
+  ) || status=$?
+
+  if [[ "$status" -ne 0 ]]; then
+    printf 'inchworm: %s scout failed (exit %s) — treating as no candidates\n' \
+      "$source" "$status" >&2
+  fi
+
+  if [[ -s "$out_file" ]] && extracted=$(ruby_finds extract_json_array <"$out_file" 2>/dev/null); then
+    printf '%s\n' "$extracted" >"$out_file"
+    return 0
+  fi
+
+  if extracted=$(printf '%s\n' "$raw" | ruby_finds extract_json_array 2>/dev/null); then
+    printf '%s\n' "$extracted" >"$out_file"
+    return 0
+  fi
+
+  printf '[]\n' >"$out_file"
+  if [[ "$status" -eq 0 ]]; then
+    printf 'inchworm: %s scout returned no usable candidates\n' "$source" >&2
+  fi
+}
+
+# Discover: scouts (fixtures or live smell/lint/errors/backlog) → curator merge → pick.
+discover_pipeline() {
+  local repo_path=$1
+  local scout_dir
+  local cleanup_scout_dir=0
+  local source
+  local guidance
+
+  if [[ -n "${INCHWORM_SCOUT_FIXTURE_DIR:-}" ]]; then
+    scout_dir="$INCHWORM_SCOUT_FIXTURE_DIR"
+  else
+    scout_dir=$(mktemp -d "${TMPDIR:-/tmp}/inchworm-scouts.XXXXXX")
+    cleanup_scout_dir=1
+    guidance=$(load_repo_guidance "${repo_path}/.inchworm.yml")
+    for source in smell lint errors backlog; do
+      run_live_scout "$repo_path" "$source" "${scout_dir}/${source}.json" "$guidance"
+    done
+  fi
+
+  ruby_finds discover "$repo_path" "$DATA_DIR" "$scout_dir"
+  if [[ "$cleanup_scout_dir" -eq 1 ]]; then
+    rm -rf "$scout_dir"
+  fi
+}
+
+# Resolve injectable clock: INCHWORM_NOW=YYYY-MM-DDTHH:MM:SS or real local now.
+current_now() {
+  if [[ -n "${INCHWORM_NOW:-}" ]]; then
+    printf '%s\n' "$INCHWORM_NOW"
+  else
+    date '+%Y-%m-%dT%H:%M:%S'
+  fi
+}
+
+# Print: date weekday hour minute from INCHWORM_NOW / real now (weekday: 1=Mon..7=Sun).
+parse_clock() {
+  ruby_yaml parse_now "$(current_now)"
+}
+
+yyyymmdd_from_today() {
+  local today=$1
+  printf '%s' "$today" | tr -d '-'
+}
+
+# Short slug for branch: keep alnum/hyphen from find id.
+branch_slug_from_id() {
+  local find_id=$1
+  local slug
+  slug=$(printf '%s' "$find_id" | tr '[:upper:]' '[:lower:]' | sed 's/^f-//; s/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//')
+  if [[ -z "$slug" ]]; then
+    slug="find"
+  fi
+  # Keep branch names manageable.
+  printf '%s\n' "${slug:0:48}"
+}
+
+# Hardcoded implement base: always freshly fetched origin/develop (not HEAD / origin/HEAD).
+IMPLEMENT_BASE_REMOTE_REF="origin/develop"
+IMPLEMENT_BASE_BRANCH="develop"
+
+# Fetch origin and resolve origin/develop for implement worktrees / commit checks.
+# Prints origin/develop on success. On failure prints nothing and returns non-zero
+# (caller soft-defers). Fixture mode may fall back to local HEAD so harness repos
+# without a remote keep working.
+resolve_implement_base() {
+  local repo_path=$1
+  local fixture=${2:-}
+  local reason_file=${3:-}
+
+  if ! git -C "$repo_path" remote get-url origin >/dev/null 2>&1; then
+    if [[ -n "$fixture" ]]; then
+      git -C "$repo_path" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD\n'
+      return 0
+    fi
+    [[ -n "$reason_file" ]] && printf 'no origin — cannot base implement on origin/develop\n' >"$reason_file"
+    return 1
+  fi
+
+  if ! git -C "$repo_path" fetch origin; then
+    if [[ -n "$fixture" ]]; then
+      git -C "$repo_path" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD\n'
+      return 0
+    fi
+    [[ -n "$reason_file" ]] && printf 'git fetch origin failed — cannot refresh origin/develop\n' >"$reason_file"
+    return 1
+  fi
+
+  if git -C "$repo_path" rev-parse --verify --quiet "$IMPLEMENT_BASE_REMOTE_REF" >/dev/null; then
+    printf '%s\n' "$IMPLEMENT_BASE_REMOTE_REF"
+    return 0
+  fi
+
+  if [[ -n "$fixture" ]]; then
+    git -C "$repo_path" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD\n'
+    return 0
+  fi
+
+  [[ -n "$reason_file" ]] && printf 'origin/develop missing after fetch — cannot create implement worktree\n' >"$reason_file"
+  return 1
+}
+
+ensure_gitignore_entries() {
+  local file=$1
+  local line
+  touch "$file"
+  for line in ".inchworm.yml" ".inchworm/"; do
+    if ! grep -Fxq -- "$line" "$file"; then
+      printf '%s\n' "$line" >>"$file"
+    fi
+  done
+}
+
+list_registered_repos() {
+  if [[ -n "${INCHWORM_REPO:-}" ]]; then
+    printf '%s\n' "$INCHWORM_REPO"
+    return
+  fi
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    return
+  fi
+  ruby_yaml list_repos "$CONFIG_FILE"
+}
+
+gh_pr_list_json() {
+  local repo_path=$1
+  (
+    cd "$repo_path" || exit 1
+    "$GH_BIN" pr list --author @me --state open --json number,url,isDraft,headRefName
+  )
+}
+
+find_blocking_draft() {
+  local repo_path=$1
+  local json
+  json=$(gh_pr_list_json "$repo_path") || json='[]'
+  printf '%s' "$json" | ruby_yaml find_blocking_draft
+}
+
+# Create-window label for status: open | closed (weekend|before 08:00|at/after 15:00)
+window_label_for() {
+  local weekday=$1 hour=$2 minute=$3
+  local mins=$((10#$hour * 60 + 10#$minute))
+  if [[ "$weekday" -gt 5 ]]; then
+    printf 'closed (weekend)\n'
+  elif [[ "$mins" -lt $((8 * 60)) ]]; then
+    printf 'closed (before 08:00)\n'
+  elif [[ "$mins" -ge $((15 * 60)) ]]; then
+    printf 'closed (at/after 15:00)\n'
+  else
+    printf 'open\n'
+  fi
+}
+
+# Create git worktree on inchworm/<slug>-<YYYYMMDD> from origin/develop (after fetch).
+# Clears a stale path (via cleanup) before add; reuses an existing branch without -b.
+# Returns non-zero when base cannot be resolved (unless fixture fallback applies).
+create_implement_worktree() {
+  local repo_path=$1
+  local branch_name=$2
+  local worktree_path=$3
+  local fixture=${4:-}
+  local base_ref reason_file
+
+  reason_file=$(mktemp)
+  if ! base_ref=$(resolve_implement_base "$repo_path" "$fixture" "$reason_file"); then
+    printf 'inchworm: %s' "$(cat "$reason_file")" >&2
+    printf '\n' >&2
+    rm -f "$reason_file"
+    return 1
+  fi
+  rm -f "$reason_file"
+
+  mkdir -p "$(dirname "$worktree_path")"
+  cleanup_implement_worktree "$repo_path" "$worktree_path"
+
+  if git -C "$repo_path" show-ref --verify --quiet "refs/heads/${branch_name}"; then
+    git -C "$repo_path" worktree add "$worktree_path" "$branch_name"
+  else
+    git -C "$repo_path" worktree add -b "$branch_name" "$worktree_path" "$base_ref"
+  fi
+}
+
+# Remove implement worktree registration; keep inchworm/* branch.
+cleanup_implement_worktree() {
+  local repo_path=$1
+  local worktree_path=$2
+
+  [[ -n "$worktree_path" ]] || return 0
+
+  git -C "$repo_path" worktree remove --force "$worktree_path" 2>/dev/null || true
+  if [[ -e "$worktree_path" ]]; then
+    rm -rf "$worktree_path"
+  fi
+  git -C "$repo_path" worktree prune 2>/dev/null || true
+}
+
+# Fixture success: tiny commit in worktree so the branch exists for draft PR.
+# File must not live under gitignored `.inchworm/` or `git add` fails.
+implement_fixture_success() {
+  local worktree_path=$1
+  local find_id=$2
+  printf 'inchworm implement fixture for F-%s\n' "$find_id" \
+    >"${worktree_path}/inchworm-implement-fixture.txt"
+  git -C "$worktree_path" add inchworm-implement-fixture.txt
+  git -C "$worktree_path" commit -q -m "inchworm: implement F-${find_id}"
+}
+
+# Real implementer (Done-when): agent in worktree, never --yolo/--force/--trust.
+implement_with_agent() {
+  local worktree_path=$1
+  local find_id=$2
+  local find_title=$3
+  local guidance=${4:-}
+  local agent_bin="${INCHWORM_AGENT:-agent}"
+  local prompt
+  prompt="Implement inchworm find F-${find_id}: ${find_title}. Stay small; stop when done. Commit your work on the current branch. Do not push and do not open a PR."
+  prompt+=$(append_repo_guidance_block "$guidance")
+  (
+    cd "$worktree_path" || exit 1
+    "$agent_bin" -p "$prompt"
+  )
+}
+
+# Agents often leave edits uncommitted; capture them so the branch carries the work.
+commit_leftover_changes() {
+  local worktree_path=$1
+  local find_id=$2
+
+  if [[ -z "$(git -C "$worktree_path" status --porcelain)" ]]; then
+    return 0
+  fi
+
+  git -C "$worktree_path" add -A
+  git -C "$worktree_path" commit -q -m "inchworm: implement F-${find_id}"
+}
+
+# A branch with no commits ahead of its base cannot become a PR.
+branch_has_commits() {
+  local worktree_path=$1
+  local base_branch=$2
+  local count
+
+  count=$(git -C "$worktree_path" rev-list --count "${base_branch}..HEAD" 2>/dev/null || printf '0')
+  [[ "$count" -gt 0 ]]
+}
+
+# Push inchworm/ branch before gh pr create (plan locked decision).
+# Fixture/tests: never push (avoids polluting a local origin from clones).
+# Live: require origin + successful push, else soft-fail (caller defers).
+push_implement_branch() {
+  local worktree_path=$1
+  local fixture=$2
+
+  if [[ -n "$fixture" ]]; then
+    printf 'inchworm: fixture mode — skipping push\n' >&2
+    return 0
+  fi
+
+  if ! git -C "$worktree_path" remote get-url origin >/dev/null 2>&1; then
+    printf 'inchworm: no origin — cannot push implement branch\n' >&2
+    return 1
+  fi
+
+  if git -C "$worktree_path" push -u origin HEAD; then
+    return 0
+  fi
+
+  printf 'inchworm: push failed — deferring draft PR\n' >&2
+  return 1
+}
+
+open_draft_pr() {
+  local worktree_path=$1
+  local find_id=$2
+  local find_title=$3
+  local pr_out pr_url
+  pr_out=$(
+    cd "$worktree_path" || exit 1
+    "$GH_BIN" pr create --draft \
+      --base "$IMPLEMENT_BASE_BRANCH" \
+      --title "inchworm: F-${find_id} — ${find_title}" \
+      --body "Inchworm draft for F-${find_id}."
+  ) || return 1
+  pr_url=$(printf '%s\n' "$pr_out" | grep -Eo 'https://[^[:space:]]+' | head -n1)
+  if [[ -z "$pr_url" ]]; then
+    pr_url=$(printf '%s\n' "$pr_out" | sed -n '/./p' | head -n1)
+  fi
+  printf '%s\n' "$pr_url"
+}
+
+mark_find_deferred() {
+  local repo_path=$1
+  local find_id=$2
+  local reason=$3
+  ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" deferred
+  printf 'inchworm: implement failed — %s for F-%s (deferred; stamp burned, no second pick)\n' \
+    "$reason" "$find_id"
+}
+
+# Mark deferred and drop any implement worktree created for this attempt.
+defer_implement_with_cleanup() {
+  local repo_path=$1
+  local worktree_path=$2
+  local find_id=$3
+  local reason=$4
+  mark_find_deferred "$repo_path" "$find_id" "$reason"
+  cleanup_implement_worktree "$repo_path" "$worktree_path"
+}
+
+# Standard pr-review once after successful draft PR.
+# Sets INCHWORM_REVIEW_ARTIFACT_DIR; fixtures via INCHWORM_REVIEW_FIXTURE or live launcher.
+# Review launcher failure is soft: draft already opened; still continue to fix/ping.
+run_standard_pr_review() {
+  local repo_path=$1
+  local pr_url=$2
+  local review_dir
+  local fixture="${INCHWORM_REVIEW_FIXTURE:-}"
+  local review_bin
+  local review_status=0
+
+  review_dir=$(ruby_review review_dir "$repo_path" "$DATA_DIR")
+  mkdir -p "$review_dir"
+  export INCHWORM_REVIEW_ARTIFACT_DIR="$review_dir"
+
+  if [[ -n "$fixture" ]]; then
+    if [[ -n "${INCHWORM_PR_REVIEW:-}" ]]; then
+      # Tests inject a mock that honors INCHWORM_REVIEW_FIXTURE + ARTIFACT_DIR.
+      INCHWORM_REVIEW_ARTIFACT_DIR="$review_dir" \
+        "${INCHWORM_PR_REVIEW}" --mode standard "$pr_url" || review_status=$?
+    else
+      ruby_review write_fixture "$fixture" "$review_dir"
+      printf 'inchworm: review fixture %s → %s\n' "$fixture" "$review_dir"
+    fi
+  else
+    review_bin=$(resolve_pr_review_bin)
+    INCHWORM_REVIEW_ARTIFACT_DIR="$review_dir" \
+      "$review_bin" --mode standard "$pr_url" || review_status=$?
+  fi
+
+  if [[ "$review_status" -ne 0 ]]; then
+    printf 'inchworm: Standard pr-review exited %s — continuing (draft already open)\n' \
+      "$review_status" >&2
+  fi
+
+  if [[ ! -f "${review_dir}/findings-ledger.md" ]]; then
+    # Soft stub (same shape as fixture `none`) so blocker mapping / ping can proceed.
+    ruby_review write_empty_ledger "$review_dir"
+    printf 'inchworm: wrote stub findings-ledger.md (review artifacts missing)\n' >&2
+  fi
+  printf 'inchworm: Standard pr-review complete → %s\n' "$review_dir"
+}
+
+# One fixer pass when verified blockers exist. Never --yolo/--force/--trust.
+# At most one pass; no second review.
+run_blocking_fixer() {
+  local repo_path=$1
+  local worktree_path=$2
+  local pr_url=$3
+  local blocker_count=$4
+  local fix_fixture="${INCHWORM_FIX_FIXTURE:-}"
+  local fix_dir marker agent_bin prompt
+
+  fix_dir=$(ruby_review fix_dir "$repo_path" "$DATA_DIR")
+  mkdir -p "$fix_dir"
+  marker="${fix_dir}/fixture-ran"
+
+  if [[ -n "$fix_fixture" ]]; then
+    case "$fix_fixture" in
+      success)
+        printf 'success\n' >"$marker"
+        printf 'inchworm: fixer pass — addressed blocking findings (fixture success)\n'
+        return 0
+        ;;
+      fail)
+        printf 'fail\n' >"$marker"
+        printf 'inchworm: fixer fail — residual blocking findings remain (could not address all blockers)\n'
+        return 1
+        ;;
+      *)
+        printf 'inchworm: unknown INCHWORM_FIX_FIXTURE=%s — treating as fail\n' "$fix_fixture" >&2
+        printf 'fail\n' >"$marker"
+        printf 'inchworm: fixer fail — residual blocking findings remain\n'
+        return 1
+        ;;
+    esac
+  fi
+
+  agent_bin="${INCHWORM_AGENT:-agent}"
+  prompt="Fix only verified Class: blocking findings for draft PR ${pr_url} (${blocker_count} blocker(s)). Do not re-review. Never use --yolo, --force, or --trust."
+  prompt+=$(append_repo_guidance_block "$(load_repo_guidance "${repo_path}/.inchworm.yml")")
+  (
+    cd "$worktree_path" || exit 1
+    "$agent_bin" -p "$prompt"
+  ) || {
+    printf 'inchworm: fixer fail — residual blocking findings remain (agent exited non-zero)\n'
+    return 1
+  }
+  printf 'inchworm: fixer pass — addressed blocking findings\n'
+  return 0
+}
+
+# Ping after review (+ optional fix). Prefer INCHWORM_NOTIFY; else osascript + always log URL.
+# Always print the ping line. On notify/osascript failure (or missing), print notify fallback.
+ping_draft_pr() {
+  local pr_url=$1
+  local notified=0
+
+  printf 'inchworm: ping — draft PR %s\n' "$pr_url"
+
+  if [[ -n "${INCHWORM_NOTIFY:-}" ]]; then
+    if "${INCHWORM_NOTIFY}" "$pr_url"; then
+      notified=1
+    fi
+  elif command -v osascript >/dev/null 2>&1; then
+    if osascript -e "display notification \"Inchworm draft ready\" with title \"inchworm\" subtitle \"${pr_url}\"" 2>/dev/null; then
+      notified=1
+    fi
+  fi
+
+  if [[ "$notified" -eq 0 ]]; then
+    printf 'inchworm: notify fallback — logged PR URL\n'
+  fi
+}
+
+# After successful draft PR: review once → optional one fix pass → ping. No second review.
+run_review_fix_ping() {
+  local repo_path=$1
+  local worktree_path=$2
+  local pr_url=$3
+  local review_dir ledger_path blocker_count
+
+  run_standard_pr_review "$repo_path" "$pr_url"
+  # Same path as run_standard_pr_review (DATA_DIR/<path-hash>/review/).
+  review_dir="${INCHWORM_REVIEW_ARTIFACT_DIR:-$(ruby_review review_dir "$repo_path" "$DATA_DIR")}"
+  ledger_path="${review_dir}/findings-ledger.md"
+  blocker_count=0
+  if [[ -f "$ledger_path" ]]; then
+    blocker_count=$(ruby_review blocking_count "$ledger_path")
+  fi
+
+  if [[ "$blocker_count" -gt 0 ]]; then
+    printf 'inchworm: %s verified blocking finding(s) — running one fixer pass\n' "$blocker_count"
+    run_blocking_fixer "$repo_path" "$worktree_path" "$pr_url" "$blocker_count" || true
+  else
+    printf 'inchworm: no verified blockers — skipping fixer\n'
+  fi
+
+  ping_draft_pr "$pr_url"
+  cleanup_implement_worktree "$repo_path" "$worktree_path"
+}
+
+# After discover selected a find: implement → push → draft PR or mark deferred/too_large.
+# On draft success: Standard review → optional fix → ping. Never picks a second find.
+run_implement_and_pr() {
+  local repo_path=$1
+  local repo_yml=$2
+  local find_id=$3
+  local find_title=$4
+  local today=$5
+  local fixture="${INCHWORM_IMPLEMENT_FIXTURE:-}"
+  local ymd branch_name worktree_path pr_url base_ref guidance
+
+  ymd=$(yyyymmdd_from_today "$today")
+  branch_name="inchworm/$(branch_slug_from_id "$find_id")-${ymd}"
+  worktree_path="${repo_path}/.inchworm/worktrees/${branch_name//\//-}"
+  guidance=$(load_repo_guidance "$repo_yml")
+
+  case "$fixture" in
+    too_large)
+      ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" too_large
+      printf 'inchworm: implement too_large — find F-%s marked too_large (no PR)\n' "$find_id"
+      return 0
+      ;;
+    success)
+      if ! create_implement_worktree "$repo_path" "$branch_name" "$worktree_path" "$fixture"; then
+        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+          "could not base worktree on origin/develop"
+        return 0
+      fi
+      implement_fixture_success "$worktree_path" "$find_id"
+      ;;
+    "")
+      if ! create_implement_worktree "$repo_path" "$branch_name" "$worktree_path" ""; then
+        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+          "could not base worktree on origin/develop"
+        return 0
+      fi
+      if ! implement_with_agent "$worktree_path" "$find_id" "$find_title" "$guidance"; then
+        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "agent exited non-zero"
+        return 0
+      fi
+      commit_leftover_changes "$worktree_path" "$find_id"
+      base_ref="$IMPLEMENT_BASE_REMOTE_REF"
+      if ! branch_has_commits "$worktree_path" "$base_ref"; then
+        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+          "no commits produced (nothing to open a PR from)"
+        return 0
+      fi
+      ;;
+    fail|*)
+      if [[ "$fixture" != "fail" ]]; then
+        printf 'inchworm: unknown INCHWORM_IMPLEMENT_FIXTURE=%s — treating as fail\n' "$fixture" >&2
+      fi
+      mark_find_deferred "$repo_path" "$find_id" "fixture fail"
+      return 0
+      ;;
+  esac
+
+  if ! push_implement_branch "$worktree_path" "$fixture"; then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "push failed"
+    return 0
+  fi
+
+  pr_url=$(open_draft_pr "$worktree_path" "$find_id" "$find_title") || {
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "draft PR create failed"
+    return 0
+  }
+  if [[ -z "$pr_url" ]]; then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "no PR URL"
+    return 0
+  fi
+
+  ruby_yaml set_state "$repo_yml" "active_draft_pr" "$pr_url"
+  ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
+  printf 'inchworm: opened draft PR %s\n' "$pr_url"
+
+  run_review_fix_ping "$repo_path" "$worktree_path" "$pr_url"
+}
+
+# FDA-scoped LaunchAgent executable: a private copy of bash (not /bin/bash).
+# TCC attributes Full Disk Access to this binary only — not every bash script.
+LAUNCHD_RUNNER="${INCHWORM_LAUNCHD_RUNNER:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm/inchworm-launchd}"
+LAUNCHD_PLIST="${INCHWORM_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/com.inchworm.plist}"
+LAUNCHD_LABEL="com.inchworm"
+
+resolve_launchd_template() {
+  local candidate dir
+  if [[ -n "${INCHWORM_LAUNCHD_TEMPLATE:-}" && -f "${INCHWORM_LAUNCHD_TEMPLATE}" ]]; then
+    printf '%s\n' "$INCHWORM_LAUNCHD_TEMPLATE"
+    return 0
+  fi
+  for candidate in \
+    "${SCRIPT_DIR}/../launchd/com.inchworm.plist.template" \
+    "${HOME}/dots/launchd/com.inchworm.plist.template"
+  do
+    if [[ -f "$candidate" ]]; then
+      dir=$(CDPATH= cd "$(dirname "$candidate")" && pwd)
+      printf '%s/%s\n' "$dir" "$(basename "$candidate")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+launchd_agent_path() {
+  # Prefer mise ruby latest, Homebrew, user bins, then system.
+  local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+  printf '%s' \
+    "${data_home}/mise/installs/ruby/latest/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+write_launchd_plist() {
+  local template=$1
+  local dest=$2
+  local runner=$3
+  local inchworm_bin=$4
+  local agent_path
+  local tmp
+
+  agent_path=$(launchd_agent_path)
+  mkdir -p "$(dirname "$dest")"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/inchworm-plist.XXXXXX")
+  # Portable placeholders — no machine-specific paths in the repo template.
+  sed \
+    -e "s|@HOME@|${HOME}|g" \
+    -e "s|@PATH@|${agent_path}|g" \
+    -e "s|@LAUNCHD_RUNNER@|${runner}|g" \
+    -e "s|@INCHWORM_BIN@|${inchworm_bin}|g" \
+    "$template" >"$tmp"
+  mv "$tmp" "$dest"
+}
+
+reload_launchd_agent() {
+  local plist=$1
+  local uid
+  uid=$(id -u)
+  launchctl bootout "gui/${uid}/${LAUNCHD_LABEL}" 2>/dev/null || true
+  # Replace a stale symlink to the old repo plist with the generated file.
+  if [[ -L "$plist" ]]; then
+    rm -f "$plist"
+  fi
+  launchctl bootstrap "gui/${uid}" "$plist"
+}
+
+cmd_launchd_setup() {
+  local runner_dir
+  local bash_src="/bin/bash"
+  local open_settings=1
+  local do_reload=1
+  local template inchworm_bin
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-open)
+        open_settings=0
+        shift
+        ;;
+      --no-reload)
+        do_reload=0
+        shift
+        ;;
+      -h|--help)
+        printf '%s\n' "Usage: inchworm launchd-setup [--no-open] [--no-reload]"
+        return 0
+        ;;
+      *)
+        die "unknown launchd-setup option: $1"
+        ;;
+    esac
+  done
+
+  if [[ ! -x "$bash_src" ]]; then
+    die "missing $bash_src (needed to build the launchd runner)"
+  fi
+
+  if ! template=$(resolve_launchd_template); then
+    die "missing launchd plist template (expected launchd/com.inchworm.plist.template)"
+  fi
+
+  runner_dir=$(dirname "$LAUNCHD_RUNNER")
+  mkdir -p "$runner_dir"
+  # Fresh copy so the on-disk binary identity stays a dedicated FDA target.
+  cp "$bash_src" "$LAUNCHD_RUNNER"
+  chmod 755 "$LAUNCHD_RUNNER"
+
+  inchworm_bin="${SCRIPT_DIR}/inchworm"
+  if [[ -L "$LAUNCHD_PLIST" ]]; then
+    rm -f "$LAUNCHD_PLIST"
+  fi
+  write_launchd_plist "$template" "$LAUNCHD_PLIST" "$LAUNCHD_RUNNER" "$inchworm_bin"
+
+  printf 'inchworm: launchd runner → %s\n' "$LAUNCHD_RUNNER"
+  printf 'inchworm: launchd plist  → %s\n' "$LAUNCHD_PLIST"
+  printf 'inchworm: ProgramArguments:\n'
+  printf '  %s\n' "$LAUNCHD_RUNNER"
+  printf '  %s\n' "$inchworm_bin"
+  printf '  run\n'
+  printf '\n'
+  printf 'Grant Full Disk Access to ONLY this binary (not /bin/bash):\n'
+  printf '  %s\n' "$LAUNCHD_RUNNER"
+  printf 'System Settings → Privacy & Security → Full Disk Access → +\n'
+  printf 'Then ⌘⇧G and paste the path above.\n'
+
+  if [[ "$do_reload" -eq 1 ]]; then
+    if reload_launchd_agent "$LAUNCHD_PLIST"; then
+      printf 'inchworm: LaunchAgent %s reloaded\n' "$LAUNCHD_LABEL"
+    else
+      printf 'inchworm: warning: could not bootstrap %s (load manually)\n' "$LAUNCHD_LABEL" >&2
+    fi
+  fi
+
+  if [[ "$open_settings" -eq 1 ]]; then
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null \
+      || open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension" 2>/dev/null \
+      || true
+  fi
+}
+
+cmd_init() {
+  local repo_root="$PWD"
+
+  ruby_yaml ensure_repo_yml "${PWD}/.inchworm.yml"
+  mkdir -p "$CONFIG_DIR"
+  ruby_yaml ensure_global "$CONFIG_FILE"
+  ruby_yaml register_repo "$CONFIG_FILE" "$repo_root"
+  ensure_gitignore_entries "$GITIGNORE_GLOBAL"
+
+  printf 'inchworm: initialized %s\n' "$repo_root"
+  printf 'inchworm: registered in %s\n' "$CONFIG_FILE"
+}
+
+cmd_run() {
+  local today weekday hour minute
+  local repo_path repo_yml last_run blocking
+  local mins draft_url draft_head
+  local discover_out selected_line find_id find_title
+
+  read -r today weekday hour minute <<<"$(parse_clock)"
+
+  while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    [[ -z "$repo_path" ]] && continue
+    repo_yml="${repo_path}/.inchworm.yml"
+
+    if [[ "$weekday" -gt 5 ]]; then
+      printf 'inchworm: skip %s — weekend (not a weekday; sat/sun)\n' "$repo_path"
+      continue
+    fi
+
+    mins=$((10#$hour * 60 + 10#$minute))
+    if [[ "$mins" -ge $((15 * 60)) ]]; then
+      printf 'inchworm: skip %s — outside create window (at/after 15:00)\n' "$repo_path"
+      continue
+    fi
+    if [[ "$mins" -lt $((8 * 60)) ]]; then
+      printf 'inchworm: skip %s — outside create window (before 08:00)\n' "$repo_path"
+      continue
+    fi
+
+    if [[ ! -f "$repo_yml" ]]; then
+      printf 'inchworm: skip %s — missing .inchworm.yml\n' "$repo_path"
+      continue
+    fi
+
+    last_run=$(ruby_yaml get "$repo_yml" "state.last_run_date")
+    if [[ "$last_run" == "$today" ]]; then
+      printf 'inchworm: skip %s — already launched today (same-day; last_run_date=%s)\n' \
+        "$repo_path" "$last_run"
+      continue
+    fi
+
+    blocking=$(find_blocking_draft "$repo_path" || true)
+    if [[ -n "$blocking" ]]; then
+      draft_url=${blocking%%$'\t'*}
+      draft_head=${blocking#*$'\t'}
+      if [[ -n "$draft_url" && "$draft_url" != "null" ]]; then
+        ruby_yaml set_state "$repo_yml" "active_draft_pr" "$draft_url"
+      fi
+      printf 'inchworm: skip %s — blocking draft %s (%s)\n' \
+        "$repo_path" "${draft_head:-inchworm/}" "${draft_url:-unknown}"
+      continue
+    fi
+
+    # Eligible: clear stale draft cache, stamp, then discover → implement.
+    ruby_yaml set_state "$repo_yml" "active_draft_pr" "null"
+    ruby_yaml set_state "$repo_yml" "last_run_date" "$today"
+    printf 'inchworm: eligible %s — discover\n' "$repo_path"
+    discover_out=$(discover_pipeline "$repo_path")
+    printf '%s\n' "$discover_out"
+
+    selected_line=$(printf '%s\n' "$discover_out" | grep -E 'inchworm: selected F-' | head -n1 || true)
+    if [[ -z "$selected_line" ]]; then
+      # none selected — stop (no implement, no worktree, no gh pr create)
+      continue
+    fi
+
+    # Parse: inchworm: selected F-<id> — <title>
+    find_id=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-\([^ ]*\).*/\1/p')
+    find_title=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-[^ ]* — //p')
+    if [[ -z "$find_id" ]]; then
+      continue
+    fi
+    [[ -n "$find_title" ]] || find_title="$find_id"
+
+    run_implement_and_pr "$repo_path" "$repo_yml" "$find_id" "$find_title" "$today"
+  done < <(list_registered_repos)
+}
+
+cmd_status() {
+  local weekday hour minute
+  local repo_path repo_yml last_run blocking window_label
+  local draft_url draft_head
+
+  read -r _ weekday hour minute <<<"$(parse_clock)"
+  window_label="$(window_label_for "$weekday" "$hour" "$minute")"
+
+  while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    [[ -z "$repo_path" ]] && continue
+    repo_yml="${repo_path}/.inchworm.yml"
+    last_run="null"
+    if [[ -f "$repo_yml" ]]; then
+      last_run=$(ruby_yaml get "$repo_yml" "state.last_run_date")
+    fi
+
+    blocking=$(find_blocking_draft "$repo_path" || true)
+    printf 'repo: %s\n' "$repo_path"
+    printf '  last_run_date: %s\n' "$last_run"
+    printf '  create_window: %s\n' "$window_label"
+    if [[ -n "$blocking" ]]; then
+      draft_url=${blocking%%$'\t'*}
+      draft_head=${blocking#*$'\t'}
+      printf '  draft: blocking %s (%s)\n' "${draft_head:-inchworm/}" "${draft_url:-unknown}"
+    else
+      printf '  draft: none blocking\n'
+    fi
+  done < <(list_registered_repos)
+}
+
+main() {
+  if [[ $# -lt 1 ]]; then
+    usage >&2
+    exit 1
+  fi
+
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    init)
+      shift
+      cmd_init "$@"
+      ;;
+    run)
+      shift
+      cmd_run "$@"
+      ;;
+    status)
+      shift
+      cmd_status "$@"
+      ;;
+    launchd-setup)
+      shift
+      cmd_launchd_setup "$@"
+      ;;
+    *)
+      usage >&2
+      die "unknown command: $1"
+      ;;
+  esac
+}
+
+main "$@"
