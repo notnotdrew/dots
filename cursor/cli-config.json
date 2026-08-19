@@ -84,7 +84,8 @@
       "Shell(cp)",
       "Shell(chmod)",
       "Shell(nl)",
-      "Shell(git stash)"
+      "Shell(git stash)",
+      "Shell(git config)"
     ],
     "deny": []
   },
