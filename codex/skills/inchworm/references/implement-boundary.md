@@ -32,6 +32,8 @@ After discover selects a find, the coordinator runs implement then (on success) 
 
 ## Failure / no second pick
 
+`too_large` is a correct result, not a fallback: if you cannot bound who inherits the retry, fail, or report policy, or the safe version needs that seam moved first, end the day without a PR (see [shared-seam](shared-seam.md)).
+
 On implement failure (`fail` / agent non-zero / push fail / draft fail / `too_large` / cannot resolve `origin/develop`):
 
 - Mark the selected find `deferred` or `too_large`
