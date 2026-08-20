@@ -465,12 +465,79 @@ EOF
   chmod +x "$mock_path"
 }
 
+# Per-repo PR lists for `inchworm review` (keyed by PWD, which gh_pr_list_json cds into).
+write_review_gh_mock() {
+  mock_path=$1
+  mkdir -p "$TEST_ROOT/review-gh-lists"
+  cat >"$mock_path" <<EOF
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "\$*" >>"${TEST_ROOT}/gh-invocations.log"
+pr_cmd=""
+prev=""
+for arg in "\$@"; do
+  if [ "\$prev" = "pr" ]; then
+    pr_cmd="\$arg"
+    break
+  fi
+  prev="\$arg"
+done
+if [ "\$pr_cmd" = "list" ]; then
+  key=\$(printf '%s' "\$PWD" | sed 's|/|_|g')
+  list_file="${TEST_ROOT}/review-gh-lists/\${key}.json"
+  if [ -f "\$list_file" ]; then
+    cat "\$list_file"
+    exit 0
+  fi
+  printf '%s\n' '[]'
+  exit 0
+fi
+printf '%s\n' '[]'
+exit 0
+EOF
+  chmod +x "$mock_path"
+}
+
+write_review_gh_list() {
+  repo_path=$1
+  json=$2
+  mkdir -p "$TEST_ROOT/review-gh-lists"
+  key=$(printf '%s' "$repo_path" | sed 's|/|_|g')
+  printf '%s\n' "$json" >"$TEST_ROOT/review-gh-lists/${key}.json"
+}
+
+setup_review_command_env() {
+  suffix=${1:-review}
+  config_dir="$TEST_ROOT/$suffix-config"
+  repo_dir="$TEST_ROOT/$suffix-repo"
+  mock_gh="$TEST_ROOT/$suffix-gh"
+  rm -rf "$TEST_ROOT/review-gh-lists"
+  mkdir -p "$config_dir"
+  make_repo "$repo_dir"
+  seed_registered_repo "$repo_dir" "$config_dir" "null"
+  write_review_gh_mock "$mock_gh"
+  : >"$TEST_ROOT/agent-invocations.log"
+  : >"$TEST_ROOT/gh-invocations.log"
+  : >"$TEST_ROOT/wt-invocations.log"
+}
+
+run_review_cmd() {
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_AGENT="${INCHWORM_AGENT:-$TEST_ROOT/fake-bin/agent}"
+    unset INCHWORM_REPO 2>/dev/null || true
+    run_inchworm review "$@"
+  )
+}
+
 write_fake_agent_binaries() {
   # If production shells out to agent/codex, these record argv for safety checks.
   mkdir -p "$TEST_ROOT/fake-bin"
   for name in agent codex; do
     cat >"$TEST_ROOT/fake-bin/$name" <<EOF
 #!/usr/bin/env bash
+printf '%s\n' "cwd=\$(pwd)" >>"$TEST_ROOT/agent-invocations.log"
 printf '%s\n' "$name \$*" >>"$TEST_ROOT/agent-invocations.log"
 exit 0
 EOF
@@ -4537,6 +4604,257 @@ test_run_malformed_gh_pr_list_treated_as_no_blocking() {
   pass "$test_name"
 }
 
+# --- human `inchworm review` (not the daily Standard pr-review path) ---------
+
+review_worktree_path_for() {
+  repo=$1
+  branch=$2
+  printf '%s.%s\n' "$repo" "${branch//\//-}"
+}
+
+test_review_usage_mentions_review() {
+  test_name="usage lists the review command"
+  out_file="$TEST_ROOT/review-usage-out.txt"
+  run_inchworm -h >"$out_file" 2>&1
+  if grep -qE '(^|[[:space:]])review([[:space:]]|$)' "$out_file"; then
+    pass "$test_name"
+    return
+  fi
+  fail "$test_name" "expected usage to mention review" "output:" "$(cat "$out_file")"
+}
+
+test_review_zero_drafts_exits_without_agent() {
+  test_name="review with no matching drafts prints that and exits 0"
+  setup_review_command_env "review-zero"
+  write_review_gh_list "$repo_dir" '[]'
+  out_file="$TEST_ROOT/review-zero-out.txt"
+  run_review_cmd >"$out_file" 2>&1
+  status=$?
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -qi 'no open drafts' "$out_file"; then
+    problems="${problems}expected a no-open-drafts message"$'\n'
+  fi
+  if [ -s "$TEST_ROOT/agent-invocations.log" ]; then
+    problems="${problems}must not launch agent"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+  if grep -E '(^|[[:space:]])switch([[:space:]]|$)' "$TEST_ROOT/wt-invocations.log" >/dev/null 2>&1; then
+    problems="${problems}must not wt switch"$'\n'"$(cat "$TEST_ROOT/wt-invocations.log")"$'\n'
+  fi
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_review_lists_gate_shaped_drafts_not_hand_cut() {
+  test_name="review lists recorded or dated drafts across repos; omits hand-cut and ready PRs"
+  setup_review_command_env "review-list"
+  repo_a=$repo_dir
+  repo_b="$TEST_ROOT/review-list-repo-b"
+  make_repo "$repo_b"
+  cp "$repo_a/.inchworm.yml" "$repo_b/.inchworm.yml"
+  cat >"$config_dir/config.yml" <<EOF
+version: 1
+defaults:
+  runtime: cursor-cli
+  schedule:
+    days: [mon, tue, wed, thu, fri]
+    window_local: "08:00-15:00"
+    catch_up_missed_days: false
+    poll_interval_hint: 1h
+repos:
+  - path: ${repo_a}
+  - path: ${repo_b}
+EOF
+  ruby -e '
+    require "yaml"
+    path = ARGV.fetch(0)
+    data = YAML.load_file(path)
+    data["state"] ||= {}
+    data["state"]["active_draft_pr"] = "https://example.test/pr/44"
+    File.write(path, YAML.dump(data))
+  ' "$repo_a/.inchworm.yml"
+
+  write_review_gh_list "$repo_a" \
+    "[{\"number\":42,\"url\":\"https://example.test/pr/42\",\"isDraft\":true,\"headRefName\":\"${TEST_BRANCH_PREFIX}/foo-20260817\"},{\"number\":43,\"url\":\"https://example.test/pr/43\",\"isDraft\":true,\"headRefName\":\"${TEST_BRANCH_PREFIX}/refactor-widgets\"},{\"number\":7,\"url\":\"https://example.test/pr/7\",\"isDraft\":false,\"headRefName\":\"${TEST_BRANCH_PREFIX}/bar-20260817\"},{\"number\":44,\"url\":\"https://example.test/pr/44\",\"isDraft\":true,\"headRefName\":\"legacy/old-naming\"}]"
+  write_review_gh_list "$repo_b" \
+    "[{\"number\":50,\"url\":\"https://example.test/pr/50\",\"isDraft\":true,\"headRefName\":\"${TEST_BRANCH_PREFIX}/other-20260818\"}]"
+
+  out_file="$TEST_ROOT/review-list-out.txt"
+  run_review_cmd >"$out_file" 2>&1
+  status=$?
+  problems=""
+  if [ "$status" -eq 0 ]; then
+    problems="${problems}non-TTY multi-draft review must fail instead of hanging"$'\n'
+  fi
+  for needle in "$repo_a" "$repo_b" "${TEST_BRANCH_PREFIX}/foo-20260817" \
+    "https://example.test/pr/42" "legacy/old-naming" "https://example.test/pr/44" \
+    "${TEST_BRANCH_PREFIX}/other-20260818" "https://example.test/pr/50"; do
+    if ! grep -F -- "$needle" "$out_file" >/dev/null; then
+      problems="${problems}list missing: $needle"$'\n'
+    fi
+  done
+  if grep -F "${TEST_BRANCH_PREFIX}/refactor-widgets" "$out_file" >/dev/null; then
+    problems="${problems}hand-cut draft without a date suffix must not be listed"$'\n'
+  fi
+  if grep -F "https://example.test/pr/7" "$out_file" >/dev/null; then
+    problems="${problems}ready (non-draft) PR must not be listed"$'\n'
+  fi
+  if [ -s "$TEST_ROOT/agent-invocations.log" ]; then
+    problems="${problems}multi-draft non-TTY must not launch agent"$'\n'
+  fi
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "exit=$status" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_review_unique_draft_switches_worktree_and_launches_agent() {
+  test_name="unique review draft switches Worktrunk and launches a relic/force-with-lease agent"
+  setup_review_command_env "review-unique"
+  branch="${TEST_BRANCH_PREFIX}/foo-20260817"
+  git -C "$repo_dir" branch "$branch" develop
+  write_review_gh_list "$repo_dir" \
+    "[{\"number\":42,\"url\":\"https://example.test/pr/42\",\"isDraft\":true,\"headRefName\":\"${branch}\"}]"
+  expected_wt=$(review_worktree_path_for "$repo_dir" "$branch")
+
+  out_file="$TEST_ROOT/review-unique-out.txt"
+  run_review_cmd >"$out_file" 2>&1
+  status=$?
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! assert_wt_switch_logged; then
+    problems="${problems}expected wt switch"$'\n'"$(cat "$TEST_ROOT/wt-invocations.log")"$'\n'
+  fi
+  if ! grep -F -- "$branch" "$TEST_ROOT/wt-invocations.log" >/dev/null; then
+    problems="${problems}wt switch must target $branch"$'\n'"$(cat "$TEST_ROOT/wt-invocations.log")"$'\n'
+  fi
+  if grep -F '.inchworm/worktrees' "$TEST_ROOT/wt-invocations.log" >/dev/null; then
+    problems="${problems}must not use .inchworm/worktrees/"$'\n'
+  fi
+  if ! grep -qiE 'relic' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent prompt must mention relics"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+  if ! grep -qF -- '--force-with-lease' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent prompt must mention --force-with-lease"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+  if ! grep -qiE 'discuss' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent prompt must prepare to discuss the PR"$'\n'
+  fi
+  if grep -E '(^|[[:space:]])-p([[:space:]]|$)|(^|[[:space:]])--print([[:space:]]|$)' \
+    "$TEST_ROOT/agent-invocations.log" >/dev/null; then
+    problems="${problems}review agent must be interactive (no -p/--print)"$'\n'
+  fi
+  if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent argv must not include --yolo/--force/--trust"$'\n'
+  fi
+  if ! grep -F "cwd=$expected_wt" "$TEST_ROOT/agent-invocations.log" >/dev/null; then
+    problems="${problems}agent must run in Worktrunk checkout $expected_wt"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_review_argv_skips_prompt_when_unique() {
+  test_name="review argv (PR number or repo path) selects uniquely without a TTY prompt"
+  setup_review_command_env "review-argv"
+  branch_a="${TEST_BRANCH_PREFIX}/foo-20260817"
+  branch_b="${TEST_BRANCH_PREFIX}/other-20260818"
+  git -C "$repo_dir" branch "$branch_a" develop
+  git -C "$repo_dir" branch "$branch_b" develop
+  write_review_gh_list "$repo_dir" \
+    "[{\"number\":42,\"url\":\"https://example.test/pr/42\",\"isDraft\":true,\"headRefName\":\"${branch_a}\"},{\"number\":50,\"url\":\"https://example.test/pr/50\",\"isDraft\":true,\"headRefName\":\"${branch_b}\"}]"
+
+  out_file="$TEST_ROOT/review-argv-out.txt"
+  run_review_cmd 42 >"$out_file" 2>&1
+  status=$?
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}PR number argv expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -F -- "$branch_a" "$TEST_ROOT/wt-invocations.log" >/dev/null; then
+    problems="${problems}number 42 must switch $branch_a"$'\n'
+  fi
+  if grep -F -- "$branch_b" "$TEST_ROOT/wt-invocations.log" >/dev/null; then
+    problems="${problems}number 42 must not switch $branch_b"$'\n'
+  fi
+
+  repo_a=$repo_dir
+  repo_b="$TEST_ROOT/review-argv-repo-b"
+  make_repo "$repo_b"
+  cp "$repo_a/.inchworm.yml" "$repo_b/.inchworm.yml"
+  cat >"$config_dir/config.yml" <<EOF
+version: 1
+defaults:
+  runtime: cursor-cli
+  schedule:
+    days: [mon, tue, wed, thu, fri]
+    window_local: "08:00-15:00"
+    catch_up_missed_days: false
+    poll_interval_hint: 1h
+repos:
+  - path: ${repo_a}
+  - path: ${repo_b}
+EOF
+  git -C "$repo_b" branch "$branch_b" develop
+  write_review_gh_list "$repo_b" \
+    "[{\"number\":50,\"url\":\"https://example.test/pr/50\",\"isDraft\":true,\"headRefName\":\"${branch_b}\"}]"
+  : >"$TEST_ROOT/wt-invocations.log"
+  : >"$TEST_ROOT/agent-invocations.log"
+  run_review_cmd "$repo_b" >>"$out_file" 2>&1
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}repo path argv expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -F -- "$branch_b" "$TEST_ROOT/wt-invocations.log" >/dev/null; then
+    problems="${problems}repo path must switch $branch_b"$'\n'"$(cat "$TEST_ROOT/wt-invocations.log")"$'\n'
+  fi
+  expected_wt=$(review_worktree_path_for "$repo_b" "$branch_b")
+  if ! grep -F "cwd=$expected_wt" "$TEST_ROOT/agent-invocations.log" >/dev/null; then
+    problems="${problems}repo path must launch agent in $expected_wt"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_review_skill_keeps_human_command_distinct() {
+  test_name="skill docs describe inchworm review separately from daily Standard pr-review"
+  skill_md="$SKILL_ROOT/SKILL.md"
+  corpus_files="$skill_md"
+  if [ -d "$SKILL_ROOT/references" ]; then
+    corpus_files="$corpus_files $(find "$SKILL_ROOT/references" -type f 2>/dev/null | head -n 50)"
+  fi
+  blob=$(cat $corpus_files 2>/dev/null || true)
+  problems=""
+  if ! printf '%s' "$blob" | grep -qiE 'inchworm review'; then
+    problems="${problems}skill/references must mention inchworm review"$'\n'
+  fi
+  if ! printf '%s' "$blob" | grep -qiE 'relic'; then
+    problems="${problems}skill/references must mention the relic sweep"$'\n'
+  fi
+  if ! printf '%s' "$blob" | grep -qiE 'force-with-lease'; then
+    problems="${problems}skill/references must mention force-with-lease for review"$'\n'
+  fi
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
@@ -4598,6 +4916,12 @@ run_test test_run_stale_worktree_path_still_opens_draft_pr
 run_test test_run_notify_failure_prints_fallback
 run_test test_run_same_day_retry_after_draft_clears
 run_test test_run_malformed_gh_pr_list_treated_as_no_blocking
+run_test test_review_usage_mentions_review
+run_test test_review_zero_drafts_exits_without_agent
+run_test test_review_lists_gate_shaped_drafts_not_hand_cut
+run_test test_review_unique_draft_switches_worktree_and_launches_agent
+run_test test_review_argv_skips_prompt_when_unique
+run_test test_review_skill_keeps_human_command_distinct
 
 if [ "$tests_failed" -ne 0 ]; then
   printf '%s\n' "$tests_failed of $tests_run inchworm tests failed"

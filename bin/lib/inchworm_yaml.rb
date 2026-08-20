@@ -37,6 +37,30 @@ def dump_yaml(path, data)
   File.write(path, YAML.dump(data))
 end
 
+# Same recognition as the create-window draft gate: open draft whose URL is the
+# recorded active_draft_pr, or whose head matches <prefix>/.+-<YYYYMMDD>.
+def matching_drafts(prs, branch_prefix, recorded_url)
+  recorded_url = "" if recorded_url.nil? || recorded_url == "null"
+  managed_branch = /\A#{Regexp.escape(branch_prefix)}\/.+-\d{8}\z/
+  Array(prs).select do |pr|
+    next false unless pr.is_a?(Hash)
+    next false unless pr["isDraft"] == true
+
+    url = pr["url"].to_s
+    head = pr["headRefName"].to_s
+    next true if !recorded_url.empty? && url == recorded_url
+
+    !branch_prefix.empty? && managed_branch.match?(head)
+  end
+end
+
+def parse_gh_pr_list(raw)
+  prs = JSON.parse(raw)
+  prs.is_a?(Array) ? prs : []
+rescue JSON::ParserError
+  []
+end
+
 def repo_paths(data)
   repos = data["repos"] || data[:repos] || []
   Array(repos).map do |entry|
@@ -142,29 +166,24 @@ when "find_blocking_draft"
   # The trailing date is what separates a generated branch from those.
   branch_prefix = ARGV[1].to_s
   recorded_url = ARGV[2].to_s
-  recorded_url = "" if recorded_url == "null"
-  managed_branch = /\A#{Regexp.escape(branch_prefix)}\/.+-\d{8}\z/
-  begin
-    prs = JSON.parse($stdin.read)
-  rescue JSON::ParserError
-    prs = []
-  end
-  prs = [] unless prs.is_a?(Array)
-  blocking = prs.find do |pr|
-    next false unless pr.is_a?(Hash)
-    next false unless pr["isDraft"] == true
-
-    url = pr["url"].to_s
-    head = pr["headRefName"].to_s
-    next true if !recorded_url.empty? && url == recorded_url
-
-    !branch_prefix.empty? && managed_branch.match?(head)
-  end
+  blocking = matching_drafts(parse_gh_pr_list($stdin.read), branch_prefix, recorded_url).first
   if blocking
     url = blocking["url"].to_s
     number = blocking["number"]
     head = blocking["headRefName"].to_s
     puts [url.empty? ? "PR##{number}" : url, head].join("\t")
+  end
+
+when "list_matching_drafts"
+  # list_matching_drafts <branch_prefix> [recorded_url]; stdin gh JSON.
+  # One TSV line per matching draft: number, url, headRefName.
+  branch_prefix = ARGV[1].to_s
+  recorded_url = ARGV[2].to_s
+  matching_drafts(parse_gh_pr_list($stdin.read), branch_prefix, recorded_url).each do |pr|
+    number = pr["number"]
+    url = pr["url"].to_s
+    head = pr["headRefName"].to_s
+    puts [number, url.empty? ? "PR##{number}" : url, head].join("\t")
   end
 
 when "parse_now"

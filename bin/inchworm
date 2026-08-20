@@ -5,6 +5,7 @@
 #   inchworm init
 #   inchworm run
 #   inchworm status
+#   inchworm review
 
 set -euo pipefail
 
@@ -35,11 +36,12 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: inchworm <init|run|status|launchd-setup>
+Usage: inchworm <init|run|status|review|launchd-setup>
 
   init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
   run            Eligible repos: stamp + discover + implement + draft PR + review/fix/ping
   status         Show registered repos, last_run_date, create window, draft gate
+  review         List open drafts, switch Worktrunk, launch a discuss agent
   launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
 
 New machine:
@@ -393,6 +395,114 @@ find_blocking_draft() {
   recorded_url=$(ruby_yaml get "$repo_yml" "state.active_draft_pr")
   json=$(gh_pr_list_json "$repo_path") || json='[]'
   printf '%s' "$json" | ruby_yaml find_blocking_draft "$branch_prefix" "$recorded_url"
+}
+
+# All gate-shaped open drafts across registered repos: repo, number, url, head.
+collect_open_review_drafts() {
+  local repo_path repo_yml json branch_prefix recorded_url
+  while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    [[ -z "$repo_path" ]] && continue
+    repo_yml="${repo_path}/.inchworm.yml"
+    [[ -f "$repo_yml" ]] || continue
+    branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
+    recorded_url=$(ruby_yaml get "$repo_yml" "state.active_draft_pr")
+    json=$(gh_pr_list_json "$repo_path") || json='[]'
+    printf '%s' "$json" | ruby_yaml list_matching_drafts "$branch_prefix" "$recorded_url" \
+      | while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        printf '%s\t%s\n' "$repo_path" "$line"
+      done
+  done < <(list_registered_repos)
+}
+
+print_review_draft_list() {
+  local index=1 line repo_path number url head
+  printf 'inchworm: open drafts:\n'
+  for line in "${REVIEW_DRAFTS[@]}"; do
+    IFS=$'\t' read -r repo_path number url head <<<"$line"
+    printf '  %d. %s  %s  %s\n' "$index" "$repo_path" "$head" "$url"
+    index=$((index + 1))
+  done
+}
+
+# Pick one collected draft line from a PR URL, PR number, or repo path.
+match_review_selector() {
+  local selector=$1
+  local line repo_path number url head repo_abs selector_path
+  local matches=()
+
+  if [[ "$selector" == http://* || "$selector" == https://* ]]; then
+    for line in "${REVIEW_DRAFTS[@]}"; do
+      IFS=$'\t' read -r repo_path number url head <<<"$line"
+      if [[ "$url" == "$selector" ]]; then
+        matches+=("$line")
+      fi
+    done
+  elif [[ -d "$selector" ]]; then
+    selector_path=$(CDPATH= cd "$selector" && pwd)
+    for line in "${REVIEW_DRAFTS[@]}"; do
+      IFS=$'\t' read -r repo_path number url head <<<"$line"
+      repo_abs=$(CDPATH= cd "$repo_path" 2>/dev/null && pwd) || repo_abs=$repo_path
+      if [[ "$repo_abs" == "$selector_path" ]]; then
+        matches+=("$line")
+      fi
+    done
+  elif [[ "$selector" =~ ^[0-9]+$ ]]; then
+    for line in "${REVIEW_DRAFTS[@]}"; do
+      IFS=$'\t' read -r repo_path number url head <<<"$line"
+      if [[ "$number" == "$selector" ]]; then
+        matches+=("$line")
+      fi
+    done
+  else
+    die "unknown review selector: $selector"
+  fi
+
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    die "no open draft matches $selector"
+  fi
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    die "selector $selector matches ${#matches[@]} drafts; pass a PR URL or number"
+  fi
+  printf '%s\n' "${matches[0]}"
+}
+
+review_agent_prompt() {
+  cat <<'EOF'
+Review the PR for this branch and be prepared to discuss it. Before discussing, check for odd agent-like relics left by the agent that worked on it: unnecessary or overly verbose comments, "tombstone" comments or specs, and similar leftovers. If you find any, address them and fold them into the existing commits on this branch only (amend or squash; do not add a stack of cleanup commits named after tooling). Then git push --force-with-lease. Briefly summarize those changes. If there are no relics, say so and discuss the PR. Do not name the daily runner in commit messages or PR copy; path-shaped mentions are fine. Never force-push develop or main.
+EOF
+}
+
+# Attach or create a Worktrunk checkout of an existing draft branch (not origin/develop).
+attach_review_worktree() {
+  local repo_path=$1
+  local branch_name=$2
+  local switch_output worktree_path
+  local -a switch_args
+
+  if ! command -v "$WT_BIN" >/dev/null 2>&1; then
+    printf 'inchworm: Worktrunk (wt) is required but not found\n' >&2
+    return 1
+  fi
+
+  git -C "$repo_path" fetch origin --prune >/dev/null 2>&1 || true
+
+  switch_args=(switch --no-cd --format json --clobber)
+  if git -C "$repo_path" show-ref --verify --quiet "refs/heads/${branch_name}"; then
+    switch_args+=("$branch_name")
+  elif git -C "$repo_path" show-ref --verify --quiet "refs/remotes/origin/${branch_name}"; then
+    switch_args+=(--create --base="origin/${branch_name}" "$branch_name")
+  else
+    printf 'inchworm: branch %s not found locally or on origin\n' "$branch_name" >&2
+    return 1
+  fi
+
+  if ! switch_output=$("$WT_BIN" -C "$repo_path" -y "${switch_args[@]}"); then
+    return 1
+  fi
+  worktree_path=$(printf '%s\n' "$switch_output" | worktree_path_from_wt_json) || return 1
+  ensure_workspace_trusted "$worktree_path" "$repo_path"
+  printf '%s\n' "$worktree_path"
 }
 
 # Create-window label for status: open | closed (weekend|before 08:00|at/after 15:00)
@@ -1517,6 +1627,62 @@ cmd_run() {
   done < <(list_registered_repos)
 }
 
+cmd_review() {
+  local selector="" selected repo_path number url head worktree_path
+  local agent_bin prompt choice line
+  local -a REVIEW_DRAFTS
+
+  if [[ $# -gt 1 ]]; then
+    die "usage: inchworm review [pr-url|number|repo-path]"
+  fi
+  if [[ $# -eq 1 ]]; then
+    selector=$1
+  fi
+
+  REVIEW_DRAFTS=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    REVIEW_DRAFTS+=("$line")
+  done < <(collect_open_review_drafts)
+
+  if [[ ${#REVIEW_DRAFTS[@]} -eq 0 ]]; then
+    printf 'inchworm: no open drafts\n'
+    return 0
+  fi
+
+  selected=""
+  if [[ -n "$selector" ]]; then
+    selected=$(match_review_selector "$selector") || exit 1
+  elif [[ ${#REVIEW_DRAFTS[@]} -eq 1 ]]; then
+    selected=${REVIEW_DRAFTS[0]}
+  elif [[ -t 0 && -t 1 ]]; then
+    print_review_draft_list
+    printf 'inchworm: select a draft [1-%d]: ' "${#REVIEW_DRAFTS[@]}"
+    read -r choice
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || ((choice < 1 || choice > ${#REVIEW_DRAFTS[@]})); then
+      die "invalid selection"
+    fi
+    selected=${REVIEW_DRAFTS[choice - 1]}
+  else
+    print_review_draft_list
+    die "select a draft with a PR URL, number, or repo path"
+  fi
+
+  IFS=$'\t' read -r repo_path number url head <<<"$selected"
+  [[ -n "$repo_path" && -n "$head" ]] || die "could not parse selected draft"
+
+  worktree_path=$(attach_review_worktree "$repo_path" "$head") \
+    || die "could not switch Worktrunk for $head"
+  agent_bin="${INCHWORM_AGENT:-agent}"
+  if ! command -v "$agent_bin" >/dev/null 2>&1; then
+    die "agent is required but not found"
+  fi
+  prompt=$(review_agent_prompt)
+  printf 'inchworm: review %s (%s) in %s\n' "$url" "$head" "$worktree_path"
+  cd "$worktree_path" || die "could not enter $worktree_path"
+  exec "$agent_bin" "$prompt"
+}
+
 cmd_status() {
   local weekday hour minute
   local repo_path repo_yml last_run blocking window_label
@@ -1569,6 +1735,10 @@ main() {
     status)
       shift
       cmd_status "$@"
+      ;;
+    review)
+      shift
+      cmd_review "$@"
       ;;
     launchd-setup)
       shift

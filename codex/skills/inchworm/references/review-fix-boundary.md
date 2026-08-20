@@ -50,3 +50,7 @@ Rules:
 ## Agent safety
 
 Never pass `--yolo`, `--force`, or `--trust` to implementer, reviewer, or fixer agents.
+
+## Human `inchworm review`
+
+`inchworm review` is a separate operator command: list open drafts, Worktrunk-switch, interactive discuss agent, relic fold + `--force-with-lease`. It is not this daily Standard `pr-review` / fixer / ping sequence and does not auto-ready the draft. See [human-review](human-review.md).

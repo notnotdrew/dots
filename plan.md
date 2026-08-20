@@ -244,9 +244,35 @@ Scan **registered repos** (global config, `INCHWORM_REPO` if set). List all matc
 3. Add selection + Worktrunk switch + agent launch with the relic prompt. Tests for unique argv skip, non-TTY multi-draft failure, and recorded `wt` + agent invocations.
 4. Docs + `./bin/test-inchworm` green.
 
+### Execution Status
+
+Status: completed
+Updated: 2026-08-20
+ExecutionMode: single-agent
+
+Strict tester/engineer subagents were skipped: one bash CLI plus sociable `./bin/test-inchworm` cases, same as Prompts 1–2. TDD still applied (failing tests first, then production).
+
+### Automated Verification
+
+- `./bin/test-inchworm`
+- Passed (59 tests)
+
+### Review And Simplification
+
+- Shared draft matching in `matching_drafts` / `list_matching_drafts` instead of a second regex.
+- `REVIEW_DRAFTS` is local to `cmd_review`. Attach uses the draft branch (or `origin/<branch>`), not `origin/develop`.
+
+### Manual Verification Result
+
+- None required beyond the harness.
+
+### Blockers Or Follow-Up Notes
+
+- None. This was the last of the three sequential prompts.
+
 ## Report
 
-- Command UX (list columns, argv)
-- How Worktrunk switch and agent launch work
-- Tests added
-- Whether the session is interactive or `-p` one-shot, and why
+- **Command UX:** `inchworm review [pr-url|number|repo-path]`. List lines are `N. <repo>  <branch>  <url>`. Zero drafts: `inchworm: no open drafts`, exit 0. One draft or unique argv skips the prompt. TTY + several: numbered select. Non-TTY + several + no argv: print the list and error.
+- **Worktrunk + agent:** `attach_review_worktree` runs `wt switch --no-cd --format json --clobber` on the existing branch (or `--create --base=origin/<branch>`). Trust the physical checkout, `cd` there, `exec agent "$prompt"` with no `-p`/`--print`/`--yolo`/`--force`/`--trust`. The child prompt owns relics, amend/squash on this branch, and `git push --force-with-lease`.
+- **Tests:** usage; zero drafts; gate-shaped list (dated + recorded URL, not hand-cut or ready); unique draft switches sibling Worktrunk path and logs relic/`--force-with-lease`/discuss; argv number and repo path; skill corpus.
+- **Interactive:** Cursor `agent` takes an initial prompt without `-p` and stays in a discussable session. Daily implement/scouts still use `-p` because they are one-shot.
