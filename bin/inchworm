@@ -495,10 +495,11 @@ PR_DRAFT_DIR=".inchworm/pr"
 
 # Anything a human sees — branch, commit, PR — is written as the author's own
 # work. This is the guard against the runner naming itself in that copy.
-# The name only leaks when it reads as a word: `.inchworm/pr` and `.inchworm.yml`
-# are operator-facing paths a reviewer may legitimately see mentioned, so a
-# leading dot is excluded (plain `grep -w` would still match them).
-TOOL_NAME_RE='(^|[^[:alnum:]_.])inchworm([^[:alnum:]_]|$)'
+# The name only leaks when it reads as a word. Path components are exempt: a
+# leading `.` or `/` does not count (`.inchworm/pr`, `bin/inchworm`). A name
+# that *starts* the string still counts (`inchworm/…` as a branch). Plain
+# `grep -w` would still match those paths.
+TOOL_NAME_RE='(^|[^[:alnum:]_./])inchworm([^[:alnum:]_]|$)'
 
 mentions_tool_name() {
   printf '%s' "$1" | grep -qiE "$TOOL_NAME_RE"
@@ -878,6 +879,48 @@ fixer_push_fixture() {
   fi
 }
 
+# Put the worktree back on the SHA the fixer started at so local HEAD matches
+# the already-pushed implement history. The fix stays off the branch.
+restore_fixer_head() {
+  local worktree_path=$1
+  local head_before=$2
+
+  if [[ -n "$head_before" ]]; then
+    if ! git -C "$worktree_path" reset -q --hard "$head_before"; then
+      printf 'inchworm: could not restore the checkout to the pre-fix commit\n' >&2
+      return 1
+    fi
+  fi
+  printf 'inchworm: the fix stayed local; this checkout matches the pre-fix history\n' >&2
+}
+
+pre_fix_commit_is_clean() {
+  local worktree_path=$1
+  local head_before=$2
+  local implement_full
+
+  [[ -n "$head_before" ]] || return 1
+  implement_full=$(git -C "$worktree_path" log -1 --format='%B' "$head_before" 2>/dev/null || printf '')
+  [[ -n "${implement_full//[[:space:]]/}" ]] || return 1
+  ! mentions_tool_name "$implement_full"
+}
+
+find_fallback_is_clean() {
+  local fallback_subject=$1
+  local fallback_body=$2
+
+  [[ -n "${fallback_subject//[[:space:]]/}" ]] || return 1
+  ! mentions_tool_name "$fallback_subject" && ! mentions_tool_name "$fallback_body"
+}
+
+refuse_unpublished_fix() {
+  local worktree_path=$1
+  local head_before=$2
+
+  restore_fixer_head "$worktree_path" "$head_before" || true
+  printf 'inchworm: history after the fix still names the runner — refusing to push it\n' >&2
+}
+
 # The human is pinged next, so by then the fix has to be on the remote draft
 # branch and the history has to read like one authored change. The fixer's own
 # commits plus any leftovers are runner bookkeeping no reviewer asked for, so
@@ -888,7 +931,7 @@ land_fixer_work() {
   local head_before=$3
   local subject=$4
   local body=$5
-  local base_ref head_after
+  local base_ref head_after squash_subject squash_body
 
   base_ref=$(rewrite_base_ref "$repo_path")
   commit_leftover_changes "$worktree_path" "$subject" "$body"
@@ -898,9 +941,20 @@ land_fixer_work() {
     return 0
   fi
 
+  if pre_fix_commit_is_clean "$worktree_path" "$head_before"; then
+    squash_subject=$(git -C "$worktree_path" log -1 --format='%s' "$head_before")
+    squash_body=$(git -C "$worktree_path" log -1 --format='%b' "$head_before")
+  elif find_fallback_is_clean "$subject" "$body"; then
+    squash_subject=$subject
+    squash_body=$body
+  else
+    refuse_unpublished_fix "$worktree_path" "$head_before"
+    return 1
+  fi
+
   printf 'inchworm: squashing the fixed branch into one authored commit\n' >&2
-  if ! squash_onto_authored_commit "$worktree_path" "$base_ref" "$subject" "$body"; then
-    printf 'inchworm: history after the fix still names the runner — refusing to push it\n' >&2
+  if ! squash_onto_authored_commit "$worktree_path" "$base_ref" "$squash_subject" "$squash_body"; then
+    refuse_unpublished_fix "$worktree_path" "$head_before"
     return 1
   fi
 
@@ -984,7 +1038,7 @@ ping_draft_pr() {
 
 # After successful draft PR: review once → optional one fix pass (rewritten and
 # pushed onto the draft branch) → ping. No second review. The find's subject and
-# body are the fallback the post-fix rewrite commits under.
+# body are the fallback when the pre-fix implement commit cannot be reused.
 run_review_fix_ping() {
   local repo_path=$1
   local worktree_path=$2

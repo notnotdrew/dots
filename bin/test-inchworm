@@ -69,16 +69,17 @@
 #
 # After the fixer pass (fixture or live):
 #   1. Commit leftover fixer edits under the find's subject/body
-#   2. Squash origin/develop..HEAD into one authored commit (reuse the sanitize
-#      rewrite) — implement + fix collapse; re-check the replacement message
+#   2. Squash origin/develop..HEAD into one authored commit (always). Message:
+#      pre-fix implement commit if present and clean; else the find fallback
+#      if that is clean; else restore HEAD to the pre-fix SHA, do not push
 #   3. Update the existing draft branch: git push --force-with-lease origin HEAD
 #      (the first implement push stays a non-force `git push -u origin HEAD`;
 #      never force-push develop / main / master)
 #   4. Then ping, then remove the worktree (keep the branch)
 #   Fixture mode skips the network for both pushes but still rewrites locally,
 #   and logs the two pushes distinguishably (first push vs post-fix push).
-#   A replacement message that still names the runner → fixer fail, no push;
-#   the coordinator still pings (existing ping-even-on-fixer-fail contract).
+#   No clean squash message, or a failed squash → restore pre-fix HEAD, fixer
+#   fail, no push; the coordinator still pings.
 #
 # Blocking mapping for fixer (open decision #6, locked for v1):
 #   Blocking = ledger findings with Class: blocking AND Disposition: verified
@@ -533,8 +534,8 @@ EOF
   chmod +x "$agent_path"
 }
 
-# Live implementer mock whose commit body mentions the gitignored draft path but
-# never the runner itself — nothing here should be rewritten.
+# Live implementer mock whose commit body mentions operator paths (including
+# bin/inchworm) but never the runner as a word — nothing here should be rewritten.
 write_path_mentioning_commit_agent() {
   agent_path=$1
   cat >"$agent_path" <<EOF
@@ -547,7 +548,33 @@ esac
 printf '%s\n' "implemented by agent" >"./agent-work.txt"
 git add -A
 git commit -q -m "Stop retrying failed exports" \\
-  -m "The PR copy lives in .inchworm/pr and the worktree in .inchworm/worktrees, so neither lands here."
+  -m "The PR copy lives in .inchworm/pr; the runner is bin/inchworm and also ~/dots/bin/inchworm."
+exit 0
+EOF
+  chmod +x "$agent_path"
+}
+
+# Same path-shaped mentions on the implement commit, plus a fixer pass that
+# leaves work to squash — the implementer body must still survive the squash.
+write_path_mentioning_implement_and_fix_agent() {
+  agent_path=$1
+  cat >"$agent_path" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "agent \$*" >>"$TEST_ROOT/agent-invocations.log"
+case "\$*" in
+  *"Work item:"*)
+    printf '%s\n' "implemented by agent" >"./agent-work.txt"
+    mkdir -p .inchworm/pr
+    printf '%s\n' "Stop retrying failed exports" >.inchworm/pr/title.txt
+    printf '%s\n' "One failed export blocks the queue." >.inchworm/pr/body.md
+    git add agent-work.txt
+    git commit -q -m "Stop retrying failed exports" \\
+      -m "The PR copy lives in .inchworm/pr; the runner is bin/inchworm."
+    ;;
+  *"Fix only verified"*)
+    printf '%s\n' "fixed by agent" >"./fix-work.txt"
+    ;;
+esac
 exit 0
 EOF
   chmod +x "$agent_path"
@@ -889,10 +916,11 @@ first_implement_branch() {
   git -C "$repo" branch --list "$TEST_BRANCH_PREFIX/*" 2>/dev/null | sed 's/^[*+ ]*//' | head -n 1
 }
 
-# The runner names itself only when the name reads as a word. Operator-facing
-# paths (.inchworm/pr, .inchworm.yml) are fine for a reviewer to see, so a
-# leading dot is excluded — plain grep -w would still match them.
-TOOL_NAME_WORD_RE='(^|[^[:alnum:]_.])inchworm([^[:alnum:]_]|$)'
+# The runner names itself only when the name reads as a word. Path-shaped
+# mentions (.inchworm/pr, bin/inchworm, …/inchworm) are fine: a leading dot or
+# slash is excluded the same way. `inchworm/…` at the start of a branch name
+# still matches. Plain grep -w would still trip on those paths.
+TOOL_NAME_WORD_RE='(^|[^[:alnum:]_./])inchworm([^[:alnum:]_]|$)'
 
 # The runner never names itself where a reviewer can see it.
 assert_no_tool_name_in_branch_commits() {
@@ -2388,7 +2416,10 @@ test_run_keeps_commit_that_only_names_the_draft_path() {
     fi
     body=$(git -C "$repo_dir" log -1 --format='%b' "$branch_name" 2>/dev/null || true)
     if ! printf '%s' "$body" | grep -Fq '.inchworm/pr'; then
-      problems="${problems}expected the agent's commit body to survive, got: $body"$'\n'
+      problems="${problems}expected the agent's .inchworm/pr mention to survive, got: $body"$'\n'
+    fi
+    if ! printf '%s' "$body" | grep -Fq 'bin/inchworm'; then
+      problems="${problems}expected the agent's bin/inchworm mention to survive, got: $body"$'\n'
     fi
     if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
       problems="${problems}a .inchworm/ path must not count as naming the runner"$'\n'
@@ -3305,8 +3336,10 @@ test_run_fixer_rewrite_pushes_authored_history() {
       problems="${problems}history after the fix must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/develop..$branch_name")"$'\n'
     fi
     subject=$(git -C "$repo_dir" log -1 --format='%s' "$branch_name" 2>/dev/null || true)
+    # Implementer named the runner, so the pre-fix commit is already the find
+    # fallback — squash must keep that authored subject, not invent another.
     if [ "$subject" != "Stop retrying failed exports" ]; then
-      problems="${problems}expected the find's subject on the squashed commit, got: $subject"$'\n'
+      problems="${problems}expected the authored pre-fix subject on the squashed commit, got: $subject"$'\n'
     fi
     for tracked in agent-work.txt fix-work.txt; do
       if ! branch_has_file "$repo_dir" "$branch_name" "$tracked"; then
@@ -3348,21 +3381,91 @@ test_run_fixer_rewrite_pushes_authored_history() {
   pass "$test_name"
 }
 
-test_run_dirty_fix_history_is_not_pushed() {
-  # When the only message left to squash under still names the runner, the fix
-  # stays local: a stale remote is better than a published leak. The human is
-  # pinged either way, so the fixer has to say the fix did not land.
-  test_name="Phase 5: fix history that still names the runner is not force-pushed; ping still happens"
+test_run_fixer_preserves_clean_implementer_message() {
+  # A dirty find title used to replace a good implementer message on squash.
+  # The agent's own copy is clean, so the draft opens; squash must keep that
+  # message and may publish the fix.
+  test_name="Phase 5: fixer squash keeps a clean implementer message when the find title names the runner"
   now="2026-08-18T10:00:00"
-  setup_eligible_run_env "dirty-fix"
-  live_agent="$TEST_ROOT/run-dirty-fix-agent"
+  setup_eligible_run_env "keep-implementer"
+  live_agent="$TEST_ROOT/run-keep-implementer-agent"
   write_clean_implement_dirty_fix_agent "$live_agent"
-  # The agent's own copy is clean, so the draft opens; only the coordinator's
-  # fallback subject — the find's title — names the runner.
   write_smell_candidates_json "$fixture_dir" \
     '[{"id":"export-retries","source":"errors","title":"Rename the inchworm helper","summary":"The helper name confuses readers.","rank":1,"status":"open"}]'
 
-  out_file="$TEST_ROOT/run-dirty-fix-out.txt"
+  out_file="$TEST_ROOT/run-keep-implementer-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE INCHWORM_FIX_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=blocking
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  branch_name=$(first_implement_branch "$repo_dir")
+  expected_pr_url="https://example.test/pr/99"
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}expected the draft PR to open from the agent's clean copy"$'\n'
+  fi
+  if [ -z "$branch_name" ]; then
+    problems="${problems}expected an implement branch"$'\n'
+  else
+    ahead=$(branch_commit_count "$repo_dir" "$branch_name")
+    if [ "$ahead" != "1" ]; then
+      problems="${problems}expected implement + fix squashed to one commit, got: $ahead"$'\n'
+    fi
+    subject=$(git -C "$repo_dir" log -1 --format='%s' "$branch_name" 2>/dev/null || true)
+    if [ "$subject" != "Rename the export retry helper" ]; then
+      problems="${problems}expected the implementer's subject to survive squash, got: $subject"$'\n'
+    fi
+    if ! branch_has_file "$origin_dir" "$branch_name" "fix-work.txt"; then
+      problems="${problems}a clean implementer message must allow the fix to be published"$'\n'
+    fi
+    if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
+      problems="${problems}squashed history must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/develop..$branch_name")"$'\n'
+    fi
+  fi
+  if grep -qiE 'refusing to push|fix stayed local' "$out_file"; then
+    problems="${problems}must not refuse to push when the implementer message is clean"$'\n'
+  fi
+  if ! assert_notify_once_with_pr_url "$TEST_ROOT/notify-invocations.log" "$expected_pr_url"; then
+    problems="${problems}expected one ping with $expected_pr_url"$'\n'
+  fi
+  if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent argv must not include --yolo/--force/--trust"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_path_mention_survives_fixer_squash() {
+  # bin/inchworm in a commit body is a path, not a name leak — implement must
+  # keep the message, and the fixer squash must not treat it as dirty.
+  test_name="Phase 5: commit body naming only bin/inchworm is kept through implement and fix"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "path-fix"
+  live_agent="$TEST_ROOT/run-path-fix-agent"
+  write_path_mentioning_implement_and_fix_agent "$live_agent"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"export-retries","source":"errors","title":"Reduce export retries","summary":"One failed export blocks the queue.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-path-fix-out.txt"
   (
     export INCHWORM_CONFIG_DIR="$config_dir"
     export INCHWORM_NOW="$now"
@@ -3381,6 +3484,73 @@ test_run_dirty_fix_history_is_not_pushed() {
   expected_pr_url="https://example.test/pr/99"
   problems=""
 
+  if grep -qi 'rewriting as a single commit' "$out_file"; then
+    problems="${problems}must not rewrite a commit that only names bin/inchworm"$'\n'
+  fi
+  if [ -z "$branch_name" ]; then
+    problems="${problems}expected an implement branch"$'\n'
+  else
+    subject=$(git -C "$repo_dir" log -1 --format='%s' "$branch_name" 2>/dev/null || true)
+    if [ "$subject" != "Stop retrying failed exports" ]; then
+      problems="${problems}expected the implementer's subject to survive squash, got: $subject"$'\n'
+    fi
+    body=$(git -C "$repo_dir" log -1 --format='%b' "$branch_name" 2>/dev/null || true)
+    if ! printf '%s' "$body" | grep -Fq 'bin/inchworm'; then
+      problems="${problems}expected bin/inchworm in the squashed body, got: $body"$'\n'
+    fi
+    if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
+      problems="${problems}bin/inchworm must not count as naming the runner"$'\n'
+    fi
+    if ! branch_has_file "$origin_dir" "$branch_name" "fix-work.txt"; then
+      problems="${problems}the fix must still be published"$'\n'
+    fi
+  fi
+  if ! assert_notify_once_with_pr_url "$TEST_ROOT/notify-invocations.log" "$expected_pr_url"; then
+    problems="${problems}expected one ping with $expected_pr_url"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_dirty_fix_history_is_not_pushed() {
+  # Implement + find can both be dirty only at implement, which Wave 1 defers.
+  # At fix, a squash that cannot publish must restore the already-pushed
+  # implement HEAD: leftover fix commits must not remain as local HEAD, the
+  # remote stays pre-fix, and the human is still pinged.
+  test_name="Phase 5: failed fixer squash restores pre-fix HEAD and is not force-pushed; ping still happens"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "dirty-fix"
+  live_agent="$TEST_ROOT/run-dirty-fix-agent"
+  write_clean_implement_dirty_fix_agent "$live_agent"
+  reset_fail_bin="$TEST_ROOT/run-dirty-fix-bin"
+  write_reset_failing_git "$reset_fail_bin"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"export-retries","source":"errors","title":"Rename the export retry helper","summary":"The helper name confuses readers.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-dirty-fix-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE INCHWORM_FIX_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=blocking
+    export INCHWORM_NOTIFY="$mock_notify"
+    export PATH="$reset_fail_bin:$PATH"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+
+  branch_name=$(first_implement_branch "$repo_dir")
+  expected_pr_url="https://example.test/pr/99"
+  problems=""
+
   if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
     problems="${problems}expected the draft PR to open from the agent's clean copy"$'\n'
   fi
@@ -3391,7 +3561,15 @@ test_run_dirty_fix_history_is_not_pushed() {
       problems="${problems}the first push must have put the implement work on the remote"$'\n'
     fi
     if branch_has_file "$origin_dir" "$branch_name" "fix-work.txt"; then
-      problems="${problems}must not push a history that names the runner"$'\n'"$(git -C "$origin_dir" log --format='%B' "develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}must not push the fix when squash cannot publish"$'\n'"$(git -C "$origin_dir" log --format='%B' "develop..$branch_name" 2>/dev/null || true)"$'\n'
+    fi
+    if branch_has_file "$repo_dir" "$branch_name" "fix-work.txt"; then
+      problems="${problems}local HEAD must match pre-fix history; fix-work.txt must not remain"$'\n'"$(git -C "$repo_dir" log --oneline "origin/develop..$branch_name" 2>/dev/null || true)"$'\n'
+    fi
+    local_sha=$(git -C "$repo_dir" rev-parse "$branch_name" 2>/dev/null || printf 'none')
+    remote_sha=$(git -C "$origin_dir" rev-parse --verify --quiet "refs/heads/$branch_name" 2>/dev/null || printf 'none')
+    if [ "$local_sha" != "$remote_sha" ]; then
+      problems="${problems}local $branch_name must match the already-pushed implement SHA (local=$local_sha remote=$remote_sha)"$'\n'
     fi
     if ! assert_no_tool_name_in_remote_commits "$origin_dir" "$branch_name"; then
       problems="${problems}pushed history must stay clean:"$'\n'"$(git -C "$origin_dir" log --format='%B' "develop..$branch_name" 2>/dev/null || true)"$'\n'
@@ -3399,6 +3577,9 @@ test_run_dirty_fix_history_is_not_pushed() {
   fi
   if ! grep -qiE 'refusing to push|fix stayed local' "$out_file"; then
     problems="${problems}expected the fixer to say the fix was not published"$'\n'
+  fi
+  if ! grep -qiE 'pre-fix history|matches the pre-fix' "$out_file"; then
+    problems="${problems}expected the operator log to say the checkout matches the pre-fix history"$'\n'
   fi
   if ! assert_notify_once_with_pr_url "$TEST_ROOT/notify-invocations.log" "$expected_pr_url"; then
     problems="${problems}must still ping once with $expected_pr_url after a fixer failure"$'\n'"$(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
@@ -4264,6 +4445,8 @@ run_test test_run_review_blocking_fix_success_pings
 run_test test_run_review_blocking_fix_fail_still_pings
 run_test test_run_fixer_work_lands_on_the_implement_branch
 run_test test_run_fixer_rewrite_pushes_authored_history
+run_test test_run_fixer_preserves_clean_implementer_message
+run_test test_run_path_mention_survives_fixer_squash
 run_test test_run_dirty_fix_history_is_not_pushed
 run_test test_inchworm_skill_and_references_exist
 run_test test_status_shows_repo_window_and_draft

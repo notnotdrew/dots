@@ -2,13 +2,13 @@
 
 Branches, commits, and pull requests are the author's own work. A reviewer opening the PR should see a change someone made, with a reason, and nothing about the runner that scheduled it.
 
-The name `inchworm` never appears in a branch name, a commit message, a PR title, or a PR body. Console logs and local paths under `.inchworm/` are operator-facing and keep the name.
+The name `inchworm` never appears as a word in a branch name, a commit message, a PR title, or a PR body. Bare `inchworm`, `inchworm:`, and `by inchworm` count; path-shaped mentions do not (`.inchworm/…`, `.inchworm.yml`, `bin/inchworm`, `…/inchworm` as a path component). `inchworm/…` at the start of a branch name still counts. The check excludes `.` and `/` on the preceding character; it is not `grep -w`. Console logs may say `inchworm:`.
 
 ## Branch names
 
 `<branch_prefix>/<slug>-<YYYYMMDD>`, e.g. `drew/export-500s-retryable-20260819`.
 
-The prefix comes from `.inchworm.yml` `branch_prefix`, else `git config user.name`, else the local part of `user.email`. `INCHWORM_BRANCH_PREFIX` overrides both (tests use it).
+The prefix comes from `.inchworm.yml` `branch_prefix`, else `git config user.name`, else the local part of `user.email`. `INCHWORM_BRANCH_PREFIX` overrides both. The test harness unsets it unless a test exported it.
 
 The date suffix does real work: it keeps a rerun on its own branch, and it is how the draft gate tells a generated branch from one the human cut by hand.
 
@@ -23,7 +23,7 @@ Coordinator fallbacks, used when the agent leaves work uncommitted:
 
 If any commit message on the branch names the runner, the coordinator resets the branch onto its base and re-commits once with that fallback message. Nothing has been pushed at that point, so the rewrite is safe.
 
-After a fixer pass the coordinator squashes unconditionally: the branch already carries the implement commit, plus whatever the fixer committed, plus whatever it left uncommitted, and none of that bookkeeping is a history a reviewer asked for. Implement and fix collapse into one commit under the same fallback subject and body, then the branch is updated on the remote with `--force-with-lease`. The rewritten message goes through the same check; if it still names the runner, the fix stays local and the fixer fails rather than publishing it. See [review-fix-boundary](review-fix-boundary.md).
+After a fixer pass the coordinator squashes unconditionally: the branch already carries the implement commit, plus whatever the fixer committed, plus whatever it left uncommitted, and none of that bookkeeping is a history a reviewer asked for. Implement and fix collapse into one commit. The message is the pre-fix implement commit's subject and body when that commit is present and does not name the runner as a word; otherwise the find fallback (title / summary / evidence) when that is clean. If neither is publishable, the coordinator restores the branch to the SHA from before the fixer started, does not push, and the fixer fails — a dirty replacement commit must not remain as local HEAD. See [review-fix-boundary](review-fix-boundary.md).
 
 ## Pull requests
 
