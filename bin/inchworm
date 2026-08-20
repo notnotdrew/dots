@@ -24,6 +24,7 @@ CONFIG_DIR="${INCHWORM_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/inchworm}"
 CONFIG_FILE="${CONFIG_DIR}/config.yml"
 DATA_DIR="${INCHWORM_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm}"
 GH_BIN="${INCHWORM_GH:-gh}"
+WT_BIN="${INCHWORM_WT:-wt}"
 GITIGNORE_GLOBAL="${INCHWORM_GITIGNORE_GLOBAL:-$HOME/.gitignore_global}"
 CURSOR_PROJECTS_DIR="${INCHWORM_CURSOR_PROJECTS_DIR:-${CURSOR_DATA_DIR:-$HOME/.cursor}/projects}"
 
@@ -409,15 +410,31 @@ window_label_for() {
   fi
 }
 
-# Create git worktree on <prefix>/<slug>-<YYYYMMDD> from origin/develop (after fetch).
-# Clears a stale path (via cleanup) before add; reuses an existing branch without -b.
+# First JSON object on wt --format json stdout (progress text may follow).
+worktree_path_from_wt_json() {
+  ruby -rjson -e '
+    line = STDIN.read.each_line.find { |row| row.lstrip.start_with?("{") }
+    abort "wt json: no object" if line.nil?
+    path = JSON.parse(line)["path"]
+    abort "wt json: missing path" if path.nil? || path.to_s.empty?
+    puts path
+  '
+}
+
+# Worktrunk checkout on <prefix>/<slug>-<YYYYMMDD> from origin/develop (after fetch).
+# Prints the absolute checkout path. Reuses an existing branch without --create.
 # Returns non-zero when base cannot be resolved (unless fixture fallback applies).
 create_implement_worktree() {
   local repo_path=$1
   local branch_name=$2
-  local worktree_path=$3
-  local fixture=${4:-}
-  local base_ref reason_file
+  local fixture=${3:-}
+  local base_ref reason_file switch_output worktree_path
+  local -a switch_args
+
+  if ! command -v "$WT_BIN" >/dev/null 2>&1; then
+    printf 'inchworm: Worktrunk (wt) is required but not found\n' >&2
+    return 1
+  fi
 
   reason_file=$(mktemp)
   if ! base_ref=$(resolve_implement_base "$repo_path" "$fixture" "$reason_file"); then
@@ -428,16 +445,22 @@ create_implement_worktree() {
   fi
   rm -f "$reason_file"
 
-  mkdir -p "$(dirname "$worktree_path")"
-  cleanup_implement_worktree "$repo_path" "$worktree_path"
+  cleanup_implement_worktree "$repo_path" "" "$branch_name"
 
+  switch_args=(switch --no-cd --format json --clobber)
   if git -C "$repo_path" show-ref --verify --quiet "refs/heads/${branch_name}"; then
-    git -C "$repo_path" worktree add "$worktree_path" "$branch_name"
+    switch_args+=("$branch_name")
   else
-    git -C "$repo_path" worktree add -b "$branch_name" "$worktree_path" "$base_ref"
-  fi || return 1
+    switch_args+=(--create --base="$base_ref" "$branch_name")
+  fi
+
+  if ! switch_output=$("$WT_BIN" -C "$repo_path" -y "${switch_args[@]}"); then
+    return 1
+  fi
+  worktree_path=$(printf '%s\n' "$switch_output" | worktree_path_from_wt_json) || return 1
 
   ensure_workspace_trusted "$worktree_path" "$repo_path"
+  printf '%s\n' "$worktree_path"
 }
 
 # The agent CLI refuses to start in an untrusted directory, and a fresh worktree is
@@ -475,18 +498,41 @@ ensure_workspace_trusted() {
   }
 }
 
-# Remove implement worktree registration; keep the implement branch.
+# Remove the implement Worktrunk checkout; keep the implement branch.
+# Never deletes develop / main / master. Prefers branch name; path is fallback.
 cleanup_implement_worktree() {
   local repo_path=$1
-  local worktree_path=$2
+  local worktree_path=${2:-}
+  local branch_name=${3:-}
+  local target=""
+  local repo_physical=""
+  local target_physical=""
 
-  [[ -n "$worktree_path" ]] || return 0
+  case "$branch_name" in
+    develop|main|master)
+      printf 'inchworm: refusing to remove protected branch %s\n' "$branch_name" >&2
+      return 0
+      ;;
+  esac
 
-  git -C "$repo_path" worktree remove --force "$worktree_path" 2>/dev/null || true
-  if [[ -e "$worktree_path" ]]; then
-    rm -rf "$worktree_path"
+  if [[ -n "$branch_name" ]]; then
+    target=$branch_name
+  elif [[ -n "$worktree_path" ]]; then
+    repo_physical=$(CDPATH= cd "$repo_path" 2>/dev/null && pwd -P) || repo_physical=$repo_path
+    target_physical=$(CDPATH= cd "$worktree_path" 2>/dev/null && pwd -P) || target_physical=$worktree_path
+    if [[ "$target_physical" == "$repo_physical" ]]; then
+      printf 'inchworm: refusing to remove the primary checkout\n' >&2
+      return 0
+    fi
+    target=$worktree_path
+  else
+    return 0
   fi
-  git -C "$repo_path" worktree prune 2>/dev/null || true
+
+  if ! command -v "$WT_BIN" >/dev/null 2>&1; then
+    return 0
+  fi
+  "$WT_BIN" -C "$repo_path" -y remove --no-delete-branch --force --foreground "$target" >/dev/null 2>&1 || true
 }
 
 # Scratch dir for agent-written PR copy. Sits under the already-gitignored
@@ -790,14 +836,15 @@ mark_find_deferred() {
     "$reason" "$find_id"
 }
 
-# Mark deferred and drop any implement worktree created for this attempt.
+# Mark deferred and drop any implement checkout created for this attempt.
 defer_implement_with_cleanup() {
   local repo_path=$1
   local worktree_path=$2
   local find_id=$3
   local reason=$4
+  local branch_name=${5:-}
   mark_find_deferred "$repo_path" "$find_id" "$reason"
-  cleanup_implement_worktree "$repo_path" "$worktree_path"
+  cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
 }
 
 # Standard pr-review once after successful draft PR.
@@ -1045,6 +1092,7 @@ run_review_fix_ping() {
   local pr_url=$3
   local commit_subject=$4
   local commit_body=$5
+  local branch_name=${6:-}
   local review_dir ledger_path blocker_count
 
   run_standard_pr_review "$repo_path" "$pr_url"
@@ -1065,7 +1113,7 @@ run_review_fix_ping() {
   fi
 
   ping_draft_pr "$pr_url"
-  cleanup_implement_worktree "$repo_path" "$worktree_path"
+  cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
 }
 
 # After discover selected a find: implement → push → draft PR or mark deferred/too_large.
@@ -1084,7 +1132,7 @@ run_implement_and_pr() {
   ymd=$(yyyymmdd_from_today "$today")
   branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
   branch_name="${branch_prefix}/$(branch_slug_from_id "$find_id")-${ymd}"
-  worktree_path="${repo_path}/.inchworm/worktrees/${branch_name//\//-}"
+  worktree_path=""
   guidance=$(load_repo_guidance "$repo_yml")
   find_summary=$(find_field "$repo_path" "$find_id" summary)
   find_evidence=$(find_field "$repo_path" "$find_id" evidence)
@@ -1098,22 +1146,23 @@ run_implement_and_pr() {
       return 0
       ;;
     success)
-      if ! create_implement_worktree "$repo_path" "$branch_name" "$worktree_path" "$fixture"; then
+      if ! worktree_path=$(create_implement_worktree "$repo_path" "$branch_name" "$fixture"); then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "could not base worktree on origin/develop"
+          "could not base worktree on origin/develop" "$branch_name"
         return 0
       fi
       implement_fixture_success "$worktree_path" "$commit_subject"
       ;;
     "")
-      if ! create_implement_worktree "$repo_path" "$branch_name" "$worktree_path" ""; then
+      if ! worktree_path=$(create_implement_worktree "$repo_path" "$branch_name" ""); then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "could not base worktree on origin/develop"
+          "could not base worktree on origin/develop" "$branch_name"
         return 0
       fi
       if ! implement_with_agent "$worktree_path" "$find_title" "$find_summary" \
         "$find_evidence" "$guidance"; then
-        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "agent exited non-zero"
+        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+          "agent exited non-zero" "$branch_name"
         return 0
       fi
       pr_title=$(read_agent_pr_title "$worktree_path" || printf '')
@@ -1123,12 +1172,12 @@ run_implement_and_pr() {
       base_ref="$IMPLEMENT_BASE_REMOTE_REF"
       if ! sanitize_branch_commits "$worktree_path" "$base_ref" "$commit_subject" "$commit_body"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "could not rewrite commits that name the runner"
+          "could not rewrite commits that name the runner" "$branch_name"
         return 0
       fi
       if ! branch_has_commits "$worktree_path" "$base_ref"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "no commits produced (nothing to open a PR from)"
+          "no commits produced (nothing to open a PR from)" "$branch_name"
         return 0
       fi
       ;;
@@ -1151,12 +1200,13 @@ run_implement_and_pr() {
   fi
   if mentions_tool_name "$pr_title" || mentions_tool_name "$pr_body"; then
     defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-      "PR title or body would name the runner"
+      "PR title or body would name the runner" "$branch_name"
     return 0
   fi
 
   if ! push_implement_branch "$worktree_path" "$fixture"; then
-    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "push failed"
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "push failed" "$branch_name"
     return 0
   fi
 
@@ -1165,12 +1215,14 @@ run_implement_and_pr() {
 
   pr_url=$(open_draft_pr "$worktree_path" "$pr_title" "$pr_body_file") || {
     rm -f "$pr_body_file"
-    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "draft PR create failed"
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "draft PR create failed" "$branch_name"
     return 0
   }
   rm -f "$pr_body_file"
   if [[ -z "$pr_url" ]]; then
-    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "no PR URL"
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "no PR URL" "$branch_name"
     return 0
   fi
 
@@ -1178,7 +1230,8 @@ run_implement_and_pr() {
   ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
   printf 'inchworm: opened draft PR %s\n' "$pr_url"
 
-  run_review_fix_ping "$repo_path" "$worktree_path" "$pr_url" "$commit_subject" "$commit_body"
+  run_review_fix_ping "$repo_path" "$worktree_path" "$pr_url" "$commit_subject" \
+    "$commit_body" "$branch_name"
 }
 
 # FDA-scoped LaunchAgent executable: a private copy of bash (not /bin/bash).

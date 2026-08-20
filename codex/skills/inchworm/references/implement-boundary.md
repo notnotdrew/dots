@@ -2,13 +2,13 @@
 
 After discover selects a find, the coordinator runs implement then (on success) opens a draft PR.
 
-## Worktree + branch
+## Worktrunk + branch
 
-- Create a git **worktree** under `.inchworm/worktrees/`
+- Create the checkout with Worktrunk (`wt switch --no-cd --format json --clobber -y`), not `git worktree add`. Path is Worktrunk's default: `<repo>.<branch>` with `/` in the branch name replaced by `-`
 - Branch name: `<branch_prefix>/<slug>-<YYYYMMDD>` (see [authored-output](authored-output.md); date from `INCHWORM_NOW` / today)
-- Base from freshly fetched `origin/develop` (hardcoded; not local `HEAD` / `origin/HEAD`)
-- If the worktree path already exists (stale), remove/recreate it before `worktree add`
-- Soft-fail (defer find, no PR, clean up worktree) when `origin` is missing or `origin/develop` cannot be resolved after `git fetch origin`
+- Base from freshly fetched `origin/develop` (`--create --base=origin/develop` when the branch is new; attach without `--create` when it already exists)
+- If a stale directory already sits at the target path, `--clobber` (or remove/recreate) and still succeed
+- Soft-fail (defer find, no PR, clean up checkout) when `origin` is missing or `origin/develop` cannot be resolved after `git fetch origin`
 
 ## Implement fixtures (`INCHWORM_IMPLEMENT_FIXTURE`)
 
@@ -28,7 +28,7 @@ After discover selects a find, the coordinator runs implement then (on success) 
 5. Set `state.active_draft_pr` to the printed PR URL
 6. Mark find `status: in_pr`
 7. Print opened-draft signal + URL
-8. Continue to review → fix → ping (see [review-fix-boundary](review-fix-boundary.md)); a fixer pass rewrites this branch and pushes it again with `--force-with-lease`, and after ping the implement worktree is removed (keep the branch)
+8. Continue to review → fix → ping (see [review-fix-boundary](review-fix-boundary.md)); a fixer pass rewrites this branch and pushes it again with `--force-with-lease`, and after ping the implement Worktrunk checkout is removed with `wt remove --no-delete-branch` (keep the branch)
 
 ## Failure / no second pick
 

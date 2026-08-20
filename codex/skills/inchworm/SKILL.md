@@ -17,10 +17,10 @@ On an eligible `inchworm run`:
 4. Curator merges candidates into `finds.md`, then tidies (drop `deferred`/`too_large`; cap open at 20)
 5. Pick the highest-priority open find (lowest rank)
 6. If none: **stop** — no implementer, no worktree, no `gh pr create`
-7. If selected: run the **implementer** in a git **worktree** on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on freshly fetched `origin/develop`
+7. If selected: run the **implementer** in a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on freshly fetched `origin/develop`
 8. On success: **push** the branch — the first push, `git push -u origin HEAD`, never forced — then coordinator `gh pr create --draft --base develop`, set `state.active_draft_pr` to the PR URL, mark find `in_pr`
 9. On implement failure: mark find `deferred` or `too_large`, no PR, **no second pick** (stamp already burned); skip review / fixer / ping
-10. After successful draft PR: run full **Standard `pr-review`** once (not lite) → map verified blockers → optional one **fixer** pass → squash implement + fix into one authored commit and update the draft branch with `git push --force-with-lease` → **ping** immediately; then remove the implement worktree (keep the branch)
+10. After successful draft PR: run full **Standard `pr-review`** once (not lite) → map verified blockers → optional one **fixer** pass → squash implement + fix into one authored commit and update the draft branch with `git push --force-with-lease` → **ping** immediately; then `wt remove --no-delete-branch` the implement checkout (keep the branch)
 
 Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement branch is ever force-pushed, and only with `--force-with-lease` — never `develop` or `main`. No review↔fix loop. No auto-ready / merge.
 
@@ -37,7 +37,7 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Scout** — propose candidates (see [scout-prompts](references/scout-prompts.md))
 - **Curator** — merge/dedupe into durable `finds.md` (see [curator-prompt](references/curator-prompt.md))
 - **Pick** — choose one open find or report none (see [discover-boundary](references/discover-boundary.md))
-- **Implementer** — code the selected find in a worktree (see [implementer-prompt](references/implementer-prompt.md))
+- **Implementer** — code the selected find in a Worktrunk checkout (see [implementer-prompt](references/implementer-prompt.md))
 - **Coordinator** — push branch, draft PR, state updates, then review → fix → ping (see [implement-boundary](references/implement-boundary.md), [review-fix-boundary](references/review-fix-boundary.md))
 - **Reviewer** — full Standard `pr-review` (see [reviewer-prompt](references/reviewer-prompt.md))
 - **Fixer** — one pass on verified blockers only (see [fixer-prompt](references/fixer-prompt.md))

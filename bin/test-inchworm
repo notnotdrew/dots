@@ -118,10 +118,10 @@
 #      then Phase 5 tidy (drop deferred/too_large; cap open at 20)
 #   5. Pick highest-ranked eligible open find (lowest rank wins); else print none
 #   6. If none: stop — no implement, no worktree, no `gh pr create`
-#   7. If selected: implementer process in a git worktree on branch
+#   7. If selected: implementer process in a Worktrunk checkout on branch
 #      <branch_prefix>/<slug>-<YYYYMMDD> — the prefix names the human, never the runner
-#      Worktree path: <repo>/.inchworm/worktrees/<branch_prefix>-<slug>-<YYYYMMDD>
-#      If that path already exists (stale empty dir), remove/recreate and still succeed
+#      Checkout path: <repo>.<branch with / replaced by -> (wt switch, not git worktree add)
+#      If that path already exists (stale empty dir), clobber/recreate and still succeed
 #   8. On implement success: coordinator `gh pr create --draft`, record
 #      state.active_draft_pr to the PR URL, mark find in_pr, print PR URL / opened draft
 #   9. On implement failure (fail|too_large): mark deferred|too_large, no PR,
@@ -132,8 +132,9 @@
 #  11. Map ledger → blocking for fixer (Class: blocking + Disposition: verified only)
 #  12. If blockers: one fixer pass (blocking only); no review↔fix loop
 #  13. Ping immediately (notify and/or log) with PR URL — even if residual blockers
-#  14. Phase 5: after successful PR+review+ping, remove worktree registration under
-#      .inchworm/worktrees/ (git worktree list must not show it); branch MAY remain
+#  14. Phase 5: after successful PR+review+ping, remove the Worktrunk checkout
+#      (wt remove --no-delete-branch); git worktree list must not show it or
+#      .inchworm/worktrees/; branch MAY remain
 #
 # Authored output (branch, commits, PR title/body):
 #   Never name the runner. Branch = <prefix>/<slug>-<YYYYMMDD>; commits are Tim Pope
@@ -475,6 +476,110 @@ exit 0
 EOF
     chmod +x "$TEST_ROOT/fake-bin/$name"
   done
+  write_mock_wt
+}
+
+# Worktrunk stand-in: records argv and still makes a real git checkout at the
+# default Worktrunk path (<repo>.<branch with slashes as dashes>) so the rest of
+# the pipeline can git -C into it. Production must call wt, not git worktree add.
+write_mock_wt() {
+  mkdir -p "$TEST_ROOT/fake-bin"
+  cat >"$TEST_ROOT/fake-bin/wt" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$*" >>"${TEST_ROOT}/wt-invocations.log"
+
+repo="."
+create=""
+base=""
+cmd=""
+target=""
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -C)
+      repo=\$2
+      shift 2
+      ;;
+    --base)
+      base=\$2
+      shift 2
+      ;;
+    --base=*)
+      base=\${1#--base=}
+      shift
+      ;;
+    --format)
+      shift 2
+      ;;
+    --format=*)
+      shift
+      ;;
+    --create|-c)
+      create=1
+      shift
+      ;;
+    -y|--yes|--no-cd|--no-hooks|--clobber|--force|-f|--foreground|--no-delete-branch)
+      shift
+      ;;
+    switch|remove|list)
+      cmd=\$1
+      shift
+      ;;
+    --*)
+      shift
+      ;;
+    *)
+      target=\$1
+      shift
+      ;;
+  esac
+done
+
+repo=\$(CDPATH= cd "\$repo" && pwd)
+if [ -z "\$target" ]; then
+  printf '%s\n' "wt mock: missing branch or path" >&2
+  exit 1
+fi
+if [ "\${target#/}" != "\$target" ]; then
+  path=\$target
+else
+  path="\${repo}.\${target//\\//-}"
+fi
+
+case "\$cmd" in
+  switch)
+    if [ -n "\$create" ] && git -C "\$repo" show-ref --verify --quiet "refs/heads/\${target}"; then
+      printf '%s\n' "wt mock: branch already exists; omit --create" >&2
+      exit 1
+    fi
+    git -C "\$repo" worktree remove --force "\$path" >/dev/null 2>&1 || true
+    if [ -e "\$path" ]; then
+      rm -rf "\$path"
+    fi
+    if [ -n "\$create" ]; then
+      git -C "\$repo" worktree add -b "\$target" "\$path" "\${base:-HEAD}" >/dev/null
+    else
+      git -C "\$repo" worktree add "\$path" "\$target" >/dev/null
+    fi
+    printf '%s\n' "{\"action\":\"created\",\"branch\":\"\$target\",\"path\":\"\$path\"}"
+    ;;
+  remove)
+    git -C "\$repo" worktree remove --force "\$path" >/dev/null 2>&1 || true
+    if [ -e "\$path" ]; then
+      rm -rf "\$path"
+    fi
+    git -C "\$repo" worktree prune >/dev/null 2>&1 || true
+    ;;
+  list)
+    printf '%s\n' '[]'
+    ;;
+  *)
+    printf '%s\n' "wt mock: unsupported command: \$cmd" >&2
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "$TEST_ROOT/fake-bin/wt"
 }
 
 # Live implementer mock: edits the worktree but leaves the work uncommitted.
@@ -880,30 +985,49 @@ EOF
   chmod +x "$mock_path"
 }
 
-# True when git worktree list still registers a path under .inchworm/worktrees/.
+# True when no implement checkout remains (legacy .inchworm/worktrees/ or Worktrunk sibling).
 assert_no_inchworm_worktree_registered() {
   repo=$1
-  if git -C "$repo" worktree list 2>/dev/null | grep -F '.inchworm/worktrees' >/dev/null; then
+  list=$(git -C "$repo" worktree list 2>/dev/null || true)
+  if printf '%s' "$list" | grep -F '.inchworm/worktrees' >/dev/null; then
+    return 1
+  fi
+  if printf '%s' "$list" | grep -F "${repo}.${TEST_BRANCH_PREFIX}-" >/dev/null; then
+    return 1
+  fi
+  if [ -d "$repo/.inchworm/worktrees" ]; then
     return 1
   fi
   return 0
 }
 
-# Expected worktree dir for find id on YYYYMMDD (matches production path shape).
+# Worktrunk default: <repo>.<branch with / as -> beside the repo, not under .inchworm/.
 expected_worktree_path_for() {
   repo=$1
   find_id=$2
   ymd=$3
-  printf '%s/.inchworm/worktrees/%s-%s-%s\n' "$repo" "$TEST_BRANCH_PREFIX" "$find_id" "$ymd"
+  printf '%s.%s-%s-%s\n' "$repo" "$TEST_BRANCH_PREFIX" "$find_id" "$ymd"
 }
 
-# True if repo has an implement branch and/or a worktree under .inchworm/.
+assert_wt_switch_logged() {
+  log=${1:-$TEST_ROOT/wt-invocations.log}
+  [ -f "$log" ] || return 1
+  grep -E '(^|[[:space:]])switch([[:space:]]|$)' "$log" >/dev/null
+}
+
+assert_wt_remove_keeps_branch_logged() {
+  log=${1:-$TEST_ROOT/wt-invocations.log}
+  [ -f "$log" ] || return 1
+  grep -F -- '--no-delete-branch' "$log" >/dev/null
+}
+
+# True if repo has an implement branch and/or a Worktrunk implement checkout.
 assert_implement_worktree_or_branch() {
   repo=$1
   if git -C "$repo" branch --list "$TEST_BRANCH_PREFIX/*" 2>/dev/null | grep -q .; then
     return 0
   fi
-  if git -C "$repo" worktree list 2>/dev/null | grep -qF '.inchworm'; then
+  if git -C "$repo" worktree list 2>/dev/null | grep -qF "${repo}.${TEST_BRANCH_PREFIX}-"; then
     return 0
   fi
   return 1
@@ -1064,6 +1188,7 @@ setup_eligible_run_env() {
   : >"$TEST_ROOT/gh-invocations.log"
   : >"$TEST_ROOT/pr-review-invocations.log"
   : >"$TEST_ROOT/notify-invocations.log"
+  : >"$TEST_ROOT/wt-invocations.log"
 }
 
 assert_finds_md_structure() {
@@ -3622,7 +3747,7 @@ test_inchworm_skill_and_references_exist() {
       problems="${problems}references/workflows dir empty"$'\n'
     else
       blob=$(cat $skill_md $corpus 2>/dev/null || true)
-      for term in "finds.md" "scout" "curator" "pick" "implementer" "worktree" "active_draft_pr"; do
+      for term in "finds.md" "scout" "curator" "pick" "implementer" "worktree" "active_draft_pr" "Worktrunk"; do
         if ! printf '%s' "$blob" | grep -qiF -- "$term"; then
           problems="${problems}skill/references must mention: $term"$'\n'
         fi
@@ -3657,6 +3782,9 @@ test_inchworm_skill_and_references_exist() {
       if printf '%s' "$blob" | grep -qiE 'inchworm-lite' \
         && ! printf '%s' "$blob" | grep -qiE 'not.*lite|no.*lite|deferred.*lite|without.*lite'; then
         problems="${problems}skill must not prescribe inchworm-lite as the v1 reviewer"$'\n'
+      fi
+      if printf '%s' "$blob" | grep -qF '.inchworm/worktrees'; then
+        problems="${problems}skill/references must not use .inchworm/worktrees/ (Worktrunk instead)"$'\n'
       fi
     fi
   fi
@@ -4083,8 +4211,8 @@ test_run_curator_drops_deferred_too_large_and_caps_open() {
 }
 
 test_run_success_removes_worktree_keeps_branch() {
-  # After successful PR+review+ping: worktree under .inchworm/worktrees/ must not
-  # remain registered; the implement branch MAY remain for the draft PR.
+  # After successful PR+review+ping: Worktrunk checkout must not remain;
+  # the implement branch MAY remain for the draft PR.
   test_name="Phase 5: success path removes worktree registration; branch may remain"
   now="2026-08-18T10:00:00"
   implement_fixture=success
@@ -4117,9 +4245,19 @@ test_run_success_removes_worktree_keeps_branch() {
   if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
     problems="${problems}expected draft PR create"$'\n'
   fi
+  if ! assert_wt_switch_logged; then
+    problems="${problems}success path must create the checkout with wt switch"$'\n'"$(cat "$TEST_ROOT/wt-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! assert_wt_remove_keeps_branch_logged; then
+    problems="${problems}success path must wt remove --no-delete-branch"$'\n'"$(cat "$TEST_ROOT/wt-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
   if ! assert_no_inchworm_worktree_registered "$repo_dir"; then
-    problems="${problems}git worktree list must not show .inchworm/worktrees after success"$'\n'
+    problems="${problems}implement checkout must be gone after success (no .inchworm/worktrees, no sibling Worktrunk path)"$'\n'
     problems="${problems}$(git -C "$repo_dir" worktree list 2>/dev/null || true)"$'\n'
+  fi
+  expected_path=$(expected_worktree_path_for "$repo_dir" "smell-wt-clean" "20260818")
+  if [ -e "$expected_path" ]; then
+    problems="${problems}Worktrunk checkout $expected_path must not remain after cleanup"$'\n'
   fi
   branch_name=$(first_implement_branch "$repo_dir")
   if [ -z "$branch_name" ]; then

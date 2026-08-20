@@ -7,7 +7,7 @@ After a successful draft PR (`gh pr create --draft`, `active_draft_pr` set, find
 3. **Fix** — one fixer pass if blockers exist; otherwise skip (see [fixer-prompt](fixer-prompt.md))
 4. **Land the fix** — commit leftovers, rewrite for a clean authored history, force-with-lease onto the draft branch (below)
 5. **Ping** — notify immediately with the PR URL (even if fix failed / residual blockers)
-6. **Cleanup** — remove the implement worktree under `.inchworm/worktrees/` (keep the implement branch)
+6. **Cleanup** — `wt remove --no-delete-branch --force` the implement Worktrunk checkout (keep the implement branch)
 
 ## Landing the fix
 

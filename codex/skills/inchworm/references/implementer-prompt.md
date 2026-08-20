@@ -1,11 +1,11 @@
 # Implementer prompt (Phase 3)
 
-The **implementer** works only on the selected find, inside the coordinator-created git **worktree**.
+The **implementer** works only on the selected find, inside the coordinator-created **Worktrunk** checkout.
 
 ## Inputs
 
 - The find's title, summary, and evidence (the coordinator passes the text, not the find id)
-- Working directory: the worktree on branch `<branch_prefix>/<slug>-<YYYYMMDD>`
+- Working directory: the Worktrunk checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>`
 - Optional **Repo guidance** from `.inchworm.yml` `guidance` (injected by the coordinator)
 
 ## Do
