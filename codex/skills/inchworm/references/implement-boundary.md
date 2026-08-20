@@ -5,7 +5,7 @@ After discover selects a find, the coordinator runs implement then (on success) 
 ## Worktree + branch
 
 - Create a git **worktree** under `.inchworm/worktrees/`
-- Branch name: `inchworm/<slug>-<YYYYMMDD>` (prefix `inchworm/`, date from `INCHWORM_NOW` / today)
+- Branch name: `<branch_prefix>/<slug>-<YYYYMMDD>` (see [authored-output](authored-output.md); date from `INCHWORM_NOW` / today)
 - Base from freshly fetched `origin/develop` (hardcoded; not local `HEAD` / `origin/HEAD`)
 - If the worktree path already exists (stale), remove/recreate it before `worktree add`
 - Soft-fail (defer find, no PR, clean up worktree) when `origin` is missing or `origin/develop` cannot be resolved after `git fetch origin`
@@ -22,12 +22,13 @@ After discover selects a find, the coordinator runs implement then (on success) 
 ## Success path
 
 1. Implementer finishes in the worktree
-2. Push branch: `git push -u origin HEAD` (skipped entirely when `INCHWORM_IMPLEMENT_FIXTURE` is set; live soft-fails → deferred)
-3. Coordinator: `gh pr create --draft --base develop`
-4. Set `state.active_draft_pr` to the printed PR URL
-5. Mark find `status: in_pr`
-6. Print opened-draft signal + URL
-7. Continue to review → fix → ping (see [review-fix-boundary](review-fix-boundary.md)); after ping, remove the implement worktree (keep `inchworm/*` branch)
+2. Read and delete the agent's PR draft under `.inchworm/pr/`, commit any leftover changes, then check no commit message names the runner
+3. Push branch: `git push -u origin HEAD` — the first push, never forced (skipped entirely when `INCHWORM_IMPLEMENT_FIXTURE` is set; live soft-fails → deferred)
+4. Coordinator: `gh pr create --draft --base develop --title … --body-file …`
+5. Set `state.active_draft_pr` to the printed PR URL
+6. Mark find `status: in_pr`
+7. Print opened-draft signal + URL
+8. Continue to review → fix → ping (see [review-fix-boundary](review-fix-boundary.md)); a fixer pass rewrites this branch and pushes it again with `--force-with-lease`, and after ping the implement worktree is removed (keep the branch)
 
 ## Failure / no second pick
 
@@ -38,7 +39,7 @@ On implement failure (`fail` / agent non-zero / push fail / draft fail / `too_la
 - Leave `active_draft_pr` null
 - Do **not** pick a second find — the day's stamp is already burned
 - Skip review / fixer / ping
-- If a worktree was created for this attempt, clean it up (keep any `inchworm/*` branch)
+- If a worktree was created for this attempt, clean it up (keep any branch it created)
 
 ## Forbidden
 

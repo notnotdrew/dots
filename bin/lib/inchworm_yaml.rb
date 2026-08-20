@@ -78,6 +78,8 @@ when "ensure_repo_yml"
         "version" => 1,
         # Plain-text notes for agents (scouts, implementer, fixer). Optional.
         "guidance" => "",
+        # Branch namespace, e.g. "drew" → drew/<slug>-<date>. Blank uses git user.name.
+        "branch_prefix" => "",
         "state" => {
           "last_run_date" => nil,
           "active_draft_pr" => nil
@@ -129,8 +131,19 @@ when "set_state"
   dump_yaml(repo_yml, data)
 
 when "find_blocking_draft"
-  # Reads gh JSON from stdin; prints first blocking PR url or empty.
-  # Malformed JSON → treat as no blocking draft (empty).
+  # find_blocking_draft <branch_prefix> [recorded_url]; reads gh JSON from stdin
+  # and prints the first blocking PR url or empty. Malformed JSON → not blocking.
+  #
+  # Two ways to recognise our own draft, both checked against the live PR list so
+  # a merged or closed PR never blocks:
+  #   1. the URL recorded in state — exact, and survives a branch-naming change
+  #   2. the branch shape — the recovery path when state was lost or wiped
+  # The prefix belongs to the human, so it also covers branches they cut by hand.
+  # The trailing date is what separates a generated branch from those.
+  branch_prefix = ARGV[1].to_s
+  recorded_url = ARGV[2].to_s
+  recorded_url = "" if recorded_url == "null"
+  managed_branch = /\A#{Regexp.escape(branch_prefix)}\/.+-\d{8}\z/
   begin
     prs = JSON.parse($stdin.read)
   rescue JSON::ParserError
@@ -139,10 +152,13 @@ when "find_blocking_draft"
   prs = [] unless prs.is_a?(Array)
   blocking = prs.find do |pr|
     next false unless pr.is_a?(Hash)
+    next false unless pr["isDraft"] == true
 
-    draft = pr["isDraft"] == true
+    url = pr["url"].to_s
     head = pr["headRefName"].to_s
-    draft && head.start_with?("inchworm/")
+    next true if !recorded_url.empty? && url == recorded_url
+
+    !branch_prefix.empty? && managed_branch.match?(head)
   end
   if blocking
     url = blocking["url"].to_s

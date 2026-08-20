@@ -276,6 +276,16 @@ when "set_status"
     exit 1
   end
 
+when "field"
+  # field <repo_abs_path> <data_dir> <id> <name> — empty when unknown.
+  repo_path = ARGV.fetch(1)
+  data_dir = ARGV.fetch(2)
+  id = ARGV.fetch(3).to_s.sub(/\AF-/i, "").strip
+  field = ARGV.fetch(4)
+  finds = parse_finds_md(File.join(finds_dir_for(data_dir, repo_path), "finds.md"))
+  target = finds.find { |find| find["id"] == id }
+  print(target ? target[field].to_s : "")
+
 when "discover"
   # discover <repo_abs_path> <data_dir> [fixture_dir]
   repo_path = ARGV.fetch(1)

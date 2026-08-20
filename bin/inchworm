@@ -50,7 +50,9 @@ New machine:
 New repo:
   1. cd /path/to/repo
   2. inchworm init
-  3. Optional: edit .inchworm.yml guidance (repo notes for agents)
+  3. Optional: edit .inchworm.yml
+       guidance      repo notes for agents
+       branch_prefix branch namespace (defaults to git user.name)
 EOF
 }
 
@@ -88,6 +90,14 @@ ruby_helper() {
 ruby_yaml() { ruby_helper "$YAML_HELPER" "$@"; }
 ruby_finds() { ruby_helper "$FINDS_HELPER" "$@"; }
 ruby_review() { ruby_helper "$REVIEW_HELPER" "$@"; }
+
+# One field of a stored find (title, summary, evidence); empty when unknown.
+find_field() {
+  local repo_path=$1
+  local find_id=$2
+  local field=$3
+  ruby_finds field "$repo_path" "$DATA_DIR" "$find_id" "$field" 2>/dev/null || printf ''
+}
 
 # Default Standard pr-review launcher: INCHWORM_PR_REVIEW, else sibling bin/pr-review, else PATH.
 resolve_pr_review_bin() {
@@ -136,6 +146,7 @@ scout_prompt_for() {
   local out_file=$2
   local guidance=${3:-}
   local role_blurb
+  local evidence_blurb="Put a link or file path in evidence — whatever a reviewer would open to see why this is worth doing."
   case "$source" in
     smell)
       role_blurb="Scan for small, high-value cleanup finds: unused helpers, dead branches, obvious duplication that fits a thin PR."
@@ -145,9 +156,11 @@ scout_prompt_for() {
       ;;
     errors)
       role_blurb="Surface recurring runtime or CI errors that look fixable without product redesign."
+      evidence_blurb="Put the error's URL in evidence — the Honeybadger fault or CI run a reviewer would open. Include the fault id when you have one."
       ;;
     backlog)
       role_blurb="Pull small, already-agreed backlog items that are ready to implement as a thin PR."
+      evidence_blurb="Put the issue's URL or key in evidence, e.g. the Linear ticket the work came from."
       ;;
     *)
       role_blurb="Propose small, concrete, rankable finds."
@@ -163,6 +176,8 @@ Emit source: "${source}". Prefer few concrete finds. If none, write an empty arr
 
 Write your answer as a JSON array to the file ${out_file} — nothing else belongs in that file. Each object must include:
 id (slug without F- prefix), source ("${source}"), title, summary, rank (integer, lower is better), status ("open" or "new"); optional evidence (string).
+
+Write title and summary for a person, not a machine: the title reads like a commit subject, and the summary says why the change is worth making. ${evidence_blurb}
 EOF
   append_repo_guidance_block "$guidance"
 }
@@ -248,16 +263,48 @@ yyyymmdd_from_today() {
   printf '%s' "$today" | tr -d '-'
 }
 
+# Lowercase alnum/hyphen slug for one branch-name component.
+slugify() {
+  local raw=$1
+  local fallback=$2
+  local max=$3
+  local slug
+  slug=$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+  if [[ -z "$slug" ]]; then
+    slug="$fallback"
+  fi
+  printf '%s\n' "${slug:0:$max}"
+}
+
 # Short slug for branch: keep alnum/hyphen from find id.
 branch_slug_from_id() {
   local find_id=$1
-  local slug
-  slug=$(printf '%s' "$find_id" | tr '[:upper:]' '[:lower:]' | sed 's/^f-//; s/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//')
-  if [[ -z "$slug" ]]; then
-    slug="find"
+  slugify "${find_id#[Ff]-}" "find" 48
+}
+
+# Branch prefix: repo config, else the git identity of whoever owns the repo.
+# The prefix is the first thing a reviewer sees, so it names a person.
+resolve_branch_prefix() {
+  local repo_path=$1
+  local repo_yml=$2
+  local raw=""
+
+  if [[ -n "${INCHWORM_BRANCH_PREFIX:-}" ]]; then
+    raw="$INCHWORM_BRANCH_PREFIX"
+  else
+    raw=$(ruby_yaml get "$repo_yml" "branch_prefix" 2>/dev/null || printf '')
+    if [[ "$raw" == "null" ]]; then
+      raw=""
+    fi
+    if [[ -z "${raw//[[:space:]]/}" ]]; then
+      raw=$(git -C "$repo_path" config user.name 2>/dev/null || printf '')
+    fi
+    if [[ -z "${raw//[[:space:]]/}" ]]; then
+      raw=$(git -C "$repo_path" config user.email 2>/dev/null | cut -d '@' -f1)
+    fi
   fi
-  # Keep branch names manageable.
-  printf '%s\n' "${slug:0:48}"
+
+  slugify "$raw" "dev" 32
 }
 
 # Hardcoded implement base: always freshly fetched origin/develop (not HEAD / origin/HEAD).
@@ -335,11 +382,16 @@ gh_pr_list_json() {
   )
 }
 
+# Blocking = an open draft of ours: the PR we recorded, or a branch we would have
+# created. Both are confirmed against the live PR list, never trusted on their own.
 find_blocking_draft() {
   local repo_path=$1
-  local json
+  local repo_yml=$2
+  local json branch_prefix recorded_url
+  branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
+  recorded_url=$(ruby_yaml get "$repo_yml" "state.active_draft_pr")
   json=$(gh_pr_list_json "$repo_path") || json='[]'
-  printf '%s' "$json" | ruby_yaml find_blocking_draft
+  printf '%s' "$json" | ruby_yaml find_blocking_draft "$branch_prefix" "$recorded_url"
 }
 
 # Create-window label for status: open | closed (weekend|before 08:00|at/after 15:00)
@@ -357,7 +409,7 @@ window_label_for() {
   fi
 }
 
-# Create git worktree on inchworm/<slug>-<YYYYMMDD> from origin/develop (after fetch).
+# Create git worktree on <prefix>/<slug>-<YYYYMMDD> from origin/develop (after fetch).
 # Clears a stale path (via cleanup) before add; reuses an existing branch without -b.
 # Returns non-zero when base cannot be resolved (unless fixture fallback applies).
 create_implement_worktree() {
@@ -423,7 +475,7 @@ ensure_workspace_trusted() {
   }
 }
 
-# Remove implement worktree registration; keep inchworm/* branch.
+# Remove implement worktree registration; keep the implement branch.
 cleanup_implement_worktree() {
   local repo_path=$1
   local worktree_path=$2
@@ -437,27 +489,107 @@ cleanup_implement_worktree() {
   git -C "$repo_path" worktree prune 2>/dev/null || true
 }
 
+# Scratch dir for agent-written PR copy. Sits under the already-gitignored
+# .inchworm/ path so the draft never becomes part of the commit.
+PR_DRAFT_DIR=".inchworm/pr"
+
+# Anything a human sees — branch, commit, PR — is written as the author's own
+# work. This is the guard against the runner naming itself in that copy.
+# The name only leaks when it reads as a word: `.inchworm/pr` and `.inchworm.yml`
+# are operator-facing paths a reviewer may legitimately see mentioned, so a
+# leading dot is excluded (plain `grep -w` would still match them).
+TOOL_NAME_RE='(^|[^[:alnum:]_.])inchworm([^[:alnum:]_]|$)'
+
+mentions_tool_name() {
+  printf '%s' "$1" | grep -qiE "$TOOL_NAME_RE"
+}
+
+# Trim, drop a leading markdown heading marker, cap at a reviewable length.
+clean_pr_title() {
+  local raw=$1
+  raw=${raw//$'\r'/}
+  raw=$(printf '%s' "$raw" | sed 's/^#\{1,6\}[[:space:]]*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+  printf '%s' "${raw:0:100}"
+}
+
+# Sentence-case subject without a trailing period, Tim Pope length.
+subject_from_title() {
+  local raw=$1
+  raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/\.$//')
+  if [[ -z "$raw" ]]; then
+    printf 'Apply small fix'
+    return
+  fi
+  printf '%s%s' "$(printf '%s' "${raw:0:1}" | tr '[:lower:]' '[:upper:]')" "${raw:1:71}"
+}
+
+# Why the change was made, in the words the find already used.
+context_body_for() {
+  local summary=$1
+  local evidence=$2
+  local body=""
+
+  if [[ -n "${summary//[[:space:]]/}" ]]; then
+    body="$summary"
+  fi
+  if [[ -n "${evidence//[[:space:]]/}" ]]; then
+    if [[ -n "$body" ]]; then
+      body+=$'\n\n'
+    fi
+    body+="Context: ${evidence}"
+  fi
+  printf '%s' "$body"
+}
+
+commit_with_message() {
+  local worktree_path=$1
+  local subject=$2
+  local body=$3
+
+  if [[ -n "${body//[[:space:]]/}" ]]; then
+    git -C "$worktree_path" commit -q -m "$subject" -m "$body"
+  else
+    git -C "$worktree_path" commit -q -m "$subject"
+  fi
+}
+
 # Fixture success: tiny commit in worktree so the branch exists for draft PR.
 # File must not live under gitignored `.inchworm/` or `git add` fails.
 implement_fixture_success() {
   local worktree_path=$1
-  local find_id=$2
-  printf 'inchworm implement fixture for F-%s\n' "$find_id" \
-    >"${worktree_path}/inchworm-implement-fixture.txt"
-  git -C "$worktree_path" add inchworm-implement-fixture.txt
-  git -C "$worktree_path" commit -q -m "inchworm: implement F-${find_id}"
+  local subject=$2
+  printf 'implement fixture\n' >"${worktree_path}/implement-fixture.txt"
+  git -C "$worktree_path" add implement-fixture.txt
+  commit_with_message "$worktree_path" "$subject" ""
 }
 
 # Real implementer (Done-when): agent in worktree, never --yolo/--force/--trust.
 implement_with_agent() {
   local worktree_path=$1
-  local find_id=$2
-  local find_title=$3
-  local guidance=${4:-}
+  local find_title=$2
+  local find_summary=$3
+  local find_evidence=$4
+  local guidance=${5:-}
   local agent_bin="${INCHWORM_AGENT:-agent}"
   local prompt
-  prompt="Implement inchworm find F-${find_id}: ${find_title}. Stay small; stop when done. Commit your work on the current branch. Do not push and do not open a PR."
+
+  prompt="Work item: ${find_title}"
+  if [[ -n "${find_summary//[[:space:]]/}" ]]; then
+    prompt+=$'\n\n'"Why it matters: ${find_summary}"
+  fi
+  if [[ -n "${find_evidence//[[:space:]]/}" ]]; then
+    prompt+=$'\n'"Context: ${find_evidence}"
+  fi
+  prompt+=$'\n\n'"Make the smallest change that addresses this. Stop when it is done, or when it turns out to be too large for one sitting."
+  prompt+=$'\n\n'"Commit on the current branch. Write the message with the writing-git-commits skill: an imperative subject under 72 characters, and a body only when a reader needs context the diff cannot give them."
+  prompt+=$'\n\n'"Then write two files for the pull request:"
+  prompt+=$'\n'"- ${PR_DRAFT_DIR}/title.txt — one line, plain English, no ticket ids or prefixes"
+  prompt+=$'\n'"- ${PR_DRAFT_DIR}/body.md — why this change was made, including any issue or error links from the context above. Follow the repository's pull request template when it has one."
+  prompt+=$'\n\n'"Both files are ignored by git, so they stay out of the commit. Review them with the writing-for-humans skill: short sentences, plain words, no filler. Say why the change was made and leave the technical detail to the code."
+  prompt+=$'\n\n'"Write as the engineer making the change. Never mention this prompt, the tooling that started it, automation, or agents in the commit message, the title, or the body."
+  prompt+=$'\n\n'"Do not push and do not open a pull request."
   prompt+=$(append_repo_guidance_block "$guidance")
+
   (
     cd "$worktree_path" || exit 1
     "$agent_bin" -p "$prompt"
@@ -467,14 +599,93 @@ implement_with_agent() {
 # Agents often leave edits uncommitted; capture them so the branch carries the work.
 commit_leftover_changes() {
   local worktree_path=$1
-  local find_id=$2
+  local subject=$2
+  local body=$3
 
   if [[ -z "$(git -C "$worktree_path" status --porcelain)" ]]; then
     return 0
   fi
 
   git -C "$worktree_path" add -A
-  git -C "$worktree_path" commit -q -m "inchworm: implement F-${find_id}"
+  commit_with_message "$worktree_path" "$subject" "$body"
+}
+
+# Collapse everything ahead of the base onto one commit we wrote ourselves.
+# Failure to produce a clean history is a hard failure — the caller must not
+# publish what is left behind.
+squash_onto_authored_commit() {
+  local worktree_path=$1
+  local base_ref=$2
+  local subject=$3
+  local body=$4
+  local messages
+
+  if ! git -C "$worktree_path" reset -q --soft "$base_ref"; then
+    printf 'inchworm: could not reset onto %s to rewrite the history\n' "$base_ref" >&2
+    return 1
+  fi
+  if git -C "$worktree_path" diff --cached --quiet; then
+    return 0
+  fi
+  if ! commit_with_message "$worktree_path" "$subject" "$body"; then
+    printf 'inchworm: could not write the replacement commit\n' >&2
+    return 1
+  fi
+
+  messages=$(git -C "$worktree_path" log --format='%B' "${base_ref}..HEAD" 2>/dev/null || printf '')
+  if mentions_tool_name "$messages"; then
+    printf 'inchworm: replacement commit message still names the runner\n' >&2
+    return 1
+  fi
+}
+
+# Last line of defence for the reviewer-facing history: if the agent named the
+# runner in a message, collapse the branch onto one commit we wrote ourselves.
+# Rewriting is safe here because nothing has been pushed yet.
+sanitize_branch_commits() {
+  local worktree_path=$1
+  local base_ref=$2
+  local subject=$3
+  local body=$4
+  local messages
+
+  messages=$(git -C "$worktree_path" log --format='%B' "${base_ref}..HEAD" 2>/dev/null || printf '')
+  if ! mentions_tool_name "$messages"; then
+    return 0
+  fi
+
+  printf 'inchworm: commit message named the runner — rewriting as a single commit\n' >&2
+  squash_onto_authored_commit "$worktree_path" "$base_ref" "$subject" "$body"
+}
+
+# First non-empty line of the agent's title file, or nothing we can use.
+read_agent_pr_title() {
+  local worktree_path=$1
+  local file="${worktree_path}/${PR_DRAFT_DIR}/title.txt"
+  local title
+
+  [[ -f "$file" ]] || return 1
+  title=$(clean_pr_title "$(sed -n '/[^[:space:]]/{p;q;}' "$file")")
+  [[ -n "$title" ]] || return 1
+  if mentions_tool_name "$title"; then
+    return 1
+  fi
+  printf '%s' "$title"
+}
+
+# Agent body with any self-naming lines dropped; empty when nothing usable is left.
+read_agent_pr_body() {
+  local worktree_path=$1
+  local file="${worktree_path}/${PR_DRAFT_DIR}/body.md"
+  local body
+
+  [[ -f "$file" ]] || return 1
+  body=$(grep -viE "$TOOL_NAME_RE" "$file" || true)
+  [[ -n "${body//[[:space:]]/}" ]] || return 1
+  if mentions_tool_name "$body"; then
+    return 1
+  fi
+  printf '%s' "$body"
 }
 
 # A branch with no commits ahead of its base cannot become a PR.
@@ -487,20 +698,58 @@ branch_has_commits() {
   [[ "$count" -gt 0 ]]
 }
 
-# Push inchworm/ branch before gh pr create (plan locked decision).
-# Fixture/tests: never push (avoids polluting a local origin from clones).
-# Live: require origin + successful push, else soft-fail (caller defers).
+# Base for a rewrite once the worktree exists: origin/develop was already
+# refreshed to create it, so no second fetch. Fixture repos with no remote fall
+# back to the local branch the worktree was cut from.
+rewrite_base_ref() {
+  local repo_path=$1
+
+  if git -C "$repo_path" rev-parse --verify --quiet "$IMPLEMENT_BASE_REMOTE_REF" >/dev/null; then
+    printf '%s\n' "$IMPLEMENT_BASE_REMOTE_REF"
+    return 0
+  fi
+  printf '%s\n' "$IMPLEMENT_BASE_BRANCH"
+}
+
+# Push the implement branch before `gh pr create`, and again after the fixer has
+# rewritten it. `create` sets the upstream for a branch the remote has never
+# seen; `update` replaces the branch the draft PR already points at, so it needs
+# --force-with-lease — which is also why it refuses to run on a shared branch.
+# Fixture/tests: never touch the network, but say which push was skipped.
+# Live: require origin + successful push, else soft-fail (caller defers/fails).
 push_implement_branch() {
   local worktree_path=$1
   local fixture=$2
+  local mode=${3:-create}
+  local branch
 
   if [[ -n "$fixture" ]]; then
-    printf 'inchworm: fixture mode — skipping push\n' >&2
+    if [[ "$mode" == "update" ]]; then
+      printf 'inchworm: fixture mode — skipping the post-fix push (git push --force-with-lease origin HEAD)\n' >&2
+    else
+      printf 'inchworm: fixture mode — skipping the first push (git push -u origin HEAD)\n' >&2
+    fi
     return 0
   fi
 
   if ! git -C "$worktree_path" remote get-url origin >/dev/null 2>&1; then
     printf 'inchworm: no origin — cannot push implement branch\n' >&2
+    return 1
+  fi
+
+  if [[ "$mode" == "update" ]]; then
+    branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || printf '')
+    case "$branch" in
+      "$IMPLEMENT_BASE_BRANCH"|main|master|HEAD|"")
+        printf 'inchworm: refusing to force-push %s — only an implement branch may be rewritten\n' \
+          "${branch:-an unknown branch}" >&2
+        return 1
+        ;;
+    esac
+    if git -C "$worktree_path" push --force-with-lease origin HEAD; then
+      return 0
+    fi
+    printf 'inchworm: post-fix push failed — the remote draft branch still has the pre-fix history\n' >&2
     return 1
   fi
 
@@ -514,15 +763,15 @@ push_implement_branch() {
 
 open_draft_pr() {
   local worktree_path=$1
-  local find_id=$2
-  local find_title=$3
+  local title=$2
+  local body_file=$3
   local pr_out pr_url
   pr_out=$(
     cd "$worktree_path" || exit 1
     "$GH_BIN" pr create --draft \
       --base "$IMPLEMENT_BASE_BRANCH" \
-      --title "inchworm: F-${find_id} — ${find_title}" \
-      --body "Inchworm draft for F-${find_id}."
+      --title "$title" \
+      --body-file "$body_file"
   ) || return 1
   pr_url=$(printf '%s\n' "$pr_out" | grep -Eo 'https://[^[:space:]]+' | head -n1)
   if [[ -z "$pr_url" ]]; then
@@ -593,26 +842,96 @@ run_standard_pr_review() {
   printf 'inchworm: Standard pr-review complete → %s\n' "$review_dir"
 }
 
+# Fixture success: leave real work in the worktree, uncommitted, the way a fixer
+# that edited files but never committed does. File must not live under gitignored
+# `.inchworm/` or `git add` skips it.
+fixer_fixture_success() {
+  local worktree_path=$1
+  printf 'fix fixture\n' >"${worktree_path}/fix-fixture.txt"
+}
+
+# Real fixer: agent in the worktree, never --yolo/--force/--trust. The
+# coordinator owns the history and the push, so the agent does neither.
+fix_with_agent() {
+  local repo_path=$1
+  local worktree_path=$2
+  local pr_url=$3
+  local blocker_count=$4
+  local agent_bin="${INCHWORM_AGENT:-agent}"
+  local prompt
+
+  prompt="Fix only verified Class: blocking findings for draft PR ${pr_url} (${blocker_count} blocker(s)). Do not re-review. Never use --yolo, --force, or --trust."
+  prompt+=$'\n\n'"Commit with the writing-git-commits skill. Write as the engineer making the change: never mention this prompt, tooling, automation, or agents in the message."
+  prompt+=$'\n\n'"Do not push and do not open a pull request."
+  prompt+=$(append_repo_guidance_block "$(load_repo_guidance "${repo_path}/.inchworm.yml")")
+  (
+    cd "$worktree_path" || exit 1
+    "$agent_bin" -p "$prompt"
+  )
+}
+
+# Fixture runs keep the network out of it. The first push was skipped too, so
+# there is no remote branch for the post-fix push to update.
+fixer_push_fixture() {
+  if [[ -n "${INCHWORM_IMPLEMENT_FIXTURE:-}" || -n "${INCHWORM_FIX_FIXTURE:-}" ]]; then
+    printf 'fixture'
+  fi
+}
+
+# The human is pinged next, so by then the fix has to be on the remote draft
+# branch and the history has to read like one authored change. The fixer's own
+# commits plus any leftovers are runner bookkeeping no reviewer asked for, so
+# implement and fix collapse into a single commit before the branch is updated.
+land_fixer_work() {
+  local repo_path=$1
+  local worktree_path=$2
+  local head_before=$3
+  local subject=$4
+  local body=$5
+  local base_ref head_after
+
+  base_ref=$(rewrite_base_ref "$repo_path")
+  commit_leftover_changes "$worktree_path" "$subject" "$body"
+  head_after=$(git -C "$worktree_path" rev-parse HEAD 2>/dev/null || printf '')
+  if [[ -n "$head_before" && "$head_after" == "$head_before" ]]; then
+    printf 'inchworm: fixer left no changes — the pushed branch already matches\n'
+    return 0
+  fi
+
+  printf 'inchworm: squashing the fixed branch into one authored commit\n' >&2
+  if ! squash_onto_authored_commit "$worktree_path" "$base_ref" "$subject" "$body"; then
+    printf 'inchworm: history after the fix still names the runner — refusing to push it\n' >&2
+    return 1
+  fi
+
+  push_implement_branch "$worktree_path" "$(fixer_push_fixture)" update
+}
+
 # One fixer pass when verified blockers exist. Never --yolo/--force/--trust.
-# At most one pass; no second review.
+# At most one pass; no second review. A pass that cannot be landed on the remote
+# draft branch is a fixer failure — the caller still pings, but the reviewer is
+# never shown a history we would not publish.
 run_blocking_fixer() {
   local repo_path=$1
   local worktree_path=$2
   local pr_url=$3
   local blocker_count=$4
+  local subject=$5
+  local body=$6
   local fix_fixture="${INCHWORM_FIX_FIXTURE:-}"
-  local fix_dir marker agent_bin prompt
+  local fix_dir marker head_before pass_note=""
 
   fix_dir=$(ruby_review fix_dir "$repo_path" "$DATA_DIR")
   mkdir -p "$fix_dir"
   marker="${fix_dir}/fixture-ran"
+  head_before=$(git -C "$worktree_path" rev-parse HEAD 2>/dev/null || printf '')
 
   if [[ -n "$fix_fixture" ]]; then
     case "$fix_fixture" in
       success)
         printf 'success\n' >"$marker"
-        printf 'inchworm: fixer pass — addressed blocking findings (fixture success)\n'
-        return 0
+        fixer_fixture_success "$worktree_path"
+        pass_note=" (fixture success)"
         ;;
       fail)
         printf 'fail\n' >"$marker"
@@ -626,19 +945,17 @@ run_blocking_fixer() {
         return 1
         ;;
     esac
-  fi
-
-  agent_bin="${INCHWORM_AGENT:-agent}"
-  prompt="Fix only verified Class: blocking findings for draft PR ${pr_url} (${blocker_count} blocker(s)). Do not re-review. Never use --yolo, --force, or --trust."
-  prompt+=$(append_repo_guidance_block "$(load_repo_guidance "${repo_path}/.inchworm.yml")")
-  (
-    cd "$worktree_path" || exit 1
-    "$agent_bin" -p "$prompt"
-  ) || {
+  elif ! fix_with_agent "$repo_path" "$worktree_path" "$pr_url" "$blocker_count"; then
     printf 'inchworm: fixer fail — residual blocking findings remain (agent exited non-zero)\n'
     return 1
-  }
-  printf 'inchworm: fixer pass — addressed blocking findings\n'
+  fi
+
+  if ! land_fixer_work "$repo_path" "$worktree_path" "$head_before" "$subject" "$body"; then
+    printf 'inchworm: fixer fail — the fix stayed local; the draft PR still shows the pre-fix history\n'
+    return 1
+  fi
+
+  printf 'inchworm: fixer pass — addressed blocking findings%s\n' "$pass_note"
   return 0
 }
 
@@ -665,11 +982,15 @@ ping_draft_pr() {
   fi
 }
 
-# After successful draft PR: review once → optional one fix pass → ping. No second review.
+# After successful draft PR: review once → optional one fix pass (rewritten and
+# pushed onto the draft branch) → ping. No second review. The find's subject and
+# body are the fallback the post-fix rewrite commits under.
 run_review_fix_ping() {
   local repo_path=$1
   local worktree_path=$2
   local pr_url=$3
+  local commit_subject=$4
+  local commit_body=$5
   local review_dir ledger_path blocker_count
 
   run_standard_pr_review "$repo_path" "$pr_url"
@@ -683,7 +1004,8 @@ run_review_fix_ping() {
 
   if [[ "$blocker_count" -gt 0 ]]; then
     printf 'inchworm: %s verified blocking finding(s) — running one fixer pass\n' "$blocker_count"
-    run_blocking_fixer "$repo_path" "$worktree_path" "$pr_url" "$blocker_count" || true
+    run_blocking_fixer "$repo_path" "$worktree_path" "$pr_url" "$blocker_count" \
+      "$commit_subject" "$commit_body" || true
   else
     printf 'inchworm: no verified blockers — skipping fixer\n'
   fi
@@ -701,12 +1023,19 @@ run_implement_and_pr() {
   local find_title=$4
   local today=$5
   local fixture="${INCHWORM_IMPLEMENT_FIXTURE:-}"
-  local ymd branch_name worktree_path pr_url base_ref guidance
+  local ymd branch_name branch_prefix worktree_path pr_url base_ref guidance
+  local find_summary find_evidence commit_subject commit_body
+  local pr_title="" pr_body="" pr_body_file
 
   ymd=$(yyyymmdd_from_today "$today")
-  branch_name="inchworm/$(branch_slug_from_id "$find_id")-${ymd}"
+  branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
+  branch_name="${branch_prefix}/$(branch_slug_from_id "$find_id")-${ymd}"
   worktree_path="${repo_path}/.inchworm/worktrees/${branch_name//\//-}"
   guidance=$(load_repo_guidance "$repo_yml")
+  find_summary=$(find_field "$repo_path" "$find_id" summary)
+  find_evidence=$(find_field "$repo_path" "$find_id" evidence)
+  commit_subject=$(subject_from_title "$find_title")
+  commit_body=$(context_body_for "$find_summary" "$find_evidence")
 
   case "$fixture" in
     too_large)
@@ -720,7 +1049,7 @@ run_implement_and_pr() {
           "could not base worktree on origin/develop"
         return 0
       fi
-      implement_fixture_success "$worktree_path" "$find_id"
+      implement_fixture_success "$worktree_path" "$commit_subject"
       ;;
     "")
       if ! create_implement_worktree "$repo_path" "$branch_name" "$worktree_path" ""; then
@@ -728,12 +1057,21 @@ run_implement_and_pr() {
           "could not base worktree on origin/develop"
         return 0
       fi
-      if ! implement_with_agent "$worktree_path" "$find_id" "$find_title" "$guidance"; then
+      if ! implement_with_agent "$worktree_path" "$find_title" "$find_summary" \
+        "$find_evidence" "$guidance"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "agent exited non-zero"
         return 0
       fi
-      commit_leftover_changes "$worktree_path" "$find_id"
+      pr_title=$(read_agent_pr_title "$worktree_path" || printf '')
+      pr_body=$(read_agent_pr_body "$worktree_path" || printf '')
+      rm -rf "${worktree_path:?}/${PR_DRAFT_DIR}"
+      commit_leftover_changes "$worktree_path" "$commit_subject" "$commit_body"
       base_ref="$IMPLEMENT_BASE_REMOTE_REF"
+      if ! sanitize_branch_commits "$worktree_path" "$base_ref" "$commit_subject" "$commit_body"; then
+        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+          "could not rewrite commits that name the runner"
+        return 0
+      fi
       if ! branch_has_commits "$worktree_path" "$base_ref"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
           "no commits produced (nothing to open a PR from)"
@@ -749,15 +1087,34 @@ run_implement_and_pr() {
       ;;
   esac
 
+  # Resolve the reviewer-facing copy before anything leaves the machine: a find
+  # whose own words name the runner is deferred rather than opened as a draft.
+  if [[ -z "$pr_title" ]]; then
+    pr_title=$(subject_from_title "$find_title")
+  fi
+  if [[ -z "$pr_body" ]]; then
+    pr_body=$(context_body_for "$find_summary" "$find_evidence")
+  fi
+  if mentions_tool_name "$pr_title" || mentions_tool_name "$pr_body"; then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "PR title or body would name the runner"
+    return 0
+  fi
+
   if ! push_implement_branch "$worktree_path" "$fixture"; then
     defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "push failed"
     return 0
   fi
 
-  pr_url=$(open_draft_pr "$worktree_path" "$find_id" "$find_title") || {
+  pr_body_file=$(mktemp "${TMPDIR:-/tmp}/inchworm-pr-body.XXXXXX")
+  printf '%s\n' "$pr_body" >"$pr_body_file"
+
+  pr_url=$(open_draft_pr "$worktree_path" "$pr_title" "$pr_body_file") || {
+    rm -f "$pr_body_file"
     defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "draft PR create failed"
     return 0
   }
+  rm -f "$pr_body_file"
   if [[ -z "$pr_url" ]]; then
     defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" "no PR URL"
     return 0
@@ -767,7 +1124,7 @@ run_implement_and_pr() {
   ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
   printf 'inchworm: opened draft PR %s\n' "$pr_url"
 
-  run_review_fix_ping "$repo_path" "$worktree_path" "$pr_url"
+  run_review_fix_ping "$repo_path" "$worktree_path" "$pr_url" "$commit_subject" "$commit_body"
 }
 
 # FDA-scoped LaunchAgent executable: a private copy of bash (not /bin/bash).
@@ -1016,7 +1373,7 @@ cmd_run() {
       continue
     fi
 
-    blocking=$(find_blocking_draft "$repo_path" || true)
+    blocking=$(find_blocking_draft "$repo_path" "$repo_yml" || true)
     if [[ -n "$blocking" ]]; then
       draft_url=${blocking%%$'\t'*}
       draft_head=${blocking#*$'\t'}
@@ -1024,7 +1381,7 @@ cmd_run() {
         ruby_yaml set_state "$repo_yml" "active_draft_pr" "$draft_url"
       fi
       printf 'inchworm: skip %s — blocking draft %s (%s)\n' \
-        "$repo_path" "${draft_head:-inchworm/}" "${draft_url:-unknown}"
+        "$repo_path" "${draft_head:-unknown branch}" "${draft_url:-unknown}"
       continue
     fi
 
@@ -1069,14 +1426,14 @@ cmd_status() {
       last_run=$(ruby_yaml get "$repo_yml" "state.last_run_date")
     fi
 
-    blocking=$(find_blocking_draft "$repo_path" || true)
+    blocking=$(find_blocking_draft "$repo_path" "$repo_yml" || true)
     printf 'repo: %s\n' "$repo_path"
     printf '  last_run_date: %s\n' "$last_run"
     printf '  create_window: %s\n' "$window_label"
     if [[ -n "$blocking" ]]; then
       draft_url=${blocking%%$'\t'*}
       draft_head=${blocking#*$'\t'}
-      printf '  draft: blocking %s (%s)\n' "${draft_head:-inchworm/}" "${draft_url:-unknown}"
+      printf '  draft: blocking %s (%s)\n' "${draft_head:-unknown branch}" "${draft_url:-unknown}"
     else
       printf '  draft: none blocking\n'
     fi

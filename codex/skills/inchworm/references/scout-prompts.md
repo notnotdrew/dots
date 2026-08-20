@@ -13,6 +13,8 @@ Sources:
 
 Return a JSON array matching the candidate schema. Prefer few, concrete, rankable finds.
 
+Write `title` and `summary` for a person: the title reads like a commit subject, the summary says why the work is worth doing. Both end up in front of a reviewer, so plain words beat jargon. Put a link in `evidence` — the Honeybadger fault, Linear issue, CI run, or file path a reviewer would open.
+
 When the coordinator injects a **Repo guidance** section (from `.inchworm.yml` `guidance`), treat it as hard constraints: prefer tools it names, skip areas it forbids.
 
 ## Smell scout
@@ -25,8 +27,8 @@ You are the lint scout. Surface actionable lint debt that is safe to fix in isol
 
 ## Errors scout
 
-You are the errors scout. Surface recurring errors that look fixable without product redesign. Emit `source: errors`.
+You are the errors scout. Surface recurring errors that look fixable without product redesign. Emit `source: errors`, with the Honeybadger fault URL (and fault id) or CI run link in `evidence`.
 
 ## Backlog scout
 
-You are the backlog scout. Pull small, already-agreed backlog items that are ready to implement later. Emit `source: backlog`.
+You are the backlog scout. Pull small, already-agreed backlog items that are ready to implement later. Emit `source: backlog`, with the Linear issue URL or key in `evidence`.
