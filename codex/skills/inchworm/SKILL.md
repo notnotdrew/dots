@@ -9,7 +9,7 @@ Coordinator skill for the inchworm daily create-window runner (Phase 5).
 
 ## North star
 
-When a find is not an easy change, inchworm's job is to notice that. The destination is Kent Beck's sequence: make the change easy (caution: this may be hard), then make the easy change — one thin, behavior-preserving PR per day until the original find *is* the easy change. Today's runner cannot park the original and pick only the next extract slice (identity would collapse them; tidy drops `too_large`; pick has no "blocked on"), so the stop is `too_large`. This paragraph is not permission to extract and ship policy in one sitting, or to keep a seam-move find in the open backlog.
+When a find is not an easy change, inchworm's job is to notice that. The destination is Kent Beck's sequence: make the change easy (caution: this may be hard), then make the easy change — one thin, behavior-preserving PR per day until the original find *is* the easy change. Today's runner cannot park the original and pick only the next extract slice (identity would collapse them; tidy drops `too_large`; pick has no "blocked on"), so the stop is `too_large`. This paragraph is not permission to extract and ship policy in one sitting, to keep a seam-move find in the open backlog, or to spend the day on a leftover-write cleanup inside a region the tree already marked provisional.
 
 ## Phase 5 scope (discover → implement → draft PR → review → fix → ping → schedule)
 
@@ -41,7 +41,7 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Scout** — propose candidates (see [scout-prompts](references/scout-prompts.md))
 - **Curator** — merge/dedupe into durable `finds.md` (see [curator-prompt](references/curator-prompt.md))
 - **Pick** — choose one open find or report none (see [discover-boundary](references/discover-boundary.md))
-- **Implementer** — code the selected find in a Worktrunk checkout (see [implementer-prompt](references/implementer-prompt.md)); smallest change preserves other callers' semantics, so unbounded shared retry/report/fail-loud policy is `too_large` (see [shared-seam](references/shared-seam.md))
+- **Implementer** — code the selected find in a Worktrunk checkout (see [implementer-prompt](references/implementer-prompt.md)); smallest change preserves other callers' semantics, so unbounded shared retry/report/fail-loud policy is `too_large` (see [shared-seam](references/shared-seam.md)), as is a nibble inside provisional code
 - **Coordinator** — push branch, draft PR, state updates, then review → fix → ping (see [implement-boundary](references/implement-boundary.md), [review-fix-boundary](references/review-fix-boundary.md))
 - **Reviewer** — full Standard `pr-review` (see [reviewer-prompt](references/reviewer-prompt.md))
 - **Fixer** — one pass on verified blockers only (see [fixer-prompt](references/fixer-prompt.md))
