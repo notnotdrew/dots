@@ -1,13 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Shell(\"/Users/drewprice/.codex/skills/pr-review/scripts/gh-pr-parse\")",
-      "Shell(\"/Users/drewprice/.codex/skills/pr-review/scripts/pr-review-worktree\")",
-      "Shell(\"/Users/drewprice/.codex/skills/pr-review/scripts/validate-review-artifacts\")",
       "Shell(\"codex/skills/pr-review/scripts/test-review-artifacts\")",
-      "Shell(/Users/drewprice/.codex/skills/pr-review/scripts/**:*)",
-      "Shell(/Users/drewprice/.codex/skills/pr-review/scripts/gh-pr-parse)",
-      "Shell(/Users/drewprice/.codex/skills/pr-review/scripts/validate-review-artifacts)",
       "Shell(actionlint)",
       "Shell(agent)",
       "Shell(awk)",
@@ -76,7 +70,7 @@
       "WebFetch(docs.slack.dev)",
       "WebFetch(github.com)",
       "WebFetch(worktrunk.dev)",
-      "Write(/Users/drewprice/.cdx-artifacts/pr-reviews/**)",
+      "Write(~/.cdx-artifacts/pr-reviews/**)",
       "Shell(./bin/prrr)",
       "Shell(cat)",
       "Shell(sed)",

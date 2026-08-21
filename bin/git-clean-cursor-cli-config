@@ -8,9 +8,10 @@ command -v jq >/dev/null 2>&1 || {
   exit 1
 }
 
-# Permission entries naming a single PR-review staging dir or a per-project
-# agent-tools file only apply to the machine and run that created them.
-ephemeral_path_pattern='/\.pr-[0-9]|/\.cursor/projects/'
+# Permission entries naming a single PR-review staging dir, a per-project
+# agent-tools file, or an absolute home path only apply to the machine
+# that created them.
+ephemeral_path_pattern='/\.pr-[0-9]|/\.cursor/projects/|/Users/|/home/'
 
 jq --arg ephemeral_path_pattern "$ephemeral_path_pattern" '
   del(

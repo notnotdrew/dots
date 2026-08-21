@@ -11,7 +11,7 @@
 	gpgsign = true
 [core]
 	editor = vim
-	excludesfile = /Users/drewprice/.gitignore_global
+	excludesfile = ~/.gitignore_global
 [gpg]
 	format = ssh
 [gpg "ssh"]
@@ -25,12 +25,12 @@
 [rerere]
 	enabled = true
 [credential]
-	helper = /usr/local/share/gcm-core/git-credential-manager
+	helper = manager
 [credential "https://dev.azure.com"]
 	useHttpPath = true
 [init]
 	defaultBranch = main
 [filter "cursor-cli-config"]
-	clean = /Users/drewprice/bin/git-clean-cursor-cli-config
+	clean = ~/bin/git-clean-cursor-cli-config
 	smudge = cat
 	required = false

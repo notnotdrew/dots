@@ -484,7 +484,7 @@
   },
   "Use Cursor Guide (Light)" : false,
   "Custom Directory" : "Recycle",
-  "Working Directory" : "\/Users\/drewprice",
+  "Working Directory" : "~",
   "Tab Color (Dark)" : {
     "Red Component" : 0.5311279296875,
     "Color Space" : "sRGB",

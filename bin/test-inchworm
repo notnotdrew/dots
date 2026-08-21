@@ -4103,7 +4103,7 @@ test_inchworm_skill_mentions_launchd() {
   if printf '%s' "$blob" | grep -qiE 'No launchd'; then
     problems="${problems}skill must not still say No launchd (Phase 5 owns schedule)"$'\n'
   fi
-  if ! printf '%s' "$blob" | grep -qiE 'LaunchAgent|launchd-install|com\.drewprice\.inchworm'; then
+  if ! printf '%s' "$blob" | grep -qiE 'LaunchAgent|launchd-install|com\.inchworm'; then
     problems="${problems}skill/references must mention LaunchAgent, launchd-install, or com.inchworm"$'\n'
   fi
 
