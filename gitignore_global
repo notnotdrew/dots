@@ -18,3 +18,5 @@ tags
 
 .inchworm.yml
 .inchworm
+
+.rubocop_personal.yml

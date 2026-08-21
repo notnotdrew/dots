@@ -151,11 +151,19 @@ module RubocopChangedCommon
     File.executable?(candidate) ? candidate : "rubocop"
   end
 
+  # Untracked per-developer overrides (see ~/dots-private). The file inherits the
+  # project's .rubocop.yml, so selecting it only adds personal settings.
+  def personal_config_args
+    config = File.join(repo_root, ".rubocop_personal.yml")
+    File.exist?(config) ? ["--config", config] : []
+  end
+
   def run_rubocop(files, rubocop_args)
     cmd = [
       rubocop_bin,
       "--force-exclusion",
       "--format", "json",
+      *personal_config_args,
       *rubocop_args,
       "--",
       *files.map { |file| relative_path(file) }
@@ -168,6 +176,7 @@ module RubocopChangedCommon
     cmd = [
       rubocop_bin,
       "--force-exclusion",
+      *personal_config_args,
       *rubocop_args,
       "--stdin", relative_path(path)
     ]
