@@ -4,7 +4,7 @@
 # Usage:
 #   prrr                        Home picker: start a new review, or open a local one
 #   prrr start <number|url>     Start (or re-run) a review for that PR
-#   prrr --clean [number|url]   Remove local artifacts/worktrunks for merged PRs
+#   prrr --clean [number|url]   Remove local artifacts/worktrunks for closed/merged PRs
 #   prrr <number|url>           Pick an artifact for that PR review
 #
 # Home picker:
@@ -733,7 +733,7 @@ remove_epoch_worktrees() {
   require_cmds wt
   printf '%s: removing worktrees: %s\n' "$SCRIPT_NAME" "${branches[*]}" >&2
   # Epoch checkouts are disposable evidence pinned to observed heads; force both
-  # dirty trees and unmerged-looking branches so merged-PR cleanup always lands.
+  # dirty trees and unmerged-looking branches so closed-PR cleanup always lands.
   wt -C "$clone_dir" remove --yes --foreground --force -D "${branches[@]}"
 }
 
@@ -778,14 +778,14 @@ clean_one_review() {
     return 0
   fi
 
-  if [[ "$state_label" != MERGED ]]; then
+  if [[ "$state_label" != MERGED && "$state_label" != CLOSED ]]; then
     printf '%s: keep %s/%s#%s (%s)\n' \
       "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" "$state_label" >&2
     return 0
   fi
 
-  printf '%s: cleaning merged %s/%s#%s\n' \
-    "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" >&2
+  printf '%s: cleaning %s %s/%s#%s\n' \
+    "$SCRIPT_NAME" "$state_label" "$owner" "$repo" "$pr_number" >&2
 
   if clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
     remove_epoch_worktrees "$clone_dir" "$pr_number"
@@ -797,8 +797,8 @@ clean_one_review() {
   remove_review_artifacts "$review_dir" "$pr_number"
 }
 
-# Compare local reviews to GitHub and remove merged-PR artifacts/worktrunks.
-clean_merged_reviews() {
+# Compare local reviews to GitHub and remove closed/merged-PR artifacts/worktrunks.
+clean_closed_reviews() {
   local ref=${1:-}
   local review_dir
   local -a targets=()
@@ -837,7 +837,7 @@ main() {
       die "$USAGE"
     fi
     require_cmds gh
-    clean_merged_reviews "${2:-}" || status=$?
+    clean_closed_reviews "${2:-}" || status=$?
     if [[ -n "${status:-}" ]]; then
       ((status == EXIT_CANCELLED)) && exit 0
       exit "$status"
