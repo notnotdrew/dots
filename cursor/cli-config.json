@@ -161,12 +161,13 @@
   "network": {
     "useHttp1ForAgent": false
   },
-  "approvalMode": "allowlist",
+  "approvalMode": "unrestricted",
   "autoAcceptWebSearch": false,
   "sandbox": {
     "mode": "disabled",
     "networkAccess": "user_config_with_defaults"
   },
+  "showSandboxIntro": false,
   "attribution": {
     "attributeCommitsToAgent": false,
     "attributePRsToAgent": true
