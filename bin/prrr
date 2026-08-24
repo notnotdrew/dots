@@ -4,7 +4,8 @@
 # Usage:
 #   prrr                        Home picker: start a new review, or open a local one
 #   prrr start <number|url>     Start (or re-run) a review for that PR
-#   prrr --clean [number|url]   Remove local artifacts/worktrunks for closed/merged PRs
+#   prrr --clean [number|url]   Remove local artifacts/worktrunks for closed/merged
+#                               PRs, or local reviews older than 14 days
 #   prrr <number|url>           Pick an artifact for that PR review
 #
 # Home picker:
@@ -32,6 +33,7 @@ readonly PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 readonly PR_REVIEW="${SCRIPT_DIR}/pr-review"
 readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/Documents/dev}"
 readonly EXIT_CANCELLED=130
+readonly CLEAN_MAX_AGE_DAYS=14
 readonly USAGE="usage: ${SCRIPT_NAME} [start <PR-number-or-URL> | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
@@ -764,28 +766,49 @@ remove_review_artifacts() {
   fi
 }
 
+review_is_stale() {
+  local review_dir=$1
+  local mtime now_epoch max_age_seconds
+
+  mtime="$(stat -f '%m' "$review_dir")"
+  now_epoch="$(date +%s)"
+  max_age_seconds=$((CLEAN_MAX_AGE_DAYS * 86400))
+  if ((now_epoch - mtime > max_age_seconds)); then
+    return 0
+  fi
+  return 1
+}
+
 clean_one_review() {
   local review_dir=$1
-  local owner repo pr_number clone_dir state_label
+  local owner repo pr_number clone_dir state_label reason
 
   parse_review_identity "$review_dir" owner repo pr_number
 
+  state_label=""
   if ! state_label="$(
     gh pr view "$pr_number" --repo "${owner}/${repo}" --json state --jq '.state' 2>/dev/null
   )"; then
-    printf '%s: skip %s/%s#%s (could not query GitHub)\n' \
-      "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" >&2
-    return 0
+    state_label=""
   fi
 
-  if [[ "$state_label" != MERGED && "$state_label" != CLOSED ]]; then
-    printf '%s: keep %s/%s#%s (%s)\n' \
-      "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" "$state_label" >&2
+  if [[ "$state_label" == MERGED || "$state_label" == CLOSED ]]; then
+    reason="$state_label"
+  elif review_is_stale "$review_dir"; then
+    reason="older than ${CLEAN_MAX_AGE_DAYS}d"
+  else
+    if [[ -n "$state_label" ]]; then
+      printf '%s: keep %s/%s#%s (%s)\n' \
+        "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" "$state_label" >&2
+    else
+      printf '%s: skip %s/%s#%s (could not query GitHub)\n' \
+        "$SCRIPT_NAME" "$owner" "$repo" "$pr_number" >&2
+    fi
     return 0
   fi
 
   printf '%s: cleaning %s %s/%s#%s\n' \
-    "$SCRIPT_NAME" "$state_label" "$owner" "$repo" "$pr_number" >&2
+    "$SCRIPT_NAME" "$reason" "$owner" "$repo" "$pr_number" >&2
 
   if clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
     remove_epoch_worktrees "$clone_dir" "$pr_number"
@@ -797,7 +820,8 @@ clean_one_review() {
   remove_review_artifacts "$review_dir" "$pr_number"
 }
 
-# Compare local reviews to GitHub and remove closed/merged-PR artifacts/worktrunks.
+# Remove local artifacts/worktrunks for closed/merged PRs, or reviews older than
+# CLEAN_MAX_AGE_DAYS.
 clean_closed_reviews() {
   local ref=${1:-}
   local review_dir
