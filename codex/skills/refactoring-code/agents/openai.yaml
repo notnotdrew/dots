@@ -1,4 +1,4 @@
 interface:
   display_name: "Refactoring Code"
-  short_description: "Analyze smells and apply safe refactorings"
-  default_prompt: "Use refactoring-code to analyze this code for smells and apply the highest-value behavior-preserving refactoring"
+  short_description: "Make OO code cheaper to change (Ruby-first)"
+  default_prompt: "Use refactoring-code to find what makes this code expensive to change and apply the smallest behavior-preserving refactoring that helps"
