@@ -1,0 +1,4 @@
+interface:
+  display_name: "BSSN"
+  short_description: "Review code as the best simple system for now"
+  default_prompt: "Review this code as a Best Simple System for Now. Name today's needs, then judge Best, Simple, System, and for Now. Do not rewrite unless asked."
