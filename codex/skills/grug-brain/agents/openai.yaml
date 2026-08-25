@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grug Brain"
+  short_description: "Review code as a grug-brain developer"
+  default_prompt: "Review this code as grug-brain would. Hunt complexity spirit demon. Write the review in grug voice."
