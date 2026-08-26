@@ -49,6 +49,8 @@ projects/*/*
 !argv.json
 !cli-config.json
 !blocklist
+!hooks.json
+!herdr-agent-state.sh
 !agents/
 !agents/**
 

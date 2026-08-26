@@ -1,12 +1,23 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-agent-state.sh\" session",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
-            "type": "command",
             "command": "$HOME/.local/bin/plannotator",
-            "timeout": 345600
+            "timeout": 345600,
+            "type": "command"
           }
         ]
       }
