@@ -2040,6 +2040,71 @@ test_run_pick_none_when_no_open_finds() {
   pass "$test_name"
 }
 
+test_run_discover_parses_utf8_finds_under_c_locale() {
+  # LaunchAgent does not set LANG; Ruby then uses US-ASCII and dies on em dashes
+  # in finds.md (today's 2026-08-25 crash). Discover must still pick the find.
+  test_name="discover parses UTF-8 finds.md when LANG is C"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "utf8-locale"
+
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  write_finds_md "$finds_md" "$(cat <<'EOF'
+# Inchworm finds
+
+<!-- inchworm:finds-version:1 -->
+
+## F-utf8-emdash
+
+- status: open
+- source: smell
+- rank: 1
+- title: Drop leftover assets-space update
+- summary: Extra update after save is leftover
+- evidence: manuals_controller.rb:65-77 — leftover update after the audited save
+EOF
+)"
+  write_smell_candidates_json "$fixture_dir" '[]'
+
+  out_file="$TEST_ROOT/run-utf8-locale-out.txt"
+  (
+    export LANG=C
+    export LC_ALL=C
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if grep -qiE 'invalid byte sequence|US-ASCII' "$out_file"; then
+    problems="${problems}discover must not crash on UTF-8 finds.md under LANG=C"$'\n'
+  fi
+  if ! grep -q 'utf8-emdash' "$out_file"; then
+    problems="${problems}expected selected id utf8-emdash"$'\n'
+  fi
+  if [ -f "$finds_md" ] && ! grep -q 'leftover update after the audited save' "$finds_md"; then
+    problems="${problems}UTF-8 evidence must survive curator rewrite"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
 test_run_live_scouts_all_four_sources() {
   test_name="eligible run without scout fixtures invokes smell/lint/errors/backlog agents"
   now="2026-08-18T10:00:00"
@@ -3970,6 +4035,13 @@ test_launchd_plist_and_install_notes() {
     if ! grep -E '@PATH@|mise|/opt/homebrew' "$plist" >/dev/null; then
       problems="${problems}plist PATH should include @PATH@ / mise / Homebrew"$'\n'
     fi
+    # Launchd leaves LANG unset; Ruby then defaults to US-ASCII and cannot parse finds.md.
+    if ! grep -q '<key>LANG</key>' "$plist" || ! grep -q '<key>LC_ALL</key>' "$plist"; then
+      problems="${problems}plist must set LANG and LC_ALL (UTF-8) for LaunchAgent Ruby"$'\n'
+    fi
+    if ! grep -E 'en_US\.UTF-8|UTF-8' "$plist" >/dev/null; then
+      problems="${problems}plist LANG/LC_ALL must be a UTF-8 locale"$'\n'
+    fi
   fi
 
   if [ ! -f "$notes" ]; then
@@ -3992,6 +4064,9 @@ test_launchd_plist_and_install_notes() {
     fi
     if ! grep -qiE 'mise|PATH|EnvironmentVariables' "$notes"; then
       problems="${problems}launchd-install.md must mention mise/PATH for LaunchAgent env"$'\n'
+    fi
+    if ! grep -qiE 'LANG|LC_ALL|UTF-8' "$notes"; then
+      problems="${problems}launchd-install.md must mention LANG/LC_ALL UTF-8 for LaunchAgent Ruby"$'\n'
     fi
     if ! grep -qiE 'inchworm-launchd|launchd-setup|Full Disk Access|FDA' "$notes"; then
       problems="${problems}launchd-install.md must mention FDA-scoped runner / launchd-setup"$'\n'
@@ -4061,6 +4136,9 @@ test_launchd_setup_installs_runner_binary() {
     fi
     if ! grep -E '<string>run</string>' "$plist" >/dev/null; then
       problems="${problems}generated plist must include run"$'\n'
+    fi
+    if ! grep -q '<key>LANG</key>' "$plist" || ! grep -q 'UTF-8' "$plist"; then
+      problems="${problems}generated plist must set LANG to a UTF-8 locale"$'\n'
     fi
   fi
   if ! grep -Fq "$runner" "$out_file"; then
@@ -4876,6 +4954,7 @@ run_test test_run_implement_failure_defers_without_pr_or_second_pick
 run_test test_run_implement_too_large_marks_without_pr
 run_test test_finds_path_hash_isolates_repos
 run_test test_run_pick_none_when_no_open_finds
+run_test test_run_discover_parses_utf8_finds_under_c_locale
 run_test test_run_live_scouts_all_four_sources
 run_test test_run_live_scouts_tolerate_prose_stdout
 run_test test_run_repo_guidance_injected_into_agent_prompts

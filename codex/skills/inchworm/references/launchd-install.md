@@ -59,7 +59,7 @@ Setup smoke-tests the signed runner (`runner -c 'exit 0'`) so a broken runner fa
 
 ## Environment
 
-LaunchAgents get a minimal default `PATH`, so the generated plist sets `HOME` and a `PATH` including mise Ruby `latest`, Homebrew, and user bins. `bin/inchworm` also resolves `mise` by absolute path as a fallback.
+LaunchAgents get a minimal default `PATH` and no locale, so the generated plist sets `HOME`, `LANG`/`LC_ALL` to `en_US.UTF-8`, and a `PATH` including mise Ruby `latest`, Homebrew, and user bins. Without UTF-8, Ruby treats `finds.md` as US-ASCII and crashes on em dashes. `bin/inchworm` also resolves `mise` by absolute path as a fallback.
 
 ## Schedule
 

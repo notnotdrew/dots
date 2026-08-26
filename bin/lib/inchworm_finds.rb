@@ -8,6 +8,11 @@ require "json"
 require "digest"
 require "fileutils"
 
+# LaunchAgent has no locale; without this, File.foreach treats finds.md as US-ASCII
+# and crashes on em dashes. Always read/write UTF-8 regardless of LANG.
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
+
 SCOUT_SOURCES = %w[smell lint errors backlog].freeze
 
 SOURCE_PREFIX_RE = /\A(?:#{SCOUT_SOURCES.join('|')})-/.freeze
@@ -91,7 +96,7 @@ def load_fixture_candidates(fixture_dir)
     path = File.join(fixture_dir, "#{source}.json")
     next unless File.file?(path)
 
-    parsed = extract_json_array(File.read(path))
+    parsed = extract_json_array(File.read(path, encoding: Encoding::UTF_8))
     next unless parsed.is_a?(Array)
 
     parsed.each do |item|
@@ -107,7 +112,7 @@ def parse_finds_md(path)
 
   finds = []
   current = nil
-  File.foreach(path) do |line|
+  File.foreach(path, encoding: Encoding::UTF_8) do |line|
     if (match = line.match(/\A##\s+F-(.+)\s*\z/))
       finds << current if current
       current = {
@@ -228,7 +233,7 @@ end
 def write_finds_md(path, finds)
   ordered = finds.sort_by { |find| [find["rank"].to_i, find["id"].to_s] }
   FileUtils.mkdir_p(File.dirname(path))
-  File.write(path, render_finds_md(ordered))
+  File.write(path, render_finds_md(ordered), encoding: Encoding::UTF_8)
 end
 
 def pick_open(finds)
