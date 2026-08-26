@@ -170,8 +170,9 @@ nnoremap <Leader>F :w<CR>:TestFile --tag feature<CR>
 nnoremap <Leader>v :w<CR>:TestLast --tag feature<CR>
 
 " Fuzzy find
-nnoremap <C-P> <CR>:Files<CR>
-nnoremap <C-B> <CR>:Buffers<CR>
+nnoremap <C-P> :Files<CR>
+" Ctrl-B is Herdr's prefix key, so it never reaches Vim inside a pane
+" nnoremap <C-B> :Buffers<CR>
 
 " Linter
 nnoremap <leader>ld :ALEDisableRule<CR>
