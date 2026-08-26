@@ -43,6 +43,10 @@
 #                               argv containing that URL) after review (+ optional fix).
 #                               If notify exits non-zero: still print ping line + a fallback
 #                               line matching /notify fallback|notification fallback|logged PR/i
+#                               Also carries failure alerts for any day that ends without a
+#                               draft PR (preflight skip, deferral, infra failure). A failure
+#                               alert names the failure and carries no PR URL, so it is
+#                               distinguishable from a ping.
 #
 # Repo config (.inchworm.yml):
 #   guidance — optional plain text injected into scout / implementer / fixer prompts
@@ -210,6 +214,14 @@ fail() {
 }
 
 run_test() {
+  # INCHWORM_TEST_FILTER runs only the tests whose name contains it, so a single
+  # contract can be iterated without paying for the whole suite.
+  if [ -n "${INCHWORM_TEST_FILTER:-}" ]; then
+    case "$1" in
+      *"$INCHWORM_TEST_FILTER"*) ;;
+      *) return 0 ;;
+    esac
+  fi
   tests_run=$((tests_run + 1))
   "$@"
 }
@@ -386,7 +398,7 @@ push_remote_only_develop_commit() {
 write_mock_gh() {
   mock_path=$1
   mode=$2
-  # modes: none | blocking_draft | ready_non_blocking | malformed
+  # modes: none | blocking_draft | ready_non_blocking | malformed | create_fails
   cat >"$mock_path" <<EOF
 #!/usr/bin/env bash
 set -u
@@ -408,7 +420,7 @@ done
 #   gh pr list --author @me --state open --json number,url,isDraft,headRefName
 if [ "\$pr_cmd" = "list" ]; then
   case "$mode" in
-    none)
+    none|create_fails)
       printf '%s\n' '[]'
       exit 0
       ;;
@@ -454,6 +466,10 @@ if [ "\$pr_cmd" = "create" ]; then
     esac
     prev="\$arg"
   done
+  if [ "$mode" = "create_fails" ]; then
+    printf '%s\n' 'GraphQL: something went wrong (createPullRequest)' >&2
+    exit 1
+  fi
   printf '%s\n' 'https://example.test/pr/99'
   exit 0
 fi
@@ -952,6 +968,20 @@ assert_no_notify() {
   log=$1
   count=$(count_log_lines "$log")
   [ "$count" = "0" ]
+}
+
+# A day that ends without a draft PR still has to reach the human. The alert
+# rides the same notify channel as the ping, so it must be tellable apart from
+# one: a failure word in the argv and no PR URL to click.
+assert_notify_failure() {
+  log=$1
+  count=$(count_log_lines "$log")
+  [ "$count" -ge 1 ] || return 1
+  grep -qiE 'fail|error|could not|unreachable' "$log" || return 1
+  if grep -Eq 'https?://[^[:space:]]*/pr/' "$log"; then
+    return 1
+  fi
+  return 0
 }
 
 assert_review_artifacts_present() {
@@ -1819,8 +1849,10 @@ test_run_implement_failure_defers_without_pr_or_second_pick() {
   if ! assert_no_pr_review "$TEST_ROOT/pr-review-invocations.log"; then
     problems="${problems}implement fail must not invoke Standard pr-review"$'\n'"$(cat "$TEST_ROOT/pr-review-invocations.log" 2>/dev/null || true)"$'\n'
   fi
-  if ! assert_no_notify "$TEST_ROOT/notify-invocations.log"; then
-    problems="${problems}implement fail must not ping/notify"$'\n'"$(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
+  # Not a ping (there is no PR to look at) but not silent either: a day that
+  # ended in a deferral is exactly what the human needs to hear about.
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}implement fail must alert without pinging a PR"$'\n'"$(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
   fi
   review_dir=$(review_dir_for "$data_dir" "$repo_dir")
   if [ -e "$review_dir" ]; then
@@ -2750,8 +2782,8 @@ test_run_defers_when_rewrite_fallback_also_names_the_runner() {
   if ! grep -qiE 'implement (fail|failed)|deferred' "$out_file"; then
     problems="${problems}expected a deferred signal in output"$'\n'
   fi
-  if ! assert_no_notify "$TEST_ROOT/notify-invocations.log"; then
-    problems="${problems}must not ping without a draft PR"$'\n'
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}must alert the deferral without pinging a PR"$'\n'
   fi
 
   if [ -n "$problems" ]; then
@@ -2809,8 +2841,8 @@ test_run_defers_when_sanitize_reset_fails() {
   if ! grep -qiE 'implement (fail|failed)|deferred' "$out_file"; then
     problems="${problems}expected a deferred signal in output"$'\n'
   fi
-  if ! assert_no_notify "$TEST_ROOT/notify-invocations.log"; then
-    problems="${problems}must not ping without a draft PR"$'\n'
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}must alert the deferral without pinging a PR"$'\n'
   fi
 
   if [ -n "$problems" ]; then
@@ -3099,8 +3131,137 @@ test_run_implement_fetches_origin_before_worktree() {
   pass "$test_name"
 }
 
-test_run_live_implement_missing_origin_develop_defers() {
-  test_name="live implement defers when origin/develop is missing"
+test_run_preflight_fetch_failure_skips_without_stamp() {
+  # The incident this guards: an SSH agent that would not sign made `git fetch`
+  # fail, and the runner had already stamped the day and picked a find. One
+  # unreachable origin cost a day and a find. Nothing was attempted, so nothing
+  # should have been spent.
+  test_name="Phase 6: unreachable origin skips without stamping or judging a find, and alerts"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "preflight-fetch"
+
+  git -C "$repo_dir" remote set-url origin "$TEST_ROOT/run-preflight-fetch-gone.git"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"preflight-untouched","source":"smell","title":"Not judged today","summary":"origin was unreachable before any find was picked","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-preflight-fetch-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0 (soft skip), got $status"$'\n'
+  fi
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}last_run_date must stay null when nothing was attempted, got: $after_last"$'\n'
+  fi
+  if [ -e "$finds_md" ]; then
+    problems="${problems}must not run scouts or write finds.md before origin is reachable: $finds_md"$'\n'
+  fi
+  if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}must not open a PR when origin is unreachable"$'\n'
+  fi
+  if [ -s "$TEST_ROOT/agent-invocations.log" ]; then
+    problems="${problems}must not spend agent calls when origin is unreachable"$'\n'
+  fi
+  if ! grep -qiE 'fetch|origin|preflight' "$out_file"; then
+    problems="${problems}expected a skip reason naming fetch/origin"$'\n'
+  fi
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}expected a failure alert, got: $(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! assert_no_inchworm_worktree_registered "$repo_dir"; then
+    problems="${problems}must not leave a worktree behind"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_draft_pr_create_failure_keeps_find_open() {
+  # The implementer did real work, so the day is spent — but the find was never
+  # judged, and `deferred` is dropped by the next tidy. Losing a find to a gh
+  # outage is the bug; keep it open so tomorrow can pick it up again.
+  test_name="Phase 6: failed draft PR create burns the day, keeps the find open, and alerts"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "pr-create-fail"
+  write_mock_gh "$mock_gh" "create_fails"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"pr-create-open","source":"smell","title":"Survives a gh outage","summary":"must stay open when the draft PR cannot be created","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-pr-create-fail-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0 (soft fail), got $status"$'\n'
+  fi
+  if [ "$after_last" != "2026-08-18" ]; then
+    problems="${problems}expected last_run_date stamped 2026-08-18 (work was attempted), got: $after_last"$'\n'
+  fi
+  if [ "$draft_cache" != "null" ]; then
+    problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
+  fi
+  if [ ! -f "$finds_md" ]; then
+    problems="${problems}missing finds.md"$'\n'
+  elif grep -A30 'pr-create-open' "$finds_md" | grep -qiE 'status:[[:space:]]*deferred'; then
+    problems="${problems}find must not be deferred when only gh failed (tidy would drop it)"$'\n'
+  elif ! grep -A30 'pr-create-open' "$finds_md" | grep -qiE 'status:[[:space:]]*open'; then
+    problems="${problems}find must stay open after a gh outage"$'\n'
+  fi
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}expected a failure alert, got: $(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! assert_no_inchworm_worktree_registered "$repo_dir"; then
+    problems="${problems}worktree must be cleaned up after a failed PR create"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_missing_origin_develop_skips_without_stamp() {
+  test_name="missing origin/develop skips without stamping and alerts"
   now="2026-08-18T10:00:00"
   setup_eligible_run_env "missing-develop"
 
@@ -3122,6 +3283,7 @@ test_run_live_implement_missing_origin_develop_defers() {
     export INCHWORM_DATA_DIR="$data_dir"
     export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
     unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_NOTIFY="$mock_notify"
     export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
     run_inchworm run
   ) >"$out_file" 2>&1
@@ -3129,10 +3291,11 @@ test_run_live_implement_missing_origin_develop_defers() {
 
   finds_md=$(finds_md_for "$data_dir" "$repo_dir")
   draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
   problems=""
 
   if [ "$status" -ne 0 ]; then
-    problems="${problems}expected exit 0 (soft defer), got $status"$'\n'
+    problems="${problems}expected exit 0 (soft skip), got $status"$'\n'
   fi
   if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
     problems="${problems}must not open a PR when origin/develop is missing"$'\n'
@@ -3140,14 +3303,21 @@ test_run_live_implement_missing_origin_develop_defers() {
   if [ "$draft_cache" != "null" ]; then
     problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
   fi
-  if [ -f "$finds_md" ] && ! grep -A30 'missing-dev' "$finds_md" | grep -qiE 'status:[[:space:]]*deferred'; then
-    problems="${problems}find must be deferred when origin/develop missing"$'\n'
+  # No base to build on is an unattempted day, not a verdict on the find.
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}last_run_date must stay null when there is no base to work from, got: $after_last"$'\n'
+  fi
+  if [ -e "$finds_md" ]; then
+    problems="${problems}must not judge a find when origin/develop is missing: $finds_md"$'\n'
   fi
   if ! grep -qiE 'origin/develop|fetch origin|no origin' "$out_file"; then
     problems="${problems}expected clear signal mentioning origin/develop or fetch failure"$'\n'
   fi
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}expected a failure alert, got: $(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
   if ! assert_no_inchworm_worktree_registered "$repo_dir"; then
-    problems="${problems}worktree must be cleaned up after defer"$'\n'
+    problems="${problems}worktree must be cleaned up after skip"$'\n'
   fi
 
   if [ -n "$problems" ]; then
@@ -4971,7 +5141,9 @@ run_test test_run_recorded_draft_blocks_after_branch_rename
 run_test test_run_hand_cut_draft_does_not_block
 run_test test_run_implement_base_ignores_checked_out_feature
 run_test test_run_implement_fetches_origin_before_worktree
-run_test test_run_live_implement_missing_origin_develop_defers
+run_test test_run_preflight_fetch_failure_skips_without_stamp
+run_test test_run_draft_pr_create_failure_keeps_find_open
+run_test test_run_missing_origin_develop_skips_without_stamp
 run_test test_run_pick_open_over_deferred
 run_test test_run_pick_prefers_lower_rank
 run_test test_run_review_none_pings_without_fixer

@@ -8,7 +8,7 @@ After discover selects a find, the coordinator runs implement then (on success) 
 - Branch name: `<branch_prefix>/<slug>-<YYYYMMDD>` (see [authored-output](authored-output.md); date from `INCHWORM_NOW` / today)
 - Base from freshly fetched `origin/develop` (`--create --base=origin/develop` when the branch is new; attach without `--create` when it already exists)
 - If a stale directory already sits at the target path, `--clobber` (or remove/recreate) and still succeed
-- Soft-fail (defer find, no PR, clean up checkout) when `origin` is missing or `origin/develop` cannot be resolved after `git fetch origin`
+- `origin` missing, `git fetch origin` failing, or `origin/develop` unresolvable is caught by preflight before the stamp (see [discover-boundary](discover-boundary.md)); reaching implement without a base is a soft-fail that leaves the find `open`
 
 ## Implement fixtures (`INCHWORM_IMPLEMENT_FIXTURE`)
 
@@ -36,12 +36,20 @@ After discover selects a find, the coordinator runs implement then (on success) 
 
 On implement failure (`fail` / agent non-zero / push fail / draft fail / `too_large` / cannot resolve `origin/develop`):
 
-- Mark the selected find `deferred` or `too_large`
 - Do **not** call `gh pr create` (or stop if create already failed)
 - Leave `active_draft_pr` null
 - Do **not** pick a second find — the day's stamp is already burned
 - Skip review / fixer / ping
+- Alert the human (the same notify channel as the ping, carrying the reason and no PR URL) — a day that ends without a draft is never log-only
 - If a worktree was created for this attempt, clean it up (keep any branch it created)
+
+Whether the find keeps its place depends on who failed, because the next tidy drops `deferred`:
+
+| Failure | Find status | Why |
+| --- | --- | --- |
+| `fail` fixture, agent non-zero, no commits produced, commits or PR copy that name the runner | `deferred` | The attempt reached a verdict on this find |
+| `too_large` | `too_large` | A correct result (see [shared-seam](shared-seam.md)) |
+| push fail, `gh pr create` fail, no PR URL, no base to work from | `open` | The network or the remote failed, not the find — deferring it would drop a find that was never judged |
 
 ## Forbidden
 

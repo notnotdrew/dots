@@ -39,7 +39,7 @@ usage() {
 Usage: inchworm <init|run|status|review|launchd-setup>
 
   init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
-  run            Eligible repos: stamp + discover + implement + draft PR + review/fix/ping
+  run            Eligible repos: preflight + stamp + discover + implement + draft PR + review/fix/ping
   status         Show registered repos, last_run_date, create window, draft gate
   review         List open drafts, switch Worktrunk, launch a discuss agent
   launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
@@ -353,6 +353,31 @@ resolve_implement_base() {
 
   [[ -n "$reason_file" ]] && printf 'origin/develop missing after fetch — cannot create implement worktree\n' >"$reason_file"
   return 1
+}
+
+# What the day needs before it is allowed to spend itself: the tools, and a
+# fresh origin/develop to base an implement branch on. Nothing here judges a
+# find or costs an agent call, so a failure means the day was never attempted —
+# the stamp stays off and the next tick in the window tries again. Prints the
+# reason on stdout for the caller to log and alert on.
+preflight_repo() {
+  local repo_path=$1
+  local fixture=${2:-}
+  local reason_file
+
+  if ! command -v "$WT_BIN" >/dev/null 2>&1; then
+    printf 'Worktrunk (%s) not found\n' "$WT_BIN"
+    return 1
+  fi
+
+  reason_file=$(mktemp)
+  if ! resolve_implement_base "$repo_path" "$fixture" "$reason_file" >/dev/null; then
+    cat "$reason_file"
+    rm -f "$reason_file"
+    return 1
+  fi
+  rm -f "$reason_file"
+  return 0
 }
 
 ensure_gitignore_entries() {
@@ -944,6 +969,7 @@ mark_find_deferred() {
   ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" deferred
   printf 'inchworm: implement failed — %s for F-%s (deferred; stamp burned, no second pick)\n' \
     "$reason" "$find_id"
+  notify_failure "$reason" "F-${find_id} deferred"
 }
 
 # Mark deferred and drop any implement checkout created for this attempt.
@@ -954,6 +980,22 @@ defer_implement_with_cleanup() {
   local reason=$4
   local branch_name=${5:-}
   mark_find_deferred "$repo_path" "$find_id" "$reason"
+  cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
+}
+
+# The attempt died on something outside the find — the network, gh, the remote.
+# The day is spent either way, but the find was never judged, and `deferred` is
+# dropped by the next tidy. Keeping it open is what lets tomorrow try again
+# instead of losing the find to an outage.
+fail_implement_with_cleanup() {
+  local repo_path=$1
+  local worktree_path=$2
+  local find_id=$3
+  local reason=$4
+  local branch_name=${5:-}
+  printf 'inchworm: implement failed — %s for F-%s (find stays open; stamp burned, no second pick)\n' \
+    "$reason" "$find_id"
+  notify_failure "$reason" "F-${find_id} still open"
   cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
 }
 
@@ -1170,6 +1212,35 @@ run_blocking_fixer() {
   return 0
 }
 
+# A day that ends without a draft PR has to reach the human: the runner is
+# unattended and nobody reads the launchd log, so a silent failure is one nobody
+# hears about until they wonder why nothing landed. Same channel as the ping,
+# but it never carries a PR URL, so the two cannot be mistaken for each other.
+notify_failure() {
+  local headline=$1
+  local detail=${2:-}
+  local notified=0
+  local safe_headline safe_detail
+
+  printf 'inchworm: failed — %s%s\n' "$headline" "${detail:+ — $detail}"
+
+  if [[ -n "${INCHWORM_NOTIFY:-}" ]]; then
+    if "${INCHWORM_NOTIFY}" "inchworm failed: ${headline}" "$detail"; then
+      notified=1
+    fi
+  elif command -v osascript >/dev/null 2>&1; then
+    safe_headline=${headline//[\"\\]/}
+    safe_detail=${detail//[\"\\]/}
+    if osascript -e "display notification \"${safe_detail}\" with title \"inchworm failed\" subtitle \"${safe_headline}\" sound name \"Basso\"" 2>/dev/null; then
+      notified=1
+    fi
+  fi
+
+  if [[ "$notified" -eq 0 ]]; then
+    printf 'inchworm: notify fallback — logged the failure\n'
+  fi
+}
+
 # Ping after review (+ optional fix). Prefer INCHWORM_NOTIFY; else osascript + always log URL.
 # Always print the ping line. On notify/osascript failure (or missing), print notify fallback.
 ping_draft_pr() {
@@ -1257,7 +1328,7 @@ run_implement_and_pr() {
       ;;
     success)
       if ! worktree_path=$(create_implement_worktree "$repo_path" "$branch_name" "$fixture"); then
-        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+        fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
           "could not base worktree on origin/develop" "$branch_name"
         return 0
       fi
@@ -1265,7 +1336,7 @@ run_implement_and_pr() {
       ;;
     "")
       if ! worktree_path=$(create_implement_worktree "$repo_path" "$branch_name" ""); then
-        defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+        fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
           "could not base worktree on origin/develop" "$branch_name"
         return 0
       fi
@@ -1315,7 +1386,7 @@ run_implement_and_pr() {
   fi
 
   if ! push_implement_branch "$worktree_path" "$fixture"; then
-    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+    fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
       "push failed" "$branch_name"
     return 0
   fi
@@ -1325,13 +1396,13 @@ run_implement_and_pr() {
 
   pr_url=$(open_draft_pr "$worktree_path" "$pr_title" "$pr_body_file") || {
     rm -f "$pr_body_file"
-    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+    fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
       "draft PR create failed" "$branch_name"
     return 0
   }
   rm -f "$pr_body_file"
   if [[ -z "$pr_url" ]]; then
-    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+    fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
       "no PR URL" "$branch_name"
     return 0
   fi
@@ -1554,7 +1625,7 @@ cmd_init() {
 cmd_run() {
   local today weekday hour minute
   local repo_path repo_yml last_run blocking
-  local mins draft_url draft_head
+  local mins draft_url draft_head preflight_reason
   local discover_out selected_line find_id find_title
 
   read -r today weekday hour minute <<<"$(parse_clock)"
@@ -1599,6 +1670,16 @@ cmd_run() {
       fi
       printf 'inchworm: skip %s — blocking draft %s (%s)\n' \
         "$repo_path" "${draft_head:-unknown branch}" "${draft_url:-unknown}"
+      continue
+    fi
+
+    # Nothing below this point is free — scouts cost agent calls and the stamp
+    # burns the day — so the things that must hold for any of it to land are
+    # checked first. A failure here is a day that never started.
+    if ! preflight_reason=$(preflight_repo "$repo_path" "${INCHWORM_IMPLEMENT_FIXTURE:-}"); then
+      printf 'inchworm: skip %s — preflight failed: %s (no stamp; next tick in the window retries)\n' \
+        "$repo_path" "$preflight_reason"
+      notify_failure "preflight failed" "$preflight_reason"
       continue
     fi
 
