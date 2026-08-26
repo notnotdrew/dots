@@ -35,7 +35,7 @@ Branch names, commit messages, and PR copy carry no trace of the runner. See [au
 
 ## Schedule (LaunchAgent)
 
-Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (hours 8–14). See [launchd-install](references/launchd-install.md).
+Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (hours 8–15, every 30 minutes; no work at or after 16:00). See [launchd-install](references/launchd-install.md).
 
 ## Roles
 

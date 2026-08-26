@@ -19,9 +19,9 @@ def default_global
       "runtime" => "cursor-cli",
       "schedule" => {
         "days" => %w[mon tue wed thu fri],
-        "window_local" => "08:00-15:00",
+        "window_local" => "08:00-16:00",
         "catch_up_missed_days" => false,
-        "poll_interval_hint" => "1h"
+        "poll_interval_hint" => "30m"
       }
     },
     "repos" => []

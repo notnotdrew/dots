@@ -167,7 +167,7 @@
 #   Implement base: always git fetch origin then branch from origin/develop (not HEAD).
 #   Soft-defer when origin/develop cannot be resolved (live); fixture mode may fall back.
 #
-# Create window: Mon–Fri local, half-open [08:00, 15:00).
+# Create window: Mon–Fri local, half-open [08:00, 16:00).
 # Phase 4 eligible: stamp + discover + implement + draft PR + Standard review +
 #   optional one fix pass + ping (when a find is selected and implement succeeds).
 #
@@ -175,7 +175,8 @@
 #   Template: launchd/com.inchworm.plist.template (placeholders; no hard-coded $HOME)
 #   Installed by: inchworm launchd-setup → ~/Library/LaunchAgents/com.inchworm.plist
 #   ProgramArguments: FDA-scoped runner + absolute bin/inchworm + run
-#   StartCalendarInterval: Weekday 1–5, Hour 8–14 inclusive (last tick 2pm; no hour 15)
+#   StartCalendarInterval: Weekday 1–5, Hour 8–15 inclusive, Minute 0 and 30
+#   (last tick 15:30; no hour 16)
 #   Install notes: codex/skills/inchworm/references/launchd-install.md
 #   Skill corpus may mention launchd / LaunchAgent (Phase 5; no longer "No launchd").
 #   inchworm launchd-setup installs the runner (private bash copy) for scoped FDA.
@@ -1234,9 +1235,9 @@ defaults:
   runtime: cursor-cli
   schedule:
     days: [mon, tue, wed, thu, fri]
-    window_local: "08:00-15:00"
+    window_local: "08:00-16:00"
     catch_up_missed_days: false
-    poll_interval_hint: 1h
+    poll_interval_hint: 30m
 repos:
   - path: ${repo_dir}
 EOF
@@ -1358,8 +1359,8 @@ test_init_creates_repo_config_and_registry() {
     if [ "$runtime" != "cursor-cli" ]; then
       problems="${problems}expected defaults.runtime cursor-cli, got: $runtime"$'\n'
     fi
-    if [ "$window" != "08:00-15:00" ]; then
-      problems="${problems}expected defaults.schedule.window_local 08:00-15:00, got: $window"$'\n'
+    if [ "$window" != "08:00-16:00" ]; then
+      problems="${problems}expected defaults.schedule.window_local 08:00-16:00, got: $window"$'\n'
     fi
     if ! yaml_has_exact_repo_once "$global_yml" "$repo_dir"; then
       problems="${problems}expected repos to contain absolute path exactly once: $repo_dir"$'\n'
@@ -1505,11 +1506,54 @@ test_run_refuses_weekend() {
 }
 
 test_run_refuses_at_or_after_window_end() {
-  # Tuesday 15:00 — half-open window ends; refuse at/after 15:00
+  # Tuesday 16:00 — half-open window ends; refuse at/after 16:00
   assert_run_refuses_without_stamp \
-    "run refuses at/after 15:00 and does not stamp" \
-    "2026-08-18T15:00:00" \
-    "window|outside|15:00|after"
+    "run refuses at/after 16:00 and does not stamp" \
+    "2026-08-18T16:00:00" \
+    "window|outside|16:00|after"
+}
+
+test_run_still_open_at_1530() {
+  test_name="run still proceeds at 15:30 (window open until 16:00)"
+  now="2026-08-18T15:30:00"
+  implement_fixture=success
+  setup_eligible_run_env "window-1530"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"late-window","source":"smell","title":"Still in window","summary":"15:30 is before 16:00","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-window-1530-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if grep -qiE 'outside create window' "$out_file"; then
+    problems="${problems}15:30 must still be inside the create window"$'\n'
+  fi
+  if [ "$after_last" != "2026-08-18" ]; then
+    problems="${problems}expected last_run_date stamped 2026-08-18, got: $after_last"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
 }
 
 test_run_refuses_before_window() {
@@ -4148,7 +4192,7 @@ test_status_shows_repo_window_and_draft() {
 test_launchd_plist_and_install_notes() {
   # Phase 5: LaunchAgent *template* + install notes (portable; no hard-coded home).
   # launchd-setup renders the template into ~/Library/LaunchAgents/.
-  test_name="Phase 5: launchd template + install notes cover weekday hours 8–14"
+  test_name="Phase 5: launchd template + install notes cover weekday hours 8–15 every 30 minutes"
   plist="$DOTS/launchd/com.inchworm.plist.template"
   notes="$SKILL_ROOT/references/launchd-install.md"
   problems=""
@@ -4182,21 +4226,26 @@ test_launchd_plist_and_install_notes() {
         problems="${problems}ProgramArguments must include run"$'\n'
       fi
     fi
-    # Weekdays Mon–Fri (1–5) and hours 8–14 inclusive.
+    # Weekdays Mon–Fri (1–5), hours 8–15 inclusive, :00 and :30.
     for weekday in 1 2 3 4 5; do
       if ! grep -E "<integer>${weekday}</integer>" "$plist" >/dev/null; then
         problems="${problems}StartCalendarInterval missing Weekday ${weekday}"$'\n'
       fi
     done
-    for hour in 8 9 10 11 12 13 14; do
+    for hour in 8 9 10 11 12 13 14 15; do
       if ! grep -E "<integer>${hour}</integer>" "$plist" >/dev/null; then
         problems="${problems}StartCalendarInterval missing Hour ${hour}"$'\n'
       fi
     done
-    # No hour-15 tick (create window ends before 15:00).
-    if grep -E '<key>Hour</key>[[:space:]]*<integer>15</integer>' "$plist" >/dev/null \
-      || grep -B1 '<integer>15</integer>' "$plist" | grep -q 'Hour'; then
-      problems="${problems}StartCalendarInterval must not include Hour 15"$'\n'
+    minute_0=$(grep -A1 '<key>Minute</key>' "$plist" | grep -c '<integer>0</integer>' || true)
+    minute_30=$(grep -A1 '<key>Minute</key>' "$plist" | grep -c '<integer>30</integer>' || true)
+    if [ "$minute_0" -ne 40 ] || [ "$minute_30" -ne 40 ]; then
+      problems="${problems}expected 40 ticks at :00 and 40 at :30 (5 weekdays × 8 hours), got :00=$minute_0 :30=$minute_30"$'\n'
+    fi
+    # No hour-16 tick (create window ends before 16:00); 15:30 is the last tick.
+    if grep -E '<key>Hour</key>[[:space:]]*<integer>16</integer>' "$plist" >/dev/null \
+      || grep -B1 '<integer>16</integer>' "$plist" | grep -q 'Hour'; then
+      problems="${problems}StartCalendarInterval must not include Hour 16"$'\n'
     fi
     # LaunchAgent must carry a usable PATH (mise Ruby + Homebrew); default launchd PATH is too bare.
     if ! grep -q '<key>EnvironmentVariables</key>' "$plist"; then
@@ -4227,7 +4276,7 @@ test_launchd_plist_and_install_notes() {
       problems="${problems}launchd-install.md must mention: com.inchworm"$'\n'
     fi
     if ! grep -qiE 'create window|hours?[[:space:]]*8|8[[:space:]]*[-–].*14|8am|08:00|8.?14' "$notes"; then
-      problems="${problems}launchd-install.md must mention create window / hours 8–14"$'\n'
+      problems="${problems}launchd-install.md must mention create window / hours 8–15"$'\n'
     fi
     if ! grep -qiE 'missed|catch.?up|not caught|no catch' "$notes"; then
       problems="${problems}launchd-install.md must mention missed days are not caught up"$'\n'
@@ -4911,9 +4960,9 @@ defaults:
   runtime: cursor-cli
   schedule:
     days: [mon, tue, wed, thu, fri]
-    window_local: "08:00-15:00"
+    window_local: "08:00-16:00"
     catch_up_missed_days: false
-    poll_interval_hint: 1h
+    poll_interval_hint: 30m
 repos:
   - path: ${repo_a}
   - path: ${repo_b}
@@ -5047,9 +5096,9 @@ defaults:
   runtime: cursor-cli
   schedule:
     days: [mon, tue, wed, thu, fri]
-    window_local: "08:00-15:00"
+    window_local: "08:00-16:00"
     catch_up_missed_days: false
-    poll_interval_hint: 1h
+    poll_interval_hint: 30m
 repos:
   - path: ${repo_a}
   - path: ${repo_b}
@@ -5115,6 +5164,7 @@ run_test test_init_creates_repo_config_and_registry
 run_test test_init_is_idempotent
 run_test test_run_refuses_weekend
 run_test test_run_refuses_at_or_after_window_end
+run_test test_run_still_open_at_1530
 run_test test_run_refuses_before_window
 run_test test_run_refuses_same_day_relaunch
 run_test test_run_skips_blocking_draft_without_stamp

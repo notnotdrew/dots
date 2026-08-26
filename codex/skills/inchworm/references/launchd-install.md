@@ -63,7 +63,7 @@ LaunchAgents get a minimal default `PATH` and no locale, so the generated plist 
 
 ## Schedule
 
-- Create window hours 8–14 (Mon–Fri): one tick per weekday hour in that range.
+- Create window hours 8–15 (Mon–Fri): one tick every 30 minutes (`:00` and `:30`, last tick 15:30). No work at or after 16:00.
 - Missed days are not caught up — if a create window is skipped, inchworm does not backfill.
 
 ## Unload

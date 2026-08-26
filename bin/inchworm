@@ -530,7 +530,7 @@ attach_review_worktree() {
   printf '%s\n' "$worktree_path"
 }
 
-# Create-window label for status: open | closed (weekend|before 08:00|at/after 15:00)
+# Create-window label for status: open | closed (weekend|before 08:00|at/after 16:00)
 window_label_for() {
   local weekday=$1 hour=$2 minute=$3
   local mins=$((10#$hour * 60 + 10#$minute))
@@ -538,8 +538,8 @@ window_label_for() {
     printf 'closed (weekend)\n'
   elif [[ "$mins" -lt $((8 * 60)) ]]; then
     printf 'closed (before 08:00)\n'
-  elif [[ "$mins" -ge $((15 * 60)) ]]; then
-    printf 'closed (at/after 15:00)\n'
+  elif [[ "$mins" -ge $((16 * 60)) ]]; then
+    printf 'closed (at/after 16:00)\n'
   else
     printf 'open\n'
   fi
@@ -1640,8 +1640,8 @@ cmd_run() {
     fi
 
     mins=$((10#$hour * 60 + 10#$minute))
-    if [[ "$mins" -ge $((15 * 60)) ]]; then
-      printf 'inchworm: skip %s — outside create window (at/after 15:00)\n' "$repo_path"
+    if [[ "$mins" -ge $((16 * 60)) ]]; then
+      printf 'inchworm: skip %s — outside create window (at/after 16:00)\n' "$repo_path"
       continue
     fi
     if [[ "$mins" -lt $((8 * 60)) ]]; then
