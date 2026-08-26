@@ -62,6 +62,7 @@ HEROKU_AC_ZSH_SETUP_PATH="$HOME/Library/Caches/heroku/autocomplete/zsh_setup"
 [ -f "$HOME/.local/bin/env" ] && . "$HOME/.local/bin/env"
 
 if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
+if command -v herdr >/dev/null 2>&1; then eval "$(herdr completion zsh)"; fi
 # Docker CLI completions (absent until Docker Desktop installs them)
 if [ -d "$HOME/.docker/completions" ]; then
   fpath=("$HOME/.docker/completions" $fpath)
