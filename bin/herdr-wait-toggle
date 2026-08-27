@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Toggle a "WAIT " prefix on a Herdr workspace label.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+# Herdr keybinding: ~/.config/herdr/config.toml under [[keys.command]].
+#
+# Herdr exports HERDR_ACTIVE_WORKSPACE_ID for the UI-focused workspace when it
+# runs a custom command keybinding. A workspace id may also be passed as $1.
+set -euo pipefail
+
+readonly MARKER="WAIT "
+
+herdr_bin="${HERDR_BIN_PATH:-herdr}"
+workspaces=$("$herdr_bin" workspace list)
+
+workspace_id="${1:-${HERDR_ACTIVE_WORKSPACE_ID:-}}"
+if [[ -z "$workspace_id" ]]; then
+  workspace_id=$(
+    jq -r '[.result.workspaces[] | select(.focused)][0].workspace_id // empty' <<<"$workspaces"
+  )
+fi
+
+if [[ -z "$workspace_id" ]]; then
+  echo "herdr-wait-toggle: no focused workspace" >&2
+  exit 1
+fi
+
+label=$(
+  jq -r --arg id "$workspace_id" \
+    '[.result.workspaces[] | select(.workspace_id == $id)][0].label // empty' <<<"$workspaces"
+)
+
+if [[ -z "$label" ]]; then
+  echo "herdr-wait-toggle: no workspace named $workspace_id" >&2
+  exit 1
+fi
+
+if [[ "$label" == "$MARKER"* ]]; then
+  new_label="${label#"$MARKER"}"
+else
+  new_label="${MARKER}${label}"
+fi
+
+# Herdr rejects an empty label, which a bare "WAIT " would otherwise produce.
+if [[ -z "$new_label" ]]; then
+  echo "herdr-wait-toggle: refusing to clear the label of $workspace_id" >&2
+  exit 1
+fi
+
+exec "$herdr_bin" workspace rename "$workspace_id" "$new_label"
