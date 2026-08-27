@@ -45,13 +45,29 @@ Rules that drive every rewrite decision:
 
 Word count is not a target. Cut filler and restatement. Stop before a stranger would have to ask what this is about.
 
+## Judgment
+
+Grug judgment, human prose. Same instincts as `grug-brain`, none of the voice: fix what actually hurts the reader and leave the rest alone.
+
+**"Leave it alone" is a real answer.** If the draft already lands, return it unchanged. Trading one decent phrasing for another is churn, not editing.
+
+**Size the pass to the artifact.** A commit body, a ticket, or a chat reply gets the diagnosis and the top few fixes. A README earns the full workflow. Running every phase and every checkbox over three sentences is the ceremony this skill is supposed to remove.
+
+**Do not smash the fence.** Odd phrasing is often load-bearing: an exact technical term, a name that already exists in the repo, a caveat the author needs, a hedge that is honest because nobody knows yet. "Might" is filler when the author knows and true when they don't. Work out why a word is there before cutting it.
+
+**Hunt the complexity demon in prose.** Headings that exist so there are headings, a table for two rows, nested callouts, a taxonomy invented for one document. Structure should make the point easier to find, not add rooms to walk through.
+
+**Do not invent work.** No new sections, examples, or framing the draft did not ask for. Filling out a template is not polish.
+
+**Say taste once.** If you cannot tie a preference to a reader getting lost or misled, it is taste. Mention it once, or skip it. Do not pile.
+
 ## Quick Diagnostic Checklist
 
 Scan the text for these issues before rewriting. Mark the top 3 to fix first.
 
 ### Vocabulary Tics
 - [ ] Banned words present (see list below)
-- [ ] Hedging language: "might", "could potentially", "it seems"
+- [ ] Hedging where the author knows the answer: "might", "could potentially", "it seems"
 - [ ] Corporate buzzwords: "synergy", "paradigm", "best-in-class"
 - [ ] Unnecessary intensifiers: "very", "extremely", "incredibly"
 - [ ] Invented nicknames, metaphors, or skill jargon the reader did not use
@@ -77,6 +93,8 @@ Scan the text for these issues before rewriting. Mark the top 3 to fix first.
 - [ ] Heavy bold / heading spam used as decoration
 
 ## Rewriting Workflow
+
+Run the full workflow on documents. For short artifacts, diagnose, fix the top issues, and stop.
 
 ### Phase 1: Diagnosis
 
@@ -106,7 +124,7 @@ Edit sentence by sentence:
 3. **Replace weak verbs** — "utilize" becomes "use". "facilitate" becomes "help". See replacement table.
 4. **Reverse nominalizations** — "make an improvement" becomes "improve". "perform an analysis" becomes "analyze".
 5. **Split long sentences** — Break sentences over 25 words at natural clause boundaries.
-6. **Cut hedging** — Remove "basically", "essentially", "it's worth noting that". State the fact directly. Do not soften a real recommendation into a maybe.
+6. **Cut hedging that hides a known fact** — Remove "basically", "essentially", "it's worth noting that". State the fact directly, and do not soften a real recommendation into a maybe. Keep a hedge that reports genuine uncertainty.
 7. **Drop invented color** — If a sentence needs a metaphor to land, rewrite it as the underlying fact.
 
 ### Phase 4: Formatting
@@ -121,7 +139,7 @@ Apply visual hierarchy, then stop:
 
 ### Phase 5: Validation
 
-Check the rewrite against these criteria:
+Check the rewrite against these criteria. A miss you cannot tie to a confused reader is taste; leave it.
 
 - [ ] A reader who missed the conversation still understands it
 - [ ] Each idea appears once
@@ -283,6 +301,13 @@ Return **only** the rewritten text. Do not include:
 - Confidence scores or caveats
 
 If the original text is already concise, scannable, and self-contained, return it unchanged with no comment.
+
+## Relationship to Other Skills
+
+- `writing-git-commits` owns commit subject and body shape, including the 72-character wrap. Do not re-wrap its output or override it here.
+- Do not polish `grug-brain` output. The broken grammar is the point; smoothing it kills the voice.
+- `express-issues-in-human-terms` already holds this bar. Reframe findings there, then polish here only if the draft is bloated.
+- `writing-simple-plans` produces plain prose by design. A plan that reads clearly needs no pass.
 
 ## Reference Files
 
