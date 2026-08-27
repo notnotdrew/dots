@@ -13,6 +13,12 @@ module RubocopChangedCommon
     keyword_init: true
   )
 
+  # Git unified diffs always use this path, including on Windows.
+  GIT_DEV_NULL = "/dev/null" # rubocop:disable Style/FileNull
+  SYNTAX_COP = "Lint/Syntax"
+  FILE_HEADER = /\A\+\+\+ (.+?)(?:\t.*)?\n?\z/
+  HUNK_HEADER = /\A@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/
+
   module_function
 
   def repo_root
@@ -22,6 +28,33 @@ module RubocopChangedCommon
 
       output.strip
     end
+  end
+
+  def git_base
+    ["git", "-c", "color.ui=never", "-c", "core.quotepath=false", "-C", repo_root]
+  end
+
+  def git_path(name)
+    output, status = Open3.capture2(*git_base, "rev-parse", "--git-path", name)
+    abort "git rev-parse --git-path failed" unless status.success?
+
+    File.expand_path(output.strip, repo_root)
+  end
+
+  def merge_or_rebase_in_progress?
+    return "merge" if File.exist?(git_path("MERGE_HEAD"))
+    return "rebase" if File.directory?(git_path("rebase-merge"))
+    return "rebase" if File.directory?(git_path("rebase-apply"))
+
+    nil
+  end
+
+  def skip_if_merge_or_rebase!
+    operation = merge_or_rebase_in_progress?
+    return unless operation
+
+    warn "rubocop-changed: skipping during #{operation}"
+    exit 0
   end
 
   def normalize_path(path)
@@ -35,28 +68,65 @@ module RubocopChangedCommon
 
   def staged_ruby_files
     output, status = Open3.capture2(
-      "git", "-C", repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACMR",
-      "--", "*.rb", "*.rake"
+      *git_base, "diff", "--cached", "--name-only", "--diff-filter=ACMR",
+      "--no-color", "--no-ext-diff", "--", "*.rb", "*.rake"
     )
     abort "git diff failed" unless status.success?
 
     output.lines.map(&:chomp).reject(&:empty?)
   end
 
-  # Parse unified diff; return { absolute_path => Set<line_number> } for '+' sides.
-  def changed_lines_from_diff(diff_text, path_hint: nil)
-    result = Hash.new { |hash, key| hash[key] = Set.new }
-    current_file = path_hint && normalize_path(path_hint)
+  def strip_diff_noise(line)
+    line.delete("\r").gsub(/\e\[[\d;]*[A-Za-z]/, "")
+  end
 
-    diff_text.each_line do |line|
-      if (match = line.match(%r{\A\+\+\+ (?:b/)?(.+)\n\z}))
-        path = match[1]
-        current_file = path == "/dev/null" ? nil : normalize_path(path)
+  def parse_diff_path(raw_path)
+    path = raw_path.strip
+    if path.start_with?('"') || path.match?(/\\[0-9]{3}/)
+      abort "refusing to parse quoted git path #{path.inspect} (core.quotepath=false should prevent this)"
+    end
+
+    path
+  end
+
+  # Parse unified diff; return { absolute_path => Set<line_number> } for '+' sides.
+  # Does not strip a/ or b/ prefixes: with --no-prefix, `app/models/foo.rb` must
+  # stay intact (stripping `a/` would yield `pp/models/foo.rb`).
+  def changed_lines_from_diff(diff_text, path_hint: nil)
+    result = {}
+    current_file = path_hint && normalize_path(path_hint)
+    result[current_file] ||= Set.new if current_file
+    saw_hunk = false
+    saw_file_header = false
+    pending_hunk_without_file = false
+
+    diff_text.each_line do |raw_line|
+      line = strip_diff_noise(raw_line)
+
+      if (match = line.match(FILE_HEADER))
+        saw_file_header = true
+        pending_hunk_without_file = false
+        path = parse_diff_path(match[1])
+        if path == GIT_DEV_NULL
+          current_file = nil
+        else
+          current_file = normalize_path(path)
+          result[current_file] ||= Set.new
+        end
         next
       end
 
-      next unless current_file
-      next unless (match = line.match(/\A@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/))
+      if line.start_with?("+++")
+        abort "unrecognized diff file header: #{line.rstrip.inspect}"
+      end
+
+      next unless (match = line.match(HUNK_HEADER))
+
+      saw_hunk = true
+      unless current_file
+        pending_hunk_without_file = true
+        next
+      end
 
       start_line = match[1].to_i
       count = (match[2] || 1).to_i
@@ -65,48 +135,95 @@ module RubocopChangedCommon
       start_line.upto(start_line + count - 1) { |line_number| result[current_file] << line_number }
     end
 
+    if pending_hunk_without_file && !saw_file_header && path_hint.nil?
+      abort "diff hunk without a file header; refusing to pass"
+    end
+
+    if saw_hunk && result.empty? && path_hint.nil? && saw_file_header
+      # Only deleted files (+++ /dev/null): nothing to lint.
+      return result
+    end
+
+    if saw_hunk && result.empty? && path_hint.nil?
+      abort "failed to parse changed lines from diff; refusing to pass"
+    end
+
     result
   end
 
-  def tracked_file?(rel_path)
-    _output, status = Open3.capture2(
-      "git", "-C", repo_root, "ls-files", "--error-unmatch", rel_path
-    )
+  def indexed_file?(rel_path)
+    _output, status = Open3.capture2(*git_base, "cat-file", "-e", ":#{rel_path}")
     status.success?
+  end
+
+  def git_diff_command(rel_files, line_source:)
+    args = git_base + ["diff"]
+    args << (line_source == :staged ? "--cached" : "HEAD")
+    args + ["-U0", "--no-color", "--no-ext-diff", "--no-prefix", "--", *rel_files]
+  end
+
+  def index_blob(rel_path)
+    output, status = Open3.capture2(*git_base, "show", ":#{rel_path}")
+    abort "git show failed for :#{rel_path}" unless status.success?
+
+    output
+  end
+
+  def source_for(rel, line_source:)
+    if line_source == :staged && indexed_file?(rel)
+      index_blob(rel)
+    else
+      abs = normalize_path(rel)
+      abort "not a file: #{rel}" unless File.file?(abs)
+
+      File.read(abs)
+    end
   end
 
   def changed_lines_by_file(files, line_source:)
     return {} if files.empty?
 
     rel_files = files.map { |file| relative_path(file) }
-    diff_args =
-      if line_source == :staged
-        ["git", "-C", repo_root, "diff", "--cached", "-U0", "--", *rel_files]
-      else
-        ["git", "-C", repo_root, "diff", "HEAD", "-U0", "--", *rel_files]
-      end
-
-    output, status = Open3.capture2(*diff_args)
+    command = git_diff_command(rel_files, line_source: line_source)
+    output, status = Open3.capture2(*command)
     abort "git diff failed" unless status.success?
 
-    result = changed_lines_from_diff(output)
+    if output.match?(/Binary files .* differ/)
+      abort "binary diff is not parseable as changed lines; refusing to pass"
+    end
 
-    # Untracked files: every line counts as changed.
+    result = changed_lines_from_diff(output)
+    assert_diff_paths_match!(result, rel_files, output)
+
+    # Untracked / not-in-index files: every line counts as changed.
     rel_files.each do |rel|
-      next if tracked_file?(rel)
+      next if indexed_file?(rel)
 
       abs = normalize_path(rel)
       next unless File.file?(abs)
 
-      line_count = File.foreach(abs).count
-      1.upto(line_count) { |line_number| result[abs] << line_number }
+      result[abs] = Set.new(1..File.foreach(abs).count)
     end
 
     result
   end
 
+  def assert_diff_paths_match!(result, rel_files, diff_text)
+    return if rel_files.empty?
+    return unless diff_text.match?(/^@@ /)
+
+    known = rel_files.map { |rel| normalize_path(rel) }
+    return if result.keys.any? { |path| known.include?(path) }
+
+    only_deletes = diff_text.match?(%r{^\+\+\+ #{Regexp.escape(GIT_DEV_NULL)}}) &&
+                   !diff_text.match?(%r{^\+\+\+ (?!#{Regexp.escape(GIT_DEV_NULL)})})
+    return if only_deletes
+
+    abort "failed to parse git diff paths for #{rel_files.join(', ')}; refusing to pass"
+  end
+
   def head_content(rel_path)
-    output, status = Open3.capture2("git", "-C", repo_root, "show", "HEAD:#{rel_path}")
+    output, status = Open3.capture2(*git_base, "show", "HEAD:#{rel_path}")
     return nil unless status.success?
 
     output
@@ -122,8 +239,8 @@ module RubocopChangedCommon
 
         output, _status = Open3.capture2(
           "diff", "-U0",
-          "--label", "a/#{label}",
-          "--label", "b/#{label}",
+          "--label", label,
+          "--label", label,
           old_file.path, new_file.path
         )
         # diff exits 1 when files differ
@@ -158,18 +275,36 @@ module RubocopChangedCommon
     File.exist?(config) ? ["--config", config] : []
   end
 
-  def run_rubocop(files, rubocop_args)
-    cmd = [
-      rubocop_bin,
-      "--force-exclusion",
-      "--format", "json",
-      *personal_config_args,
-      *rubocop_args,
-      "--",
-      *files.map { |file| relative_path(file) }
-    ]
+  def run_rubocop(files, rubocop_args, line_source:)
+    combined = { "files" => [] }
 
-    Open3.capture3(*cmd, chdir: repo_root)
+    files.each do |file|
+      rel = relative_path(file)
+      contents = source_for(rel, line_source: line_source)
+      check_args = rubocop_args.reject { |argument| argument == "--parallel" }
+      stdout, stderr, _status = run_rubocop_stdin(
+        rel,
+        contents,
+        ["--format", "json", *check_args],
+        autocorrect: false
+      )
+      combined["files"].concat(parse_rubocop_json(stdout, stderr).fetch("files", []))
+    end
+
+    combined
+  end
+
+  def parse_rubocop_json(stdout, stderr)
+    if stdout.strip.empty?
+      warn stderr unless stderr.strip.empty?
+      abort "rubocop produced no JSON output"
+    end
+
+    JSON.parse(stdout)
+  rescue JSON::ParserError => error
+    warn stdout
+    warn stderr
+    abort "failed to parse rubocop JSON: #{error.message}"
   end
 
   def run_rubocop_stdin(path, content, rubocop_args, autocorrect:)
@@ -186,6 +321,8 @@ module RubocopChangedCommon
   end
 
   def offense_on_changed_line?(offense, changed_lines)
+    return true if offense["cop_name"] == SYNTAX_COP
+
     location = offense.fetch("location")
     start_line = location["start_line"] || location["line"]
     return false unless start_line
@@ -208,7 +345,8 @@ module RubocopChangedCommon
     hunks = []
     current = nil
 
-    diff_text.each_line do |line|
+    diff_text.each_line do |raw_line|
+      line = strip_diff_noise(raw_line)
       if (match = line.match(/\A@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/))
         current = Hunk.new(
           old_start: match[1].to_i,

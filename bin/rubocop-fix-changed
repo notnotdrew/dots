@@ -4,6 +4,11 @@
 # Autocorrect RuboCop offenses, but keep only patches that touch changed lines.
 # Pre-existing offenses on untouched lines are left alone.
 #
+# --staged uses `git diff --cached` and lints the index blob. Fixes are written
+# to the worktree only when it matches the index (so `git add -p` cannot apply
+# at the wrong lines). Does not skip merge/rebase (editors still need to fix
+# during conflict resolution).
+#
 # Usage:
 #   rubocop-fix-changed path/to/a.rb
 #   rubocop-fix-changed --worktree path/to/a.rb   # default line source
@@ -84,11 +89,17 @@ def fix_mode(files, rubocop_args, line_source:, stdin:)
 
   files.each do |file|
     abs = normalize_path(file)
+    rel = relative_path(file)
     lines = changed_lines[abs] || Set.new
     next if lines.empty?
-    next unless File.file?(abs)
 
-    original = File.read(abs)
+    original = source_for(rel, line_source: line_source)
+
+    if line_source == :staged && File.file?(abs) && File.read(abs) != original
+      warn "skipping #{rel}: worktree differs from index (unstaged edits); use --worktree or stage the file"
+      next
+    end
+
     stdout, stderr, _status = run_rubocop_stdin(file, original, rubocop_args, autocorrect: true)
     corrected = strip_rubocop_stdin_payload(stdout)
 

@@ -4,11 +4,16 @@
 # Run RuboCop and fail only on offenses that touch changed lines.
 # Pre-existing offenses on untouched lines are ignored.
 #
+# Default (--staged): changed lines come from `git diff --cached`, and RuboCop
+# lints the index blob (`git show :path` via --stdin), not the worktree.
+# Skips merge and rebase so a pre-commit hook cannot block `git rebase`.
+# Lint/Syntax always counts for a file that appears in the diff.
+#
 # Usage:
 #   rubocop-changed path/to/a.rb path/to/b.rb
 #   rubocop-changed --staged   # staged *.rb / *.rake when no files given (default)
 #   rubocop-changed --worktree path/to/a.rb
-#   rubocop-changed app/models/foo.rb -- --parallel
+#   rubocop-changed app/models/foo.rb -- --extra-rubocop-args
 #
 # For editor autofix, use rubocop-fix-changed instead.
 
@@ -39,33 +44,21 @@ def parse_args(argv)
 end
 
 def check_mode(files, rubocop_args, line_source:)
+  skip_if_merge_or_rebase! if line_source == :staged
   exit 0 if files.empty?
 
   changed_lines = changed_lines_by_file(files, line_source: line_source)
-  files_with_changes = files.select { |file| changed_lines[normalize_path(file)].any? }
+  files_with_changes = files.select { |file| changed_lines.key?(normalize_path(file)) }
   exit 0 if files_with_changes.empty?
 
-  stdout, stderr, _status = run_rubocop(files_with_changes, rubocop_args)
-
-  if stdout.strip.empty?
-    warn stderr unless stderr.strip.empty?
-    abort "rubocop produced no JSON output"
-  end
-
-  begin
-    report = JSON.parse(stdout)
-  rescue JSON::ParserError => error
-    warn stdout
-    warn stderr
-    abort "failed to parse rubocop JSON: #{error.message}"
-  end
+  report = run_rubocop(files_with_changes, rubocop_args, line_source: line_source)
 
   relevant = []
   report.fetch("files", []).each do |file_report|
     path = normalize_path(file_report.fetch("path"))
-    lines = changed_lines[path]
-    next if lines.nil? || lines.empty?
+    next unless changed_lines.key?(path)
 
+    lines = changed_lines[path]
     file_report.fetch("offenses", []).each do |offense|
       next unless offense_on_changed_line?(offense, lines)
 
