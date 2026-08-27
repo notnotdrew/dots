@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Simple Plans"
+  short_description: "Ordered plan.md of isolated decisions"
+  default_prompt: "Write a simple plan.md of meaningful, isolated decisions that reach the named end state. Ask only if a load-bearing fact is missing."

@@ -21,7 +21,7 @@ Use this skill when:
 - the work needs phased execution and the plan should be grounded in tests
 - design alignment is mostly complete, but implementation should still emerge from tests
 
-Prefer existing broader planning skills when:
+Prefer `writing-simple-plans` when:
 
 - the user wants a normal implementation plan rather than a TDD-first one
 - scope is still ambiguous enough that you need to clarify current state and desired end state first

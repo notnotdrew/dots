@@ -242,3 +242,4 @@ The deliverable is the rendered summary. Persistence is the caller's responsibil
 ## Related Skills
 
 - `thinking-patterns` — the reasoning patterns used silently during a grilling
+- `writing-simple-plans` — after the idea is solid, the default sequenced `plan.md`
