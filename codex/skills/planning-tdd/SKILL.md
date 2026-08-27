@@ -24,7 +24,7 @@ Use this skill when:
 Prefer existing broader planning skills when:
 
 - the user wants a normal implementation plan rather than a TDD-first one
-- scope is still ambiguous enough that you first need `question-stage` or `design-discussion`
+- scope is still ambiguous enough that you need to clarify current state and desired end state first
 - the phase outline is already approved and only standard implementation detail is missing
 
 ## Core Principles
@@ -44,7 +44,7 @@ Prefer existing broader planning skills when:
 - discover the testing stack, helpers, fixtures, and commands
 - verify the code paths you plan to reference
 
-If the repo research is non-trivial, use `research-codebase` first and carry forward only verified findings.
+If the repo research is non-trivial, inspect the relevant modules and tests first and carry forward only verified findings.
 
 ### 2. Confirm Understanding
 

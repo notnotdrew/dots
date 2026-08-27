@@ -41,8 +41,8 @@ Use this skill when the task is to:
 Do not use this skill for:
 
 - writing the initial product vision from scratch; use `writing-product-briefs`
-- breaking a PRD into phased delivery slices; use `structure-outline`
-- writing an implementation plan; use `plan-implementation` or `planning-tdd`
+- breaking a PRD into phased delivery slices; use `decomposing-epics`
+- writing an implementation plan; use `planning-tdd`
 
 ## Core Principles
 
@@ -227,8 +227,7 @@ When the task benefits from explicit reasoning, use `$thinking-patterns`.
 Use nearby skills when the PRD is only one stage of the work:
 
 - `writing-product-briefs`: create or refine the source brief first
-- `structure-outline`: turn the approved PRD into reviewable delivery phases before detailed planning
-- `plan-implementation`: produce a concrete implementation plan for an approved slice
+- `decomposing-epics`: turn the approved PRD into reviewable delivery phases before detailed planning
 - `planning-tdd`: plan implementation where tests are the unit of progress
 
 ## Review Checklist

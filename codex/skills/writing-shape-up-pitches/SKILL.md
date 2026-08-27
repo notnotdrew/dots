@@ -84,7 +84,7 @@ If critical inputs are missing, ask only for the information required to shape t
 
 - `writing-product-briefs` when the work is still at the product vision stage
 - `writing-prds` when the pitch is approved and needs requirements
-- `structure-outline` or `plan-implementation` when the bet is approved and ready to be broken into delivery phases
+- `decomposing-epics` or `planning-tdd` when the bet is approved and ready to be broken into delivery phases
 
 ## Review Checklist
 

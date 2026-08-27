@@ -241,6 +241,4 @@ The deliverable is the rendered summary. Persistence is the caller's responsibil
 
 ## Related Skills
 
-- `question-stage` — front-loaded scoping questions before research; this skill is the adversarial deep-dive version
-- `design-discussion` — turns the resolved contract into a design artifact
 - `thinking-patterns` — the reasoning patterns used silently during a grilling

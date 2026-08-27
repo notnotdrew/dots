@@ -84,7 +84,7 @@ Gather six dimensions: Motivation, Scope and Blast Radius, Invariants, Verificat
 
 Extract the dimensions from whatever the caller supplied — a ticket, an ADR, prior conversation, a failing build, a flaky-test report. Ask in plain prose for anything thin.
 
-Implementation-level research is expected here, unlike story writing, because dev tasks are about implementation. Read the modules in scope, check imports and call sites, and identify what is coupled. Use `research-codebase` when the coupling is non-trivial.
+Implementation-level research is expected here, unlike story writing, because dev tasks are about implementation. Read the modules in scope, check imports and call sites, and identify what is coupled.
 
 Two limits keep discovery bounded:
 
@@ -241,5 +241,4 @@ When polish is not worth the cost — generating many tasks in a batch, for inst
 
 - `writing-agile-stories` — the user-facing counterpart; use it when a user would notice the change
 - `writing-for-humans` — narrative polish in the review phase
-- `research-codebase` — blast-radius mapping when coupling is non-trivial
-- `plan-implementation` — where the step-by-step how belongs, once the task is agreed
+- `planning-tdd` — where the step-by-step how belongs once the task is agreed and tests should lead implementation
