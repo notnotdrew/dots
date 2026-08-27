@@ -10,9 +10,9 @@
 - [Sentence Splitting](#sentence-splitting)
 - [List Categorization](#list-categorization)
 - [Readability Metrics](#readability-metrics)
-- [30-50% Reduction Checklist](#30-50-reduction-checklist)
+- [Cut-Until-Done Checklist](#cut-until-done-checklist)
 
-Practical editing techniques for maximum word count reduction. Each section includes tables, detection patterns, and before/after examples.
+Practical editing techniques. Cut filler and restatement. Do not chase a word-count percentage — over-cutting drops the facts a stranger needs.
 
 ## BLUF Application
 
@@ -265,31 +265,18 @@ Without tools, estimate reading level:
 3. Count words with 3+ syllables (target: under 15 per 100 words)
 4. If both are in range, readability is likely grade 8-10
 
-## 30-50% Reduction Checklist
+## Cut-Until-Done Checklist
 
-Apply in this order for maximum impact. Each step targets the highest word-count savings first.
+Apply in this order. Stop when each idea appears once and a stranger still has the facts.
 
-1. **Delete filler phrases** — Scan for the filler table entries. Each deletion saves 3-8 words. Typical savings: 10-15%.
-2. **Apply BLUF** — Move conclusions forward, cut preamble. Typical savings: 5-10%.
-3. **Replace verbose words** — Single-word substitutions from the replacement tables. Typical savings: 3-5%.
-4. **Reverse nominalizations** — Each reversal saves 2-4 words. Typical savings: 3-5%.
-5. **Activate passive sentences** — Active voice is usually 1-3 words shorter. Typical savings: 2-4%.
-6. **Split and trim long sentences** — Splitting often reveals redundant clauses to cut. Typical savings: 3-5%.
-7. **Merge short related points** — Combine 3 short sentences into 1. Typical savings: 2-3%.
-8. **Convert prose to structured format** — Tables, code blocks, or lists replace descriptive paragraphs. Typical savings: 5-15%.
+1. **Delete filler phrases** — Scan for the filler table entries.
+2. **Apply BLUF** — Move conclusions forward, cut preamble.
+3. **Delete restatement** — Keep one telling of each mechanism.
+4. **Replace verbose words** — Single-word substitutions from the replacement tables.
+5. **Reverse nominalizations**
+6. **Activate passive sentences**
+7. **Split and trim long sentences** — Splitting often reveals redundant clauses to cut.
+8. **Merge short related points** — Combine three short sentences into one when they are one thought.
+9. **Convert prose to structured format** — Tables, code blocks, or lists when they replace descriptive paragraphs.
 
-**Running total:** Following all 8 steps typically achieves 33-57% reduction.
-
-### Tracking Progress
-
-Count words before and after each phase. Stop when you hit the 30-50% target. Over-editing beyond 50% risks losing necessary detail.
-
-| Phase | Words Before | Words After | Reduction |
-|-------|-------------|-------------|-----------|
-| Original | — | — | — |
-| After filler deletion | | | |
-| After BLUF | | | |
-| After word replacement | | | |
-| After nominalization | | | |
-| After voice activation | | | |
-| Final | | | |
+If a cut would force the reader to already know the conversation, put that sentence back.

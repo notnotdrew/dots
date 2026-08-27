@@ -80,6 +80,18 @@ Replace buzzwords with measurable claims. If the claim can't be measured, it pro
 
 State the fact. If you don't know the fact, say what you don't know — hedging helps no one.
 
+### Invented Color
+
+**Detect:** Metaphors, idioms, or nicknames that do not already exist in the codebase or the reader's message. Skill and review vocabulary leaking into user-facing prose (`F001`, BSSN, "scan anchors", "the tribe", kitchen metaphors for refactors).
+
+**Example:**
+> This is the kitchen-station problem: you wipe the board so the next cook can move, not so the pass looks unused.
+
+**Fix:**
+> Extract only when the next change would otherwise touch three call sites. Stop when that change is straightforward.
+
+Name the file, the method, the failure. If a label is not already in the repo or the ticket, do not mint one.
+
 ## Structural Anti-Patterns
 
 ### Context Before Answer
@@ -93,6 +105,54 @@ State the fact. If you don't know the fact, say what you don't know — hedging 
 > We use JWTs for authentication. Tokens are issued at login, stored client-side, and validated on each API request.
 
 Lead with the answer. Readers seeking context will keep reading. Readers seeking the answer will leave if they can't find it.
+
+### Opening With a Negation
+
+**Detect:** First sentence of a section is "It's not X", "This isn't about Y", "Do not confuse this with Z".
+
+**Example:**
+> This isn't a rewrite of keyword search. Recent articles were already lesson-only. The problem is the indexes they hit.
+
+**Fix:**
+> Recent articles already filtered to lessons, then searched four indexes. That is the bug.
+
+State the true thing first. Contrast only if it still adds information.
+
+### Buried Recommendation
+
+**Detect:** The actual conclusion is in the last clause, hedged, or listed as one option among equals when the draft already picked a winner.
+
+**Example:**
+> Isolation of runs is interesting. A cheap version is rescue-and-reraise. Fan-out is worse. You could also just leave it until 429s hurt.
+
+**Fix:**
+> Defer until there is evidence of real pain. If you must act, one job with rescue-and-reraise. Not fan-out.
+
+If the source said "leave it alone", the rewrite must still say that.
+
+### Assumed Shared Context
+
+**Detect:** "this", "the change", "as we discussed", "F001", a branch nickname, or a tool output the reader never saw, used as if they were present.
+
+**Example:**
+> The four-index issue in f001 is why CI is red; we already covered why production is fine.
+
+**Fix:**
+> `recent_lessons_es` sorts `posted_at` across lessons, courses, manuals, and sections. CI fails because the new client raises on those shard failures. Production often passes `multi_model_search: false`, so live widgets may not hit it.
+
+Connect the dots once. Do not paste the research dump.
+
+### Restatement
+
+**Detect:** The same mechanism explained in the summary, again in "why", again in "test plan".
+
+**Fix:** Keep the clearest telling. Point later sections at consequences, not a replay of the cause.
+
+### Diff-Echo / Implementation Asides
+
+**Detect:** Sentences a reviewer would get from `git diff` or that are notes to the authors ("we inlined the helper", "left the constant as the precision threshold").
+
+**Fix:** Delete. Keep motivation, constraints, and behavior a casual reader would miss.
 
 ### Wind-Up Phrases
 
@@ -167,6 +227,18 @@ When these patterns cluster in the same paragraph, the text reads as AI-generate
 
 ## Formatting Anti-Patterns
 
+### Column Wrapping
+
+**Detect:** PR bodies, Linear tickets, READMEs, or chat hard-wrapped at 72 or 80 characters.
+
+**Fix:** Join into normal paragraphs. Commit message wrapping is owned by `writing-git-commits`, not this skill.
+
+### Scan-Theater
+
+**Detect:** Most words are bold; headings on every paragraph; emoji; stacked callout blocks.
+
+**Fix:** Bold a term on first use. Headings only for real sections. Prose does the work.
+
 ### Generic Headings
 
 **Detect:** Headings that could appear in any document: "Overview", "Introduction", "Background", "Details", "Summary", "Conclusion", "Additional Information".
@@ -197,9 +269,9 @@ When these patterns cluster in the same paragraph, the text reads as AI-generate
 
 Use these questions to determine if text has LLM anti-patterns:
 
-1. **Vocabulary:** Do banned words from SKILL.md appear? Count matches — target zero.
-2. **Structure:** Does any section start with context instead of the answer?
+1. **Vocabulary:** Do banned words from SKILL.md appear? Count matches — target zero. Any invented labels or leaked jargon?
+2. **Structure:** Does any section start with context instead of the answer? Same idea twice? Assumed chat context?
 3. **Transitions:** More than one transition word per paragraph?
-4. **Formatting:** Are headings generic ("Overview", "Details")?
+4. **Formatting:** Generic headings? Hard wrap in a PR/issue/doc? Bold used as decoration?
 
-For full validation metrics (reading level, passive voice %, sentence length), see the Phase 5 checklist in SKILL.md and the readability metrics in [conciseness-techniques.md](conciseness-techniques.md).
+For sentence-level editing mechanics, see [conciseness-techniques.md](conciseness-techniques.md). Length is not a success metric; restatement-free and self-contained is.

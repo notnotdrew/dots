@@ -1,6 +1,6 @@
 ---
 name: writing-for-humans
-description: Post-process dense drafts into concise, scannable, human-readable prose. Use when polishing user-facing text such as READMEs, guides, tutorials, onboarding docs, commit messages, PR descriptions, or any draft that reads like AI output. Also use as a final rewrite pass after other writing skills. Do not use for code comments, internal specs, research notes, generated API references, or structured formats like JSON and YAML.
+description: Post-process dense drafts into concise, self-contained prose a teammate can read without the author's context. Use when polishing READMEs, guides, tutorials, commit messages, PR descriptions, Linear tickets, or any draft that reads like AI output. Also use as a final rewrite pass after other writing skills. Do not use for code comments, internal specs, research notes, generated API references, or structured formats like JSON and YAML.
 ---
 
 # Writing for Humans
@@ -9,9 +9,11 @@ Rewrite dense drafts into text humans actually read.
 
 ## Scope
 
-**Apply to:** User-facing prose — READMEs, guides, tutorials, commit messages, PR descriptions.
+**Apply to:** User-facing prose — READMEs, guides, tutorials, commit messages, PR descriptions, Linear tickets, and chat answers a teammate could paste.
 
 **Do not apply to:** Code comments, internal specs, handoffs, research documents, API docs generated from code, non-prose output (JSON, YAML, config files).
+
+Git commit *line wrapping* belongs to `writing-git-commits` (72-character bodies). This skill must not wrap PR bodies, issues, docs, or chat at 72/80.
 
 ## Integration Pattern
 
@@ -31,14 +33,17 @@ Direct invocation works the same way: supply the draft and return only the rewri
 
 ## Core Principles
 
-Six rules that drive every rewrite decision:
+Rules that drive every rewrite decision:
 
-1. **79% scan, 21% read** — Most readers scan. Front-load key information. Use headings, bold, and lists as scan anchors.
-2. **7 plus/minus 2 chunks** — Group related items into 5-9 chunks. Split longer lists into categorized sub-lists.
-3. **BLUF (Bottom Line Up Front)** — Lead with the conclusion, recommendation, or action. Context follows.
-4. **Active voice** — The subject acts. "The server processes requests" not "Requests are processed by the server."
-5. **Show, don't tell** — Replace claims with evidence. "Reduces build time by 40%" not "Significantly improves performance."
-6. **Concrete over abstract** — Use specific numbers, names, and examples instead of vague qualifiers.
+1. **Lead with the answer** — First sentence is the conclusion, recommendation, or action. Open with what is true or what to do. Do not open with a negation ("It's not X", "This isn't about Y") or a clarifying question when the draft already has the answer.
+2. **Self-contained, not telegraphic** — The reader was not in the conversation and has not seen the tool calls. Name the thing. Connect the dots once. Do not dump the research pile.
+3. **Each idea once** — Restating the same mechanism in three paragraphs is the usual failure mode of "being thorough." Cut the repeats; keep the one clear pass.
+4. **Literal, not branded** — Facts, existing names, file and method names. Do not invent metaphors, idioms, or catchy labels. Do not leak skill or review jargon (`F001`, BSSN, grug, "scan anchors") unless the reader already used those words.
+5. **Human sentences** — Short, spoken English. Not scan-theater: walls of bold, emoji, or nested callouts. Bold only the few words that matter. Backticks for files, functions, and commands.
+6. **Say what the artifact cannot** — Drop implementation notes, "we changed X to add Y", and "as discussed" without the discussion. Keep why, constraints, and what a reviewer would miss. If the diff already says it, delete the sentence.
+7. **Active and concrete** — The subject acts. Replace claims with evidence: numbers, names, examples.
+
+Word count is not a target. Cut filler and restatement. Stop before a stranger would have to ask what this is about.
 
 ## Quick Diagnostic Checklist
 
@@ -49,19 +54,27 @@ Scan the text for these issues before rewriting. Mark the top 3 to fix first.
 - [ ] Hedging language: "might", "could potentially", "it seems"
 - [ ] Corporate buzzwords: "synergy", "paradigm", "best-in-class"
 - [ ] Unnecessary intensifiers: "very", "extremely", "incredibly"
+- [ ] Invented nicknames, metaphors, or skill jargon the reader did not use
 
 ### Structural Problems
 - [ ] Context before answer (bury the lede)
+- [ ] Opens with a negation or "this isn't…"
+- [ ] Recommendation buried or softened relative to the actual conclusion
+- [ ] Same fact restated in multiple sections
+- [ ] Assumes conversation, tool-call, or branch context the reader does not have
+- [ ] Implementation notes the diff or ticket already shows
 - [ ] Paragraphs longer than 4 sentences
 - [ ] Lists with more than 9 items (unsplit)
 - [ ] Nesting deeper than 2 levels
 - [ ] Generic headings: "Overview", "Introduction", "Background"
+- [ ] Hard-wrapped at 72/80 in a PR, issue, doc, or chat reply
 
 ### Readability
 - [ ] Sentences longer than 25 words
 - [ ] Passive voice in more than 20% of sentences
 - [ ] Nominalizations: "make a decision" instead of "decide"
 - [ ] Abstract claims without evidence
+- [ ] Heavy bold / heading spam used as decoration
 
 ## Rewriting Workflow
 
@@ -77,9 +90,12 @@ Fix document-level problems:
 
 1. **Apply BLUF** — Move the conclusion or action to the first sentence of each section. Cut or relocate the preamble.
 2. **Front-load paragraphs** — The first sentence of each paragraph carries the point. Supporting detail follows.
-3. **Break long lists** — Split lists with more than 7 items into categorized sub-lists with descriptive headings.
-4. **Flatten nesting** — Reduce to 2 levels maximum. Promote deeply nested content to its own section.
-5. **Replace generic headings** — "Overview" becomes "What this does". "Background" becomes a specific claim.
+3. **One pass per idea** — If two sections explain the same failure, keep the better one.
+4. **Name the context** — Replace "this", "the change", and "as above" with the actual system, method, or PR when a stranger would be lost.
+5. **Break long lists** — Split lists with more than 7 items into categorized sub-lists with descriptive headings.
+6. **Flatten nesting** — Reduce to 2 levels maximum. Promote deeply nested content to its own section.
+7. **Replace generic headings** — "Overview" becomes "What this does". "Background" becomes a specific claim.
+8. **Unwrap prose** — For PRs, issues, docs, and chat: join hard-wrapped lines into normal paragraphs.
 
 ### Phase 3: Sentence-Level Rewrite
 
@@ -90,28 +106,33 @@ Edit sentence by sentence:
 3. **Replace weak verbs** — "utilize" becomes "use". "facilitate" becomes "help". See replacement table.
 4. **Reverse nominalizations** — "make an improvement" becomes "improve". "perform an analysis" becomes "analyze".
 5. **Split long sentences** — Break sentences over 25 words at natural clause boundaries.
-6. **Cut hedging** — Remove "basically", "essentially", "it's worth noting that". State the fact directly.
+6. **Cut hedging** — Remove "basically", "essentially", "it's worth noting that". State the fact directly. Do not soften a real recommendation into a maybe.
+7. **Drop invented color** — If a sentence needs a metaphor to land, rewrite it as the underlying fact.
 
 ### Phase 4: Formatting
 
-Apply visual hierarchy:
+Apply visual hierarchy, then stop:
 
-1. **Use markdown** — Bold for key terms on first use. Code formatting for technical names.
-2. **Add headings** — One heading per scroll-height (~300 words). Make headings specific and actionable.
-3. **Use whitespace** — Separate sections with blank lines. Short paragraphs (2-4 sentences max).
+1. **Markdown with restraint** — Bold for a key term on first use, not whole sentences. Code formatting for technical names.
+2. **Headings only when they pay rent** — Specific and actionable. One heading per real section, not per paragraph.
+3. **Whitespace** — Separate sections with blank lines. Short paragraphs (2-4 sentences max).
 4. **Prefer tables for comparisons** — Side-by-side data reads faster than prose descriptions.
+5. **Do not hard-wrap** PR bodies, Linear tickets, READMEs, or chat.
 
 ### Phase 5: Validation
 
 Check the rewrite against these criteria:
 
-- [ ] 30-50% shorter than original (word count)
-- [ ] Passes skim test: read only headings and bold text — do you get the gist?
-- [ ] No banned words or phrases remain
+- [ ] A reader who missed the conversation still understands it
+- [ ] Each idea appears once
+- [ ] Passes skim test: headings and the first sentence of each section convey the gist
+- [ ] No banned words, invented labels, or leaked skill jargon
 - [ ] 80%+ of sentences use active voice
 - [ ] No paragraph exceeds 4 sentences
 - [ ] No list exceeds 9 items without categorization
 - [ ] Every heading is specific (not "Overview" or "Details")
+- [ ] PR/issue/doc/chat prose is not wrapped to a column width
+- [ ] Nothing remains that the diff or ticket already states
 
 ## Banned Words and Phrases
 
@@ -192,15 +213,15 @@ Remove or replace every instance:
 
 > It's important to note that this comprehensive authentication module has been designed to facilitate secure user access management across a wide range of application contexts. The module utilizes industry-standard JWT tokens in order to provide robust session handling. Moreover, it leverages Redis for session storage, which enables the system to seamlessly handle distributed deployments. The implementation provides the ability to configure token expiry, refresh intervals, and role-based access controls in a highly flexible manner.
 
-**After (32 words — 63% reduction):**
+**After (32 words):**
 
 > This auth module manages user sessions with JWT tokens stored in Redis. Configure token expiry, refresh intervals, and role-based access per environment. Works across distributed deployments.
 
 **What changed:**
-- BLUF: led with what it does, not that it's "important to note"
+- Led with what it does, not that it's "important to note"
 - Cut "comprehensive", "robust", "seamlessly", "in order to", "facilitates"
-- Replaced "utilizes" with implicit usage, "provides the ability to" with direct verb
-- Removed "moreover" transition — unnecessary between related facts
+- Replaced "utilizes" with implicit usage, "provides the ability to" with a direct verb
+- Removed "moreover" — unnecessary between related facts
 
 ### Example 2: Setup Instructions
 
@@ -208,7 +229,7 @@ Remove or replace every instance:
 
 > In order to get started with the development environment setup, you'll first need to ensure that you have Docker installed on your machine. It's worth mentioning that the minimum required version is 20.10 or later. Subsequently, you should proceed to clone the repository and navigate to the project directory. At that point, you'll want to run the initialization script, which will take care of pulling the necessary images, setting up the database, and configuring the environment variables. Once this process has been completed, you should be able to access the application.
 
-**After (38 words — 60% reduction):**
+**After (38 words):**
 
 > **Prerequisites:** Docker 20.10+
 >
@@ -220,10 +241,38 @@ Remove or replace every instance:
 > `init.sh` pulls images, creates the database, and sets environment variables. The app is available at `localhost:3000` after setup.
 
 **What changed:**
-- BLUF: prerequisites first, then the commands
+- Prerequisites first, then the commands
 - Replaced prose with a code block — readers copy commands, not sentences
 - Cut "in order to", "it's worth mentioning", "subsequently", "at that point"
-- Replaced "once this process has been completed" with specific result
+- Replaced "once this process has been completed" with a specific result
+
+### Example 3: PR description (restatement + wrap + missing stranger context)
+
+**Before:**
+
+> Recent-article queries already built a lesson-only filter, then
+> searched four indexes. They borrowed the keyword-search searcher,
+> which indexes lessons, courses, manuals, and sections. Only the
+> lessons mapping has `posted_at`, so the other three shards fail.
+>
+> This is a prerequisite for the upcoming client change. The four-index
+> problem above is why that client would start raising. Production
+> often avoids it via a caller flag. The method now searches lessons
+> only, which also avoids the four-index problem.
+
+**After:**
+
+> Recent articles built a lesson-only filter, then searched four indexes (lessons, courses, manuals, sections) because they reused the keyword-search searcher. Only lessons have `posted_at`, so the other shards fail the sort and Elasticsearch still returns HTTP 200 with partial results.
+>
+> Production does not hit that today: callers go through `SpaceWrapperController#site_lesson_searcher`, which passes `multi_model_search: false`. That is luck on the caller, not a property of recent articles. `recent_lessons_es` now queries the lessons index only.
+>
+> Land this before the `ShardAwareClient` PR (same branch prefix). That client raises on shard failure, so this query has to be lessons-only first.
+
+**What changed:**
+- Unwrapped to normal paragraphs
+- Named the classes and the upcoming PR so a reviewer who was not in chat can follow
+- Explained the four-index failure once
+- Dropped the implementation aside that the diff already shows
 
 ## Output Format
 
@@ -233,7 +282,7 @@ Return **only** the rewritten text. Do not include:
 - Meta-commentary about the rewrite process
 - Confidence scores or caveats
 
-If the original text is already concise and scannable, return it unchanged with no comment.
+If the original text is already concise, scannable, and self-contained, return it unchanged with no comment.
 
 ## Reference Files
 
@@ -242,7 +291,7 @@ For deeper guidance on specific topics:
 | Topic | Reference | When to Load |
 |-------|-----------|--------------|
 | LLM anti-patterns | [llm-anti-patterns.md](references/llm-anti-patterns.md) | Diagnosing why text reads like AI output |
-| Conciseness techniques | [conciseness-techniques.md](references/conciseness-techniques.md) | Editing for maximum word count reduction |
+| Conciseness techniques | [conciseness-techniques.md](references/conciseness-techniques.md) | Editing mechanics (filler, voice, splitting) |
 
 Load references only when the quick diagnostic reveals issues in that area. Most rewrites need only this SKILL.md.
 
@@ -250,9 +299,11 @@ Load references only when the quick diagnostic reveals issues in that area. Most
 
 A successful rewrite meets all of these:
 
-- **30-50% word reduction** from the original
-- **Passes skim test** — headings and bold text convey the full message
-- **Zero LLM tics** — no banned words, no filler phrases
+- **A stranger can read it** — no assumed chat, tool-call, or branch context
+- **Each idea once** — no restated mechanism
+- **Passes skim test** — first sentences and headings convey the message
+- **Zero LLM tics** — no banned words, filler, invented labels, or leaked jargon
 - **80%+ active voice** — measured by sentence count
 - **Flesch-Kincaid grade 8-10** — accessible to a broad technical audience
 - **Every claim is concrete** — numbers, names, or examples instead of adjectives
+- **PR/issue/doc/chat is unwrapped** — commit wrapping stays with `writing-git-commits`
