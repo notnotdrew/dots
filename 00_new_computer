@@ -28,6 +28,14 @@ chsh -s /opt/homebrew/bin/zsh
 
 source ~/.zshrc
 
+# Herdr plugins
+# #####################################
+
+# Built from source at install time (Go for golden-ratio, Bun for annotate).
+# Plugin settings live in dots/herdr/plugins/config and are already symlinked.
+herdr plugin install vigneshwerv/herdr-golden-ratio -y
+herdr plugin install plannotator/herdr-annotate -y
+
 # General config
 # #####################################
 

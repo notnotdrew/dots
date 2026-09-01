@@ -1,0 +1,15 @@
+# herdr-golden-ratio — https://github.com/vigneshwerv/herdr-golden-ratio
+# Read on every invocation, so edits take effect without a reload.
+
+# Fraction of the tab given to the focused pane.
+ratio = 0.618
+
+# Re-balance on every focus change, with no keypress.
+auto = false
+
+# How long the automatic hook waits before acting, coalescing bursts of
+# focus changes (milliseconds).
+debounce_ms = 120
+
+# Skip a resize when the split is already this close to the target.
+min_delta = 0.02

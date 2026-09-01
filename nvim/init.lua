@@ -45,6 +45,19 @@ command Vsp vsp
 -- Keymaps
 -- --------------
 
+-- Hand a visual selection to herdr-annotate (works on headless servers too).
+vim.keymap.set("x", "<leader>a", function()
+  vim.cmd('normal! "zy')
+  local base = os.getenv("XDG_RUNTIME_DIR")
+  if not base or base == "" then
+    base = vim.fn.fnamemodify(vim.fn.tempname(), ":h")
+  end
+  local dir = base .. "/herdr-annotate-" .. vim.loop.getuid()
+  vim.fn.mkdir(dir, "p", "0700")
+  vim.fn.writefile(vim.split(vim.fn.getreg("z"), "\n"), dir .. "/selection")
+  vim.fn.jobstart({ "herdr", "plugin", "action", "invoke", "annotate.capture" })
+end, { desc = "Annotate in Herdr" })
+
 -- Bind "K" to search for the word under the cursor using 'grep' and show results in the quickfix window
 vim.keymap.set("n", "K", ':grep! "\\b<C-R><C-W>\\b"<CR>:cw<CR>', { silent = true })
 

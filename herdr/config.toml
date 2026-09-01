@@ -1,0 +1,51 @@
+onboarding = false
+
+[[keys.command]]
+key = "prefix+shift+a"
+type = "shell"
+command = "$HOME/bin/herdr-wait-toggle"
+description = "toggle WAIT prefix on workspace"
+
+[[keys.command]]
+key = "prefix+f"
+type = "plugin_action"
+command = "vv.golden-ratio.apply"
+description = "golden ratio"
+
+# herdr-annotate — prefix+shift+a stays WAIT; copy-context is prefix+shift+c.
+[[keys.command]]
+key = "prefix+a"
+type = "plugin_action"
+command = "annotate.capture"
+description = "annotate text"
+
+[[keys.command]]
+key = "prefix+shift+c"
+type = "plugin_action"
+command = "annotate.copy-context"
+description = "copy annotations as context"
+
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "annotate.manage"
+description = "manage annotations"
+
+[[keys.command]]
+key = "prefix+o"
+type = "plugin_action"
+command = "annotate.open"
+description = "review documents in this folder"
+
+[[keys.command]]
+key = "prefix+shift+o"
+type = "plugin_action"
+command = "annotate.last"
+description = "review the agent's last reply"
+
+[ui.toast]
+delivery = "system"
+
+[theme]
+name = "terminal"
+auto_switch = false
