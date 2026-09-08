@@ -21,7 +21,7 @@ repository containing the pull request:
 pr-review 42
 pr-review https://github.com/org/repo/pull/42
 pr-review --mode deep 42
-pr-review --finding F001 42
+pr-review --finding F01 42
 ```
 
 Prerequisites:
@@ -49,7 +49,7 @@ Review checkouts are disposable and epoch-scoped: `pr-<number>-R<epochOrdinal>` 
 
 When the current GitHub head equals the series' current `ObservedHead` and readiness is already `ready`, a default re-review is a no-op. Use `--full-rebuild` or `--finding` to force more work on an unchanged head. A prior `UNABLE TO REVIEW` on the same head may be retried without appending an epoch.
 
-`--finding` requires an existing review series and one existing ID matching `F0*[1-9][0-9]*`. Display the normalized ID with at least three digits, allow additional digits, and use Standard verification depth. It is incompatible with `--mode deep` and `--full-rebuild`. A full rebuild also requires an existing series.
+`--finding` requires an existing review series and one existing ID matching `F0*[1-9][0-9]*`. Match by integer so `F1`, `F01`, and `F001` select the same stored record. New IDs display with at least two digits (`F01`); additional digits are allowed, and existing three-digit IDs stay as stored. Use Standard verification depth. It is incompatible with `--mode deep` and `--full-rebuild`. A full rebuild also requires an existing series.
 
 ## Workflow Routing
 

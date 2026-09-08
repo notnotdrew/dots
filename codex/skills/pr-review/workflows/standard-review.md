@@ -182,7 +182,7 @@ Build the candidate ledger as follows:
 2. Normalize each into one falsifiable behavioral claim without inventing evidence.
 3. Collect the complete batch before assigning IDs.
 4. Sort by proposed PERFECT priority, affected behavior, normalized claim, scope, and reviewer identifier.
-5. Assign stable PR-scoped IDs `F001`, `F002`, and so on.
+5. Assign stable PR-scoped IDs `F01`, `F02`, and so on.
 6. Give every record an initial `candidate` disposition and provenance-rich history.
 7. Convert completed promised scope to `reviewed` only after checking the return against the handoff. Preserve all incomplete scope as coverage gaps.
 

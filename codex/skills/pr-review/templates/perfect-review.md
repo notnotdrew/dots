@@ -61,7 +61,7 @@ After the ordered verdicts, add a section only for each principle with retained 
 ```text
 ### Reliability
 
-- Finding: F001
+- Finding: F01
   - Scenario: <one-line, human-understandable scenario that would produce the issue>
   - Why: <one line on what actually produces the issue>
   - Fix: <one line on a high-level potential fix>

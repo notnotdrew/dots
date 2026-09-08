@@ -112,8 +112,8 @@ Keep the packet bounded to evidence relevant to candidate comparison and verific
 Return one update for every candidate ID:
 
 ```text
-Candidate: F001
-Representative: F001
+Candidate: F01
+Representative: F01
 Claim: <normalized behavioral claim>
 Impact: <evidence-supported impact>
 Principle: <earliest applicable PERFECT principle>
@@ -125,8 +125,8 @@ Evidence: <decisive supporting and contradicting evidence>
 Verification: <additional-verification-performed|supplied-evidence-confirmed|not-verified>
 Disposition: <candidate|verified|dismissed|superseded>
 DispositionReason: <reason tied to evidence>
-DuplicateOf: <none|Fnnn>
-Supersedes: <none|Fnnn>
+DuplicateOf: <none|Fnn>
+Supersedes: <none|Fnn>
 RawOutput: <none|merged retained-output references>
 Disagreement: <none|participants, competing assertions, resolution or unresolved question>
 CoverageUpdate: <none|normalized coverage record update>

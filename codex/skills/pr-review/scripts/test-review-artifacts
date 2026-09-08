@@ -364,7 +364,18 @@ write_recommendation_review() {
 EOF
 
     if [ "$finding_id" != none ]; then
-        printf '\n%s\n\n%s\n\n%s\n' "## Findings" "### $finding_principle" "- Finding: $finding_id" >>"$fixture_dir/perfect-review.md"
+        cat >>"$fixture_dir/perfect-review.md" <<EOF
+
+## Findings
+
+### $finding_principle
+
+- Finding: $finding_id
+  - Scenario: Callers treat a failed operation as success.
+  - Why: The changed error path returns success.
+  - Fix: Return the original error to callers.
+  - Anchor: src/example.c:27
+EOF
     fi
 
     cat >>"$fixture_dir/perfect-review.md" <<EOF
@@ -653,6 +664,25 @@ make_ready_fixture "$fixture_dir"
 write_finding_ledger "$fixture_dir" FX01 verified blocking none none
 write_recommendation_review "$fixture_dir" "REQUEST CHANGES" FX01 reviewed yes Standard default PASS FAIL
 assert_validation "rejects a malformed finding ID" 1 "malformed finding ID: FX01" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/unpadded-finding-id"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F1 verified blocking none none
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F1 reviewed yes Standard default PASS FAIL
+assert_validation "rejects an unpadded finding ID" 1 "malformed finding ID: F1" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/two-digit-finding-id"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F01 verified blocking none none
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F01 reviewed yes Standard default PASS FAIL
+assert_validation "accepts a two-digit finding ID" 0 "review artifacts valid" "$fixture_dir"
+
+fixture_dir="$TEST_ROOT/numeric-duplicate-finding-id"
+make_ready_fixture "$fixture_dir"
+write_finding_ledger "$fixture_dir" F01 verified blocking none none
+append_finding_record "$fixture_dir" F001 dismissed blocking none "R1 candidate -> dismissed; padded duplicate of F01"
+write_recommendation_review "$fixture_dir" "REQUEST CHANGES" F01 reviewed yes Standard default PASS FAIL
+assert_validation "rejects padded finding IDs with the same integer" 1 "duplicate finding ID: F001" "$fixture_dir"
 
 fixture_dir="$TEST_ROOT/unknown-duplicate"
 make_ready_fixture "$fixture_dir"

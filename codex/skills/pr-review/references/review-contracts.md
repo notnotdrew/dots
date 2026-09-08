@@ -96,7 +96,7 @@ Record coverage by coherent subsystem or concern. Every record has these determi
 
 Finding identity belongs to the behavioral claim, not its wording, line anchor, reviewer, or observed commit.
 
-- IDs are `F<positive integer>`, displayed with at least three digits: `F001`, `F002`, and so on. Additional digits are allowed.
+- IDs are `F<positive integer>`, displayed with at least two digits: `F01`, `F02`, and so on. Additional digits are allowed. Existing records may keep three-digit padding (`F001`). Padding variants of the same integer are one ID: `--finding` matches by integer, and a series must not store both `F01` and `F001`.
 - `candidate` means a reviewer reported the claim and synthesis has not reached a terminal judgment.
 - `verified` means decisive evidence supports retaining the claim.
 - `dismissed` means evidence does not support retaining the claim.

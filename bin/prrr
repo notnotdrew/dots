@@ -21,6 +21,10 @@
 #   space  re-run the PR review (standard)
 #   ctrl-d deep review with --full-rebuild (same-head needs a forced epoch)
 #   ctrl-r resume the most recent agent session for this PR
+#
+# Every agent launch runs in a Herdr workspace named after the PR, sitting in
+# that PR's WorkTrunk checkout. A second launch for the same PR opens a tab in
+# the workspace that already exists.
 
 set -euo pipefail
 
@@ -30,10 +34,12 @@ readonly SCRIPT_NAME
 readonly SCRIPT_DIR
 readonly ARTIFACTS_ROOT="${HOME}/.cdx-artifacts/pr-reviews"
 readonly PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
+readonly RESOLVE_CHECKOUT="${HOME}/.codex/skills/pr-review/scripts/resolve-review-checkout"
 readonly PR_REVIEW="${SCRIPT_DIR}/pr-review"
 readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/Documents/dev}"
 readonly EXIT_CANCELLED=130
 readonly CLEAN_MAX_AGE_DAYS=14
+readonly WORKSPACE_LABEL_MAX=52
 readonly USAGE="usage: ${SCRIPT_NAME} [start <PR-number-or-URL> | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
@@ -135,6 +141,202 @@ resolve_clone_dir() {
   return 1
 }
 
+# Print the PR title for a workspace label: the local review brief first, then
+# GitHub. Soft-fails to an empty title so a launch never hangs on the label.
+pr_title() {
+  local owner=$1
+  local repo=$2
+  local pr_number=$3
+  local title
+
+  title="$(review_title "${ARTIFACTS_ROOT}/${owner}--${repo}/pr-${pr_number}")"
+
+  if [[ -z "$title" ]] && command -v gh >/dev/null 2>&1; then
+    title="$(
+      gh pr view "$pr_number" --repo "${owner}/${repo}" --json title --jq '.title' 2>/dev/null || true
+    )"
+  fi
+
+  printf '%s\n' "$title"
+}
+
+# Print the Herdr workspace label for a PR: "[PR] <title>", truncated so the
+# sidebar stays readable. Falls back to "[PR] #<number>" only when the title
+# cannot be resolved, so two untitled PRs do not share a workspace.
+workspace_label() {
+  local owner=$1
+  local repo=$2
+  local pr_number=$3
+  local title label
+
+  title="$(pr_title "$owner" "$repo" "$pr_number")"
+  if [[ -z "$title" ]]; then
+    printf '[PR] #%s\n' "$pr_number"
+    return 0
+  fi
+
+  label="[PR] ${title}"
+  if ((${#label} > WORKSPACE_LABEL_MAX)); then
+    label="${label:0:WORKSPACE_LABEL_MAX}"
+    label="${label%"${label##*[![:space:]]}"}…"
+  fi
+
+  printf '%s\n' "$label"
+}
+
+# Quote arguments into one command line for `herdr pane run`.
+shell_command() {
+  local part command=""
+
+  for part in "$@"; do
+    command+="${command:+ }$(printf '%q' "$part")"
+  done
+
+  printf '%s\n' "$command"
+}
+
+herdr_checked=false
+
+require_herdr() {
+  [[ "$herdr_checked" == true ]] && return 0
+  require_cmds herdr jq
+  herdr workspace list >/dev/null 2>&1 \
+    || die "the herdr server is not running; start herdr and try again"
+  herdr_checked=true
+}
+
+# Print the workspace already dedicated to this PR: the labelled one, else one
+# whose pane already sits in the checkout we are about to use.
+find_pr_workspace() {
+  local label=$1
+  local checkout_path=$2
+
+  herdr api snapshot 2>/dev/null | jq -r \
+    --arg label "$label" \
+    --arg path "$checkout_path" \
+    '.result.snapshot as $snapshot
+     | ([$snapshot.workspaces[] | select(.label == $label) | .workspace_id]
+        + [$snapshot.panes[] | select(.cwd == $path) | .workspace_id])[0] // empty'
+}
+
+# Run a command in this PR's Herdr workspace, in a pane rooted at its checkout.
+# Reuses the PR's workspace when it exists so re-reviews and follow-up agents
+# stack up as tabs instead of new workspaces.
+run_in_pr_workspace() {
+  local label=$1
+  local checkout_path=$2
+  local command=$3
+  local workspace_id pane_id
+
+  require_herdr
+
+  workspace_id="$(find_pr_workspace "$label" "$checkout_path")"
+
+  if [[ -n "$workspace_id" ]]; then
+    pane_id="$(
+      herdr tab create --workspace "$workspace_id" --cwd "$checkout_path" --focus \
+        | jq -r '.result.root_pane.pane_id // empty'
+    )" || die "herdr tab create failed in ${workspace_id}"
+    [[ -n "$pane_id" ]] || die "herdr tab create returned no pane"
+    printf '%s: new tab in herdr workspace %s "%s" on %s\n' \
+      "$SCRIPT_NAME" "$workspace_id" "$label" "$(basename "$checkout_path")" >&2
+  else
+    pane_id="$(
+      herdr workspace create --cwd "$checkout_path" --label "$label" --focus \
+        | jq -r '.result.root_pane.pane_id // empty'
+    )" || die "herdr workspace create failed"
+    [[ -n "$pane_id" ]] || die "herdr workspace create returned no pane"
+    printf '%s: opened herdr workspace %s "%s" on %s\n' \
+      "$SCRIPT_NAME" "${pane_id%%:*}" "$label" "$(basename "$checkout_path")" >&2
+  fi
+
+  herdr pane run "$pane_id" "$command" >/dev/null \
+    || die "failed to run in ${pane_id}: ${command}"
+}
+
+# Print the git worktree path checked out at refs/heads/<branch>, if any.
+worktree_path_for_branch() {
+  local clone_dir=$1
+  local branch=$2
+
+  git -C "$clone_dir" worktree list --porcelain | awk -v want="refs/heads/${branch}" '
+    /^worktree / { path = substr($0, 10) }
+    /^branch / { if (substr($0, 8) == want) { print path; exit } }
+  '
+}
+
+# Print the WorkTrunk checkout path for a ref, creating the worktree if needed.
+# A failing pre-start hook still leaves a usable worktree; adopt that path
+# instead of treating the non-zero wt exit as "no checkout".
+wt_checkout_path() {
+  local clone_dir=$1
+  local ref=$2
+  local stderr_file json path="" branch="" remote slug
+
+  stderr_file="$(mktemp)"
+  json="$(
+    wt -C "$clone_dir" switch --no-cd --format json "$ref" 2>"$stderr_file" || true
+  )"
+  if [[ -n "$json" ]]; then
+    path="$(printf '%s' "$json" | jq -r '.path // empty')"
+  fi
+  if [[ -n "$path" && -d "$path" ]]; then
+    rm -f "$stderr_file"
+    printf '%s\n' "$path"
+    return 0
+  fi
+
+  case "$ref" in
+    pr:*)
+      if remote="$(git -C "$clone_dir" remote get-url origin 2>/dev/null)" \
+        && slug="$(github_repo_from_remote "$remote")"; then
+        branch="$(
+          gh pr view "${ref#pr:}" --repo "$slug" --json headRefName --jq '.headRefName' 2>/dev/null || true
+        )"
+      fi
+      ;;
+    *)
+      branch="$ref"
+      ;;
+  esac
+
+  if [[ -n "$branch" ]]; then
+    path="$(worktree_path_for_branch "$clone_dir" "$branch")"
+  fi
+
+  if [[ -n "$path" && -d "$path" ]]; then
+    cat "$stderr_file" >&2
+    rm -f "$stderr_file"
+    printf '%s\n' "$path"
+    return 0
+  fi
+
+  cat "$stderr_file" >&2
+  rm -f "$stderr_file"
+  return 1
+}
+
+# Print the newest epoch checkout still on disk for this PR, if any.
+latest_epoch_checkout_path() {
+  local clone_dir=$1
+  local pr_number=$2
+  local path
+
+  path="$(
+    wt -C "$clone_dir" list --format json 2>/dev/null | jq -r \
+      --arg prefix "pr-${pr_number}-R" \
+      '[ .[]
+         | select((.branch // "") | startswith($prefix))
+         | select((.path // "") != "")
+         | { ordinal: ((.branch | ltrimstr($prefix) | tonumber?) // 0), path: .path } ]
+       | sort_by(.ordinal)
+       | last
+       | .path // empty'
+  )"
+  [[ -n "$path" ]] || return 1
+  printf '%s\n' "$path"
+}
+
 # Print "owner/repo<TAB>number<TAB>title<TAB>url" for open PRs requesting your review.
 # Soft-fails so the picker still works when gh is missing, logged out, or offline.
 list_review_requested_prs() {
@@ -214,12 +416,54 @@ list_artifacts() {
   done < <(find "$review_dir" -maxdepth 1 -type f ! -name '.*' | sort)
 }
 
-# Resolve clone + exec pr-review for a GitHub PR URL.
-start_review_from_url() {
-  local pr_url=$1
-  local parsed owner repo clone_dir
+# Resolve the epoch checkout here so the workspace can open on it, then hand the
+# review itself to pr-review, which resolves again and reuses that checkout.
+# Extra pr-review flags (--mode, --full-rebuild) follow the URL.
+launch_review() {
+  local clone_dir=$1
+  local owner=$2
+  local repo=$3
+  local pr_number=$4
+  local pr_url=$5
+  shift 5
+  local resolved label command
+  local -a review_args=("$@")
+  local -a resolve_args=(--ensure)
+  local arg
 
   [[ -x "$PR_REVIEW" ]] || die "missing launcher: $PR_REVIEW"
+  [[ -x "$RESOLVE_CHECKOUT" ]] || die "missing checkout resolver: $RESOLVE_CHECKOUT"
+  require_herdr
+
+  # A forced epoch has to reach the resolver too, or it hands back the checkout
+  # for the epoch pr-review is about to skip past.
+  for arg in "${review_args[@]}"; do
+    [[ "$arg" == --full-rebuild ]] && resolve_args+=(--full-rebuild)
+  done
+
+  cd "$clone_dir" || die "failed to cd into ${clone_dir}"
+  resolved="$("$RESOLVE_CHECKOUT" "${resolve_args[@]}" "$pr_url")" || exit 1
+  # shellcheck disable=SC2086
+  eval "$resolved"
+
+  [[ -n "${ACTION:-}" ]] || die "checkout resolver returned no ACTION"
+  if [[ "$ACTION" == noop ]]; then
+    printf '%s\n' "${MESSAGE:-nothing to review}"
+    return 0
+  fi
+  [[ -n "${CHECKOUT_PATH:-}" ]] || die "checkout resolver returned no CHECKOUT_PATH"
+  printf '%s: %s\n' "$SCRIPT_NAME" "${MESSAGE}" >&2
+
+  label="$(workspace_label "$owner" "$repo" "$pr_number")"
+  command="$(shell_command "$PR_REVIEW" "${review_args[@]}" "$pr_url")"
+  run_in_pr_workspace "$label" "$CHECKOUT_PATH" "$command"
+}
+
+# Resolve clone + start a review for a GitHub PR URL.
+start_review_from_url() {
+  local pr_url=$1
+  local parsed owner repo pr_number clone_dir
+
   [[ -x "$PR_PARSE" ]] || die "missing parser: $PR_PARSE"
 
   parsed="$("$PR_PARSE" "$pr_url")" || exit 1
@@ -227,14 +471,13 @@ start_review_from_url() {
   eval "$parsed"
   owner="${OWNER:?}"
   repo="${REPO:?}"
+  pr_number="${PR_NUMBER:?}"
 
   if ! clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
     die "no local clone of ${owner}/${repo} (checked cwd and ${DEV_ROOT}/${owner}/${repo}; set PRRR_DEV_ROOT to override)"
   fi
 
-  printf '%s: starting pr-review in %s\n' "$SCRIPT_NAME" "$clone_dir" >&2
-  cd "$clone_dir" || die "failed to cd into ${clone_dir}"
-  exec "$PR_REVIEW" "$pr_url"
+  launch_review "$clone_dir" "$owner" "$repo" "$pr_number" "$pr_url"
 }
 
 # Start a review for a home picker row, whichever section it came from.
@@ -377,6 +620,7 @@ pick_home() {
     else
       die "ctrl-n needs a highlighted row, or a typed PR number or URL"
     fi
+    return 0
   fi
 
   [[ -n "$selection" ]] || return "$EXIT_CANCELLED"
@@ -398,24 +642,30 @@ pick_home() {
 discuss_artifact() {
   local review_dir=$1
   local artifact_path=$2
-  local repo_dir_name owner repo pr_number clone_dir
+  local owner repo pr_number clone_dir checkout_path label command
 
   require_cmds wt agent
+  require_herdr
 
-  repo_dir_name="$(basename "$(dirname "$review_dir")")"
-  [[ "$repo_dir_name" == *--* ]] || die "cannot determine repository from ${review_dir}"
-  owner="${repo_dir_name%%--*}"
-  repo="${repo_dir_name#*--}"
-  pr_number="$(basename "$review_dir")"
-  pr_number="${pr_number#pr-}"
+  parse_review_identity "$review_dir" owner repo pr_number
 
   if ! clone_dir="$(resolve_clone_dir "${owner}/${repo}")"; then
     die "no local clone of ${owner}/${repo} (checked cwd and ${DEV_ROOT}/${owner}/${repo}; set PRRR_DEV_ROOT to override)"
   fi
 
-  exec wt -C "$clone_dir" switch --execute agent "pr:${pr_number}" -- \
-    --mode ask -- \
-    "Read ${artifact_path} carefully and be ready to discuss it. When ready, give a short briefing on what the artifact is and its key points, then wait for my questions."
+  if ! checkout_path="$(wt_checkout_path "$clone_dir" "pr:${pr_number}")"; then
+    die "no worktrunk checkout for pr:${pr_number} in ${clone_dir}"
+  fi
+
+  label="$(workspace_label "$owner" "$repo" "$pr_number")"
+  # Pane cwd is already the PR checkout; do not wrap agent in `wt switch`,
+  # which would re-run pre-start hooks and fail the same way as a create.
+  command="$(
+    shell_command agent --mode ask -- \
+      "Read ${artifact_path} carefully and be ready to discuss it. When ready, give a short briefing on what the artifact is and its key points, then wait for my questions."
+  )"
+
+  run_in_pr_workspace "$label" "$checkout_path" "$command"
 }
 
 # Re-run pr-review for an existing series.
@@ -450,14 +700,13 @@ rerun_review() {
   if [[ "$mode" == deep ]]; then
     review_args+=(--full-rebuild)
   fi
-  review_args+=("$pr_url")
 
-  printf '%s: re-running pr-review%s in %s\n' \
+  printf '%s: re-running pr-review%s for %s/%s#%s\n' \
     "$SCRIPT_NAME" \
     "${mode:+ (${mode})}" \
-    "$clone_dir" >&2
-  cd "$clone_dir" || die "failed to cd into ${clone_dir}"
-  exec "$PR_REVIEW" "${review_args[@]}"
+    "$owner" "$repo" "$pr_number" >&2
+
+  launch_review "$clone_dir" "$owner" "$repo" "$pr_number" "$pr_url" "${review_args[@]}"
 }
 
 # Escape a string for use inside a single-quoted SQL literal.
@@ -540,9 +789,10 @@ latest_pr_agent_chat_id() {
 
 resume_pr_agent_session() {
   local review_dir=$1
-  local owner repo pr_number clone_dir chat_id
+  local owner repo pr_number clone_dir chat_id checkout_path label command
 
   require_cmds agent
+  require_herdr
 
   parse_review_identity "$review_dir" owner repo pr_number
 
@@ -554,9 +804,18 @@ resume_pr_agent_session() {
     die "no agent session found for ${owner}/${repo}#${pr_number}"
   fi
 
+  # The session belongs to the clone's agent workspace; the pane just sits in the
+  # newest epoch checkout so the review's files are underfoot.
+  if ! checkout_path="$(latest_epoch_checkout_path "$clone_dir" "$pr_number")"; then
+    checkout_path="$clone_dir"
+  fi
+
   printf '%s: resuming agent session %s for %s/%s#%s\n' \
     "$SCRIPT_NAME" "$chat_id" "$owner" "$repo" "$pr_number" >&2
-  exec agent --workspace "$clone_dir" --resume "$chat_id"
+
+  label="$(workspace_label "$owner" "$repo" "$pr_number")"
+  command="$(shell_command agent --workspace "$clone_dir" --resume "$chat_id")"
+  run_in_pr_workspace "$label" "$checkout_path" "$command"
 }
 
 pick_artifact() {
@@ -587,12 +846,15 @@ pick_artifact() {
   case "$key" in
     space)
       rerun_review "$review_dir"
+      return 0
       ;;
     ctrl-d)
       rerun_review "$review_dir" deep
+      return 0
       ;;
     ctrl-r)
       resume_pr_agent_session "$review_dir"
+      return 0
       ;;
     tab)
       ;;
@@ -874,6 +1136,7 @@ main() {
       die "usage: ${SCRIPT_NAME} start <PR-number-or-URL>"
     fi
     start_review_from_ref "$2"
+    exit 0
   fi
 
   if (($# > 1)); then

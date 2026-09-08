@@ -82,6 +82,12 @@ assert_command "forwards a Deep full rebuild" 0 'worktree: pr-42-R1
 prompt: /pr-review --mode deep --full-rebuild 42' --dry-run --mode deep --full-rebuild 42
 
 assert_command "forwards a single-finding revision" 0 'worktree: pr-42-R1
+prompt: /pr-review --finding F01 42' --dry-run --finding F01 42
+
+assert_command "forwards an unpadded single-finding revision" 0 'worktree: pr-42-R1
+prompt: /pr-review --finding F1 42' --dry-run --finding F1 42
+
+assert_command "forwards a legacy padded single-finding revision" 0 'worktree: pr-42-R1
 prompt: /pr-review --finding F001 42' --dry-run --finding F001 42
 
 assert_command "rejects an unknown mode" 1 'error: unknown mode: broad' --dry-run --mode broad 42
@@ -89,13 +95,13 @@ assert_command "rejects an unknown mode" 1 'error: unknown mode: broad' --dry-ru
 assert_command "rejects duplicate dry-run flags" 1 'error: duplicate option: --dry-run' --dry-run --dry-run 42
 assert_command "rejects duplicate mode flags" 1 'error: duplicate option: --mode' --dry-run --mode standard --mode standard 42
 assert_command "rejects duplicate full-rebuild flags" 1 'error: duplicate option: --full-rebuild' --dry-run --full-rebuild --full-rebuild 42
-assert_command "rejects duplicate finding flags" 1 'error: duplicate option: --finding' --dry-run --finding F001 --finding F002 42
+assert_command "rejects duplicate finding flags" 1 'error: duplicate option: --finding' --dry-run --finding F01 --finding F02 42
 
 assert_command "rejects a missing mode value" 1 'error: missing value for --mode' --dry-run --mode
 assert_command "rejects a missing finding value" 1 'error: missing value for --finding' --dry-run --finding
 
-assert_command "rejects a Deep single-finding revision" 1 'error: --finding cannot be combined with --mode deep' --dry-run --mode deep --finding F001 42
-assert_command "rejects a full-rebuild single-finding revision" 1 'error: --finding cannot be combined with --full-rebuild' --dry-run --full-rebuild --finding F001 42
+assert_command "rejects a Deep single-finding revision" 1 'error: --finding cannot be combined with --mode deep' --dry-run --mode deep --finding F01 42
+assert_command "rejects a full-rebuild single-finding revision" 1 'error: --finding cannot be combined with --full-rebuild' --dry-run --full-rebuild --finding F01 42
 
 assert_command "rejects a zero finding ID" 1 'error: invalid finding ID: F0 (expected F followed by a positive integer)' --dry-run --finding F0 42
 assert_command "rejects an all-zero padded finding ID" 1 'error: invalid finding ID: F000 (expected F followed by a positive integer)' --dry-run --finding F000 42

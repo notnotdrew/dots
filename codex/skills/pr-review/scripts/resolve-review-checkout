@@ -216,6 +216,9 @@ fi
 command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
 command -v git >/dev/null 2>&1 || die "git is required"
 
+wt_stderr=$(mktemp)
+trap 'rm -f "$wt_stderr"' EXIT HUP INT TERM
+
 fetch_pr_head() {
     # Materialize GitHub's PR head locally so disposable branches pin to headRefOid,
     # not a stale local PR-branch tip.
@@ -242,41 +245,76 @@ pin_checkout_to_head() {
     [ "$current_head" = "$HEAD_SHA" ] || die "checkout HEAD ${current_head} does not match ${HEAD_SHA}"
 }
 
-# Prefer an existing disposable checkout only when its HEAD already matches.
-existing_json=
-if existing_json=$(wt switch --no-cd --format json "$CHECKOUT_BRANCH" 2>/dev/null); then
-    CHECKOUT_PATH=$(printf '%s' "$existing_json" | jq -r '.path // empty')
-    if [ -n "$CHECKOUT_PATH" ] && [ -d "$CHECKOUT_PATH" ]; then
-        existing_head=$(git -C "$CHECKOUT_PATH" rev-parse HEAD)
-        if [ "$existing_head" = "$HEAD_SHA" ]; then
-            CHECKOUT_CREATED=no
-            MESSAGE="${MESSAGE}; reused existing checkout"
-            emit_result
-            exit 0
+worktree_path_for_branch() {
+    git worktree list --porcelain | awk -v want="refs/heads/$1" '
+        /^worktree / { path = substr($0, 10) }
+        /^branch / { if (substr($0, 8) == want) { print path; exit } }
+    '
+}
+
+switch_path=
+switch_degraded=no
+
+# Run `wt switch` and keep the worktree even when wt exits non-zero. A failing
+# pre-start hook (bundle install, lefthook install) still leaves a checkout a
+# read-only review can use, and once the branch exists any retry can do nothing
+# but report that it already exists.
+try_switch() {
+    switch_path=
+    switch_degraded=no
+
+    if switch_json=$(wt switch --no-cd --format json "$@" 2>"$wt_stderr"); then
+        switch_path=$(printf '%s' "$switch_json" | jq -r '.path // empty')
+        if [ -n "$switch_path" ] && [ -d "$switch_path" ]; then
+            return 0
         fi
+    fi
+
+    switch_path=$(worktree_path_for_branch "$CHECKOUT_BRANCH")
+    if [ -z "$switch_path" ] || [ ! -d "$switch_path" ]; then
+        switch_path=
+        return 1
+    fi
+    switch_degraded=yes
+}
+
+report_degraded_switch() {
+    if [ "$switch_degraded" = yes ]; then
+        cat "$wt_stderr" >&2
+        MESSAGE="${MESSAGE}; wt switch reported the errors above, checkout kept for review"
+    fi
+}
+
+# Prefer an existing disposable checkout only when its HEAD already matches.
+if try_switch "$CHECKOUT_BRANCH"; then
+    CHECKOUT_PATH=$switch_path
+    CHECKOUT_CREATED=no
+    if [ "$(git -C "$CHECKOUT_PATH" rev-parse HEAD)" = "$HEAD_SHA" ]; then
+        MESSAGE="${MESSAGE}; reused existing checkout"
+    else
         # Owned disposable branch at the wrong SHA: pin it rather than touching the user PR worktree.
         pin_checkout_to_head "$CHECKOUT_PATH"
-        CHECKOUT_CREATED=no
         MESSAGE="${MESSAGE}; pinned existing checkout to ${HEAD_SHA}"
-        emit_result
-        exit 0
     fi
+    report_degraded_switch
+    emit_result
+    exit 0
 fi
 
 fetch_pr_head
 
-# Create from the exact GitHub head SHA when possible; fall back to pr:N then pin.
-created_json=
-if ! created_json=$(wt switch --no-cd --format json --create --base="$HEAD_SHA" "$CHECKOUT_BRANCH" 2>/dev/null); then
-    created_json=$(wt switch --no-cd --format json --create --base="pr:${PR_NUMBER}" "$CHECKOUT_BRANCH") || \
-        die "failed to create checkout ${CHECKOUT_BRANCH}"
+# Base the branch on the head object itself; fetch_pr_head already made it local,
+# so nothing depends on the PR branch name resolving in this clone.
+if ! try_switch --create --base="$HEAD_SHA" "$CHECKOUT_BRANCH"; then
+    cat "$wt_stderr" >&2
+    die "failed to create checkout ${CHECKOUT_BRANCH}"
 fi
 
-CHECKOUT_PATH=$(printf '%s' "$created_json" | jq -r '.path // empty')
-[ -n "$CHECKOUT_PATH" ] || die "wt switch did not return a checkout path"
+CHECKOUT_PATH=$switch_path
 pin_checkout_to_head "$CHECKOUT_PATH"
 
 CHECKOUT_CREATED=yes
 MESSAGE="${MESSAGE}; created checkout at ${CHECKOUT_PATH}"
+report_degraded_switch
 emit_result
 exit 0

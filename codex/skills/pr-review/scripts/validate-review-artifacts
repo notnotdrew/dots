@@ -137,8 +137,13 @@ awk -v context_file="$context_file" \
         return epoch ~ /^R[1-9][0-9]*$/
     }
     function valid_finding_id(finding_id) {
-        return finding_id ~ /^F[0-9][0-9][0-9][0-9]*$/ &&
+        return finding_id ~ /^F[0-9][0-9][0-9]*$/ &&
                finding_id ~ /^F0*[1-9][0-9]*$/
+    }
+    function finding_number(finding_id,    digits) {
+        digits = finding_id
+        sub(/^F0*/, "", digits)
+        return digits + 0
     }
     function valid_amendment_id(amendment_id) {
         return amendment_id ~ /^A0*[1-9][0-9]*$/
@@ -219,10 +224,12 @@ awk -v context_file="$context_file" \
             finding_id = trim(parsed_values[item_index])
             if (!valid_finding_id(finding_id)) {
                 artifact_error("malformed finding ID: " finding_id)
-            } else if (epoch_finding_ids[epoch, finding_id]) {
+            } else if (epoch_finding_ids[epoch, finding_id] ||
+                       (epoch SUBSEP finding_number(finding_id)) in epoch_finding_numbers) {
                 artifact_error("duplicate epoch finding ID: " epoch ": " finding_id)
             } else {
                 epoch_finding_ids[epoch, finding_id] = 1
+                epoch_finding_numbers[epoch, finding_number(finding_id)] = 1
                 epoch_finding_count[epoch]++
             }
         }
@@ -239,10 +246,12 @@ awk -v context_file="$context_file" \
             disposition = trim(substr(entry, separator + 1))
             if (!separator || !valid_finding_id(finding_id) || !valid_disposition(disposition)) {
                 artifact_error("invalid epoch finding state: " epoch ": " entry)
-            } else if ((epoch SUBSEP finding_id) in epoch_finding_states) {
+            } else if ((epoch SUBSEP finding_id) in epoch_finding_states ||
+                       (epoch SUBSEP finding_number(finding_id)) in epoch_finding_state_numbers) {
                 artifact_error("duplicate epoch finding state: " epoch ": " finding_id)
             } else {
                 epoch_finding_states[epoch, finding_id] = disposition
+                epoch_finding_state_numbers[epoch, finding_number(finding_id)] = 1
                 epoch_state_count[epoch]++
             }
         }
@@ -771,8 +780,13 @@ awk -v ledger_file="$ledger_file" \
         invalid = 1
     }
     function valid_finding_id(finding_id) {
-        return finding_id ~ /^F[0-9][0-9][0-9][0-9]*$/ &&
+        return finding_id ~ /^F[0-9][0-9][0-9]*$/ &&
                finding_id ~ /^F0*[1-9][0-9]*$/
+    }
+    function finding_number(finding_id,    digits) {
+        digits = finding_id
+        sub(/^F0*/, "", digits)
+        return digits + 0
     }
     function finish_outcome_coverage(    principle_count, principle_index, principle, verdict_name) {
         if (in_outcome_coverage_record &&
@@ -875,10 +889,12 @@ awk -v ledger_file="$ledger_file" \
             current_id = field_value
             if (!valid_finding_id(current_id)) {
                 artifact_error("malformed finding ID: " current_id)
-            } else if (current_id in finding_ids) {
+            } else if (current_id in finding_ids ||
+                       finding_number(current_id) in finding_numbers) {
                 artifact_error("duplicate finding ID: " current_id)
             } else {
                 finding_ids[current_id] = 1
+                finding_numbers[finding_number(current_id)] = current_id
             }
             if (header_id != current_id) {
                 artifact_error("finding header and ID differ: " header_id)

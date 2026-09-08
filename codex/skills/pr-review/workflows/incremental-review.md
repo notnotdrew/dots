@@ -155,7 +155,7 @@ A pure rebase may inherit semantically unaffected context after that equivalence
 
 ## 8. Revise One Finding
 
-`--finding` requires one existing normalized ID matching `F0*[1-9][0-9]*`. Normalize its display to at least three digits and require that exact stable record to exist. It implies Standard verification depth and is incompatible with Deep mode and full rebuild.
+`--finding` requires one existing ID matching `F0*[1-9][0-9]*`. Match it to the stored record with the same integer, regardless of padding (`F1`, `F01`, and `F001` are the same ID). Use that record's stored spelling in artifacts. It implies Standard verification depth and is incompatible with Deep mode and full rebuild.
 
 Load only:
 

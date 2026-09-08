@@ -40,11 +40,11 @@ No findings.
 
 An empty ledger may accompany a readiness failure when no reviewers were launched. Preserve the readiness and coverage metadata above.
 
-Otherwise repeat the following record. IDs use a positive integer displayed with at least three digits. The disposition is `candidate`, `verified`, `dismissed`, or `superseded`; only `verified` records are retained in the final review.
+Otherwise repeat the following record. IDs use a positive integer displayed with at least two digits. The disposition is `candidate`, `verified`, `dismissed`, or `superseded`; only `verified` records are retained in the final review.
 
-### Finding F001
+### Finding F01
 
-- ID: F001
+- ID: F01
 - Claim: <single behavioral claim>
 - Impact: <concrete user, system, security, or maintenance effect>
 - Principle: <Purpose|Edge Cases|Reliability|Form|Evidence|Clarity|Taste>
@@ -66,7 +66,7 @@ Purpose findings must use `Class: blocking`. Represent unresolved Purpose decisi
 Examples of terminal lifecycle states:
 
 - A dismissed candidate keeps `DispositionHistory: candidate -> dismissed; <reason and evidence>`.
-- A semantic duplicate keeps `Disposition: dismissed`, `DuplicateOf: F001`, and merged provenance on the retained finding.
+- A semantic duplicate keeps `Disposition: dismissed`, `DuplicateOf: F01`, and merged provenance on the retained finding.
 - A replaced finding keeps `Disposition: superseded`; the replacing finding names it in `Supersedes`.
 
 Across epochs, preserve each ID and append rather than rewrite `DispositionHistory`. `candidate` may transition to any disposition; `verified` may remain verified or become dismissed or superseded; dismissed and superseded records are terminal. A materially different claim gets a new monotonic ID and links the historical record instead of reviving or renaming it.
