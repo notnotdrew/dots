@@ -3,4 +3,7 @@ approved-commands = [
     "wt step copy-ignored --require-include",
     "bundle install",
     "bundle exec lefthook install",
+    "test -L plans || ln -sfn '{{ primary_worktree_path }}/plans' plans",
+    "test -L .inchworm || ln -sfn '{{ primary_worktree_path }}/.inchworm' .inchworm",
+    "mkdir -p .cursor && (test -L .cursor/skills || ln -sfn '{{ primary_worktree_path }}/.cursor/skills' .cursor/skills)",
 ]

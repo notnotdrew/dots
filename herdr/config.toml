@@ -43,6 +43,10 @@ type = "plugin_action"
 command = "annotate.last"
 description = "review the agent's last reply"
 
+[ui]
+# Prompt for a name when creating a workspace instead of generating one.
+prompt_new_workspace_name = true
+
 [ui.toast]
 delivery = "system"
 
