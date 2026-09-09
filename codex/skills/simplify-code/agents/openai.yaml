@@ -1,4 +1,4 @@
 interface:
   display_name: "Simplify Code"
   short_description: "Reduce complexity without changing behavior"
-  default_prompt: "Simplify these recent code changes without altering behavior"
+  default_prompt: "Simplify the recent code changes, if a simplification is actually worthwhile. Keep in mind that simple is not a dogmatic thing, you'll need to be thoughtful."

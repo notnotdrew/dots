@@ -1,11 +1,11 @@
 ---
 name: simplify-code
-description: Simplifies recently changed code without altering behavior. Use after implementation or refactoring when the goal is to reduce unnecessary complexity, noisy comments, and speculative abstractions while preserving exact functionality.
+description: Simplifies recently changed code without altering behavior, only when a change is actually worthwhile. Use after implementation or refactoring when the goal is to reduce unnecessary complexity, noisy comments, and speculative abstractions while preserving exact functionality.
 ---
 
 # Simplify Code
 
-Use this skill after code edits to make the result clearer, smaller, and easier to maintain without changing behavior.
+Use this skill after code edits to make the result clearer, smaller, and easier to maintain without changing behavior. Skip the pass when the code is already simple enough.
 
 ## Quick Start
 
@@ -24,6 +24,8 @@ Default scope:
 ## Core Rules
 
 - Never change behavior.
+- Simple is judgment, not a checklist. Apply the look-fors below only when they would actually make this code easier to live with.
+- Do nothing is a valid outcome. If no simplification is worthwhile, say so and stop.
 - Earn every edit through better readability, consistency, or lower maintenance cost.
 - Prefer explicit code over dense cleverness.
 - Avoid nested ternaries when plain control flow is clearer.
@@ -34,6 +36,8 @@ Default scope:
 ### 1. Identify the simplification target
 
 Prefer the files or sections changed in the current task. If scope is unclear, simplify only the touched area rather than broad surrounding code.
+
+Ask whether a simplification is actually worthwhile before editing. Leave code that is already clear, even if a rule below could still be applied.
 
 ### 2. Simplify structure
 
@@ -81,6 +85,8 @@ Run targeted tests when practical. If you cannot verify with tests, say so expli
 
 ## Output
 
+If nothing was worth changing, say that in one or two sentences and stop.
+
 When reporting simplification work, summarize:
 
 ### Core Purpose
@@ -105,4 +111,4 @@ One sentence describing what the simplified code does.
 
 ## Bottom Line
 
-Make the edited code easier to understand tomorrow than it was today, without changing what it does.
+Make the edited code easier to understand tomorrow than it was today, without changing what it does. If it is already there, leave it alone.
