@@ -49,9 +49,13 @@ linear issue mine --state started --sort priority
 
 ### Create an issue
 
+Never create issues in **Triage** unless the user explicitly asks for Triage. Linear's team default is often Triage when `--state` is omitted, so always pass a state.
+
+Use **Backlog** by default. Use **Todo** when the user wants the work ready to pick up (for example: "do this next", "put it in todo", "ready to start").
+
 ```bash
 linear issue create --team ENG --title "Fix login redirect" \
-  --description-file ./description.md --no-interactive
+  --state backlog --description-file ./description.md --no-interactive
 ```
 
 Write multi-line markdown to a file and pass `--description-file` (see the markdown section below); `--no-interactive` avoids prompts in scripted use.

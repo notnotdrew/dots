@@ -237,8 +237,17 @@ When polish is not worth the cost — generating many tasks in a batch, for inst
 - [task-sizing](references/task-sizing.md) — when to add conditions versus split the task
 - [thinking-patterns](references/thinking-patterns.md) — structured reasoning by phase
 
+## Creating in Linear
+
+This skill writes the task. If you also create a Linear issue from it, follow `linear-cli`:
+
+- Never create the issue in **Triage** unless the user explicitly asks for Triage.
+- Default to **Backlog**. Use **Todo** when they want it ready to pick up.
+- Always set workflow state on create. Omitting it often lands the issue in Triage.
+
 ## Related Skills
 
 - `writing-agile-stories` — the user-facing counterpart; use it when a user would notice the change
+- `linear-cli` — create or update the Linear issue after the task is written
 - `writing-for-humans` — narrative polish in the review phase
 - `planning-tdd` — where the step-by-step how belongs once the task is agreed and tests should lead implementation

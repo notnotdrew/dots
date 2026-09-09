@@ -259,11 +259,20 @@ When the story is ambiguous, multi-domain, or hard to bound, pair this skill wit
 
 See [references/thinking-patterns.md](references/thinking-patterns.md) for phase-specific guidance.
 
+## Creating in Linear
+
+This skill writes the story. If you also create a Linear issue from it, follow `linear-cli`:
+
+- Never create the issue in **Triage** unless the user explicitly asks for Triage.
+- Default to **Backlog**. Use **Todo** when they want it ready to pick up.
+- Always set workflow state on create. Omitting it often lands the issue in Triage.
+
 ## Skill Handoffs
 
 Use nearby skills when story writing is only one stage of the work:
 
 - `slicing-elephant-carpaccio`: split a feature or epic before writing an individual story
+- `linear-cli`: create or update the Linear issue after the story is written
 - `managing-jira`: load a Jira ticket before drafting when the request starts from an issue key
 - `planning-tdd`: plan the implementation of an approved story
 - `practicing-tdd`: implement the approved story test-first

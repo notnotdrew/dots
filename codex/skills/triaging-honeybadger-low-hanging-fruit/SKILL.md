@@ -98,7 +98,7 @@ Lead with the shortlist: error class, one-line description, and why it is small.
 Stop at the triage doc by default. Offer these, and act only on an explicit go-ahead:
 
 - **Resolve already-fixed faults.** Resolving or ignoring is a mutation. List the fault IDs and let the user confirm before touching them or doing it in the UI themselves.
-- **Create Linear issues** for the recommended fixes, using the `linear-cli` skill or the Linear MCP conventions in the repo's rules.
+- **Create Linear issues** for the recommended fixes, using the `linear-cli` skill or the Linear MCP conventions in the repo's rules. Put them in **Backlog** or **Todo**, never **Triage**, unless the user explicitly asks for Triage.
 - **Implement one fix** in the worktree, taking the triage doc as the input.
 
 ## Guidelines

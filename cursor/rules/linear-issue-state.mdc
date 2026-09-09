@@ -1,0 +1,12 @@
+---
+description: Default Linear issue state. Never create in Triage unless asked.
+alwaysApply: true
+---
+
+# Linear issue state
+
+Never create Linear issues in **Triage** unless the user explicitly asks for Triage.
+
+Default new issues to **Backlog**. Use **Todo** when the user wants the work ready to pick up.
+
+Always set workflow state on create (CLI `--state`, MCP `state`). Omitting it often lands the issue in Triage because that is the team default.
