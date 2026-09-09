@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reviewing Tests Antagonistically"
+  short_description: "Mutate production and see if the specs still pass"
+  default_prompt: "Attack these tests. Mutate the production seams they claim to cover and report every named example that stays green."

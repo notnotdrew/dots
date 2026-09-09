@@ -185,6 +185,7 @@ Don't:
 - `practicing-tdd` — the catchable-defect check that prevents these anti-patterns at write time
 - `planning-tdd` — the Test Cycle Validity rule that prevents them at plan time
 - `review-code` — broader change review, which backstops mirror tests that slip through
+- `reviewing-tests-antagonistically` — mutate production and report named examples that stay green; use when the ask is coverage theater, not a Farley score
 
 Based on Dave Farley's Properties of Good Tests:
 https://www.linkedin.com/pulse/tdd-properties-good-tests-dave-farley-iexge/
