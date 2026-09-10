@@ -32,7 +32,6 @@ alias zrc='vim ~/.zshrc'
 
 export BAT_THEME="base16"
 
-autoload -Uz compinit && compinit # Load completions
 _comp_options+=(globdots) # include dot files for completions
 
 eval "$(direnv hook zsh)"
@@ -63,17 +62,20 @@ HEROKU_AC_ZSH_SETUP_PATH="$HOME/Library/Caches/heroku/autocomplete/zsh_setup"
 
 [ -f "$HOME/.local/bin/env" ] && . "$HOME/.local/bin/env"
 
-if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
-if command -v herdr >/dev/null 2>&1; then eval "$(herdr completion zsh)"; fi
 # Docker CLI completions (absent until Docker Desktop installs them)
 if [ -d "$HOME/.docker/completions" ]; then
   fpath=("$HOME/.docker/completions" $fpath)
-  autoload -Uz compinit
-  compinit
 fi
 
-# The following lines have been added by Docker Desktop to enable Docker CLI completions.
-fpath=(/Users/drew/.docker/completions $fpath)
+# compinit runs exactly once, after every fpath entry above and before the tools
+# below that call compdef. Rebuild the dump at most daily; -C trusts the cache
+# and skips the insecure-directory audit.
 autoload -Uz compinit
-(( ${+_comps[docker]} )) || compinit
-# End of Docker CLI completions
+if [[ -n $HOME/.zcompdump(#qN.mh+24) ]]; then
+  compinit
+else
+  compinit -C
+fi
+
+if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
+if command -v herdr >/dev/null 2>&1; then eval "$(herdr completion zsh)"; fi
