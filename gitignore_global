@@ -22,3 +22,4 @@ tags
 .rubocop_personal.yml
 
 /plans
+.inchworm/
