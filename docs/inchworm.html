@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inchworm</title>
+<style>
+  :root {
+    --ink: #16181d;
+    --mute: #5c626e;
+    --line: #dcdfe5;
+    --accent: #1f6feb;
+    --unit: 8px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: calc(var(--unit) * 8) calc(var(--unit) * 3) calc(var(--unit) * 12);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    max-width: 44rem;
+    margin: 0 auto;
+  }
+
+  h1 {
+    margin: 0 0 var(--unit);
+    font-size: 2.25rem;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .standfirst {
+    margin: 0 0 calc(var(--unit) * 6);
+    font-size: 1.25rem;
+    line-height: 1.45;
+    color: var(--mute);
+  }
+
+  h2 {
+    margin: calc(var(--unit) * 6) 0 calc(var(--unit) * 2);
+    padding-top: calc(var(--unit) * 2);
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mute);
+  }
+
+  p { margin: 0 0 calc(var(--unit) * 2); }
+
+  ul {
+    margin: 0 0 calc(var(--unit) * 2);
+    padding-left: calc(var(--unit) * 3);
+  }
+
+  li { margin-bottom: var(--unit); }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.875em;
+    background: #f3f4f7;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  .day {
+    margin: 0 0 calc(var(--unit) * 3);
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .day li {
+    position: relative;
+    padding-left: calc(var(--unit) * 4.5);
+    margin-bottom: calc(var(--unit) * 1.5);
+    counter-increment: step;
+  }
+
+  .day li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+    width: calc(var(--unit) * 3);
+    height: calc(var(--unit) * 3);
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    font-size: 0.75rem;
+    line-height: calc(var(--unit) * 3 - 2px);
+    text-align: center;
+    color: var(--mute);
+  }
+
+  .day b { font-weight: 600; }
+
+  .pull {
+    margin: 0 0 calc(var(--unit) * 3);
+    padding-left: calc(var(--unit) * 3);
+    border-left: 2px solid var(--accent);
+    font-size: 1.1rem;
+    line-height: 1.5;
+  }
+
+  footer {
+    margin-top: calc(var(--unit) * 8);
+    padding-top: calc(var(--unit) * 2);
+    border-top: 1px solid var(--line);
+    font-size: 0.9rem;
+    color: var(--mute);
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Inchworm</h1>
+  <p class="standfirst">One small change per weekday. It opens a draft PR and then leaves me alone.</p>
+
+  <h2>Why I built it</h2>
+
+  <ul>
+    <li>Small cleanups never earn a ticket, so they sit in the repo for years.</li>
+    <li>An agent can do one a day and it costs me no attention.</li>
+    <li>Every PR has to be small and leave behavior alone. That cap is the point.</li>
+  </ul>
+
+  <p class="pull">Make the change easy, then make the easy change. &mdash;Kent Beck</p>
+
+  <ul>
+    <li>Inchworm only does the second half.</li>
+    <li>If a find needs a refactor first, it marks the find <code>too_large</code> and quits for the day.</li>
+    <li>Lots of days it makes nothing. Good. The other option is a 600-line PR nobody reads.</li>
+    <li>The scary day is the one where it thinks something big is small. So far it stops.</li>
+    <li>Doing the refactor as its own daily PR is the part I haven't built.</li>
+  </ul>
+
+  <h2>How a day runs</h2>
+
+  <ul>
+    <li>A LaunchAgent runs <code>inchworm run</code> every 30 minutes, weekdays 8:00 to 15:30.</li>
+    <li>Each repo gets a gitignored <code>.inchworm.yml</code>: notes the agents have to follow, the last run date, the open draft URL.</li>
+    <li>One find a day, one open draft. Miss a day and it stays missed.</li>
+  </ul>
+
+  <ol class="day">
+    <li><b>Scout.</b> Four agents go looking: code smells, lint, production errors, the backlog.</li>
+    <li><b>Curate.</b> Fold the duplicates into <code>finds.md</code>, rank them, keep 20.</li>
+    <li><b>Pick.</b> The top one, or none.</li>
+    <li><b>Implement.</b> A Worktrunk checkout, dated branch off fresh <code>origin/develop</code>.</li>
+    <li><b>Open the PR.</b> Draft, against <code>develop</code>.</li>
+    <li><b>Review.</b> One review pass, one fix pass for real blockers, squashed into one commit.</li>
+    <li><b>Tell me.</b> A notification with the link.</li>
+  </ol>
+
+  <p>Two things I got wrong the first time:</p>
+
+  <ul>
+    <li>Stamp the date before writing any code. Otherwise a crash tries again on a different find and I get two PRs.</li>
+    <li>Keep the tool's name out of the branch, the commit, and the PR text. A PR that says a robot wrote it gets read differently.</li>
+  </ul>
+
+  <h2>Things it won't do</h2>
+
+  <ul>
+    <li>Merge, or mark a draft ready. I do that.</li>
+    <li>Open a second draft while one is still out.</li>
+    <li>Loop review against fix. One pass each.</li>
+    <li>Pass <code>--yolo</code>, <code>--force</code>, or <code>--trust</code> to any agent.</li>
+    <li>Make the change bigger to fit the find.</li>
+  </ul>
+
+  <footer>
+    Vibe-coded over a few evenings. Runs on my laptop against a couple of repos.
+  </footer>
+
+</main>
+</body>
+</html>
