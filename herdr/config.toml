@@ -53,3 +53,12 @@ delivery = "system"
 [theme]
 name = "terminal"
 auto_switch = false
+
+# The "terminal" theme maps UI surfaces onto static ANSI slots, so the sidebar's
+# highlight rows can land on a color with almost no contrast against the host
+# background (herdr issues #1023, #1307, #1731). Pin them to gruvbox tones that
+# read against this profile's #32302f background.
+# selection_bg = Navigate-mode cursor row; active_row_bg = active space/agent row.
+[theme.custom]
+active_row_bg = "#3c3836"
+selection_bg = "#665c54"
