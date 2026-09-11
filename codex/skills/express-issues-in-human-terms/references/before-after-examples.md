@@ -53,3 +53,35 @@ Use these patterns when a draft scenario lacks an end state, or Case against col
 > Failing closed turns infra blips into louder operational failures. Existing notify/repair may already cover the residue. Prefer a bounded retry or deferred check over blocking every write on a flaky dependency read.
 
 **What changed:** named the successful-looking write and the unenforced invariant as the end state.
+
+---
+
+## 4. API authz uses the wrong id (request comment)
+
+**Bad**
+
+> The helper checks `allow_extension` on `spaces` instead of `space_ids_for_policy`, so create can bypass the gate.
+
+**Also bad**
+
+> POST with two site ids. A gets the new channel rather than B.
+
+**Good**
+
+> AI flagged an edge case here. Say we have space A (extension on) and space B (extension off). Then:
+>
+> `POST /admin/v2/api/channels?site_id=A` with `channel[site_id]=B`.
+>
+> Expected: 403, because B has the extension off. Actual: auth uses A, so B gets the channel and the response is 201.
+
+**What changed:** labeled A/B with flags; request shows which id is query vs body; expected vs leftover status; did not invert who receives the row. Six-field would hide this; the inverted-id version is worse than jargon.
+
+---
+
+## 5. Same hole, timeline (also fine)
+
+**Good enough**
+
+> T0: admin is “on” space A (query `site_id`, extension on). T1: they POST a channel whose body `site_id` is B (extension off). T2: authorize runs against A, save writes the channel on B. Leftover: 201 and a channel on a space that should have refused it.
+
+**What changed:** same facts as §4; timeline is allowed when order is the point. Prefer the request comment if the POST itself is the exhibit.
