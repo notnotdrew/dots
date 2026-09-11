@@ -13,6 +13,8 @@ When a find is not an easy change, inchworm's job is to notice that. The destina
 
 ## Phase 5 scope (discover → implement → draft PR → review → fix → ping → schedule)
 
+LaunchAgent ticks call gated `inchworm run`. `inchworm now` is the same core without the weekday / create-window / same-day / blocking-draft gates.
+
 On an eligible `inchworm run`:
 
 1. Preflight before spending anything: `wt`, `origin`, a successful `git fetch origin`, a resolvable `origin/develop`. A failure here is a day that never started — no stamp, no scouts, no find touched, alert the human, and the next tick in the window retries (see [discover-boundary](references/discover-boundary.md))

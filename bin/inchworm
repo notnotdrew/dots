@@ -4,6 +4,7 @@
 # Usage:
 #   inchworm init
 #   inchworm run
+#   inchworm now
 #   inchworm status
 #   inchworm review
 
@@ -36,10 +37,11 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: inchworm <init|run|status|review|launchd-setup>
+Usage: inchworm <init|run|now|status|review|launchd-setup>
 
   init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
-  run            Eligible repos: preflight + stamp + discover + implement + draft PR + review/fix/ping
+  run            Gated: weekday create window, same-day, and draft gate, then core
+  now            Core only: preflight + stamp + discover + implement + draft PR + review/fix/ping
   status         Show registered repos, last_run_date, create window, draft gate
   review         List open drafts, switch Worktrunk, launch a discuss agent
   launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
@@ -1622,11 +1624,54 @@ cmd_init() {
   printf 'inchworm: registered in %s\n' "$CONFIG_FILE"
 }
 
+# Core: preflight + stamp + discover + implement + draft PR + review/fix/ping.
+# Schedule, same-day, and blocking-draft gates live only on the auto entry point.
+run_core_for_repo() {
+  local repo_path=$1
+  local today=$2
+  local repo_yml="${repo_path}/.inchworm.yml"
+  local preflight_reason discover_out selected_line find_id find_title
+
+  if [[ ! -f "$repo_yml" ]]; then
+    printf 'inchworm: skip %s — missing .inchworm.yml\n' "$repo_path"
+    return 0
+  fi
+
+  # Nothing below this point is free — scouts cost agent calls and the stamp
+  # burns the day — so the things that must hold for any of it to land are
+  # checked first. A failure here is a day that never started.
+  if ! preflight_reason=$(preflight_repo "$repo_path" "${INCHWORM_IMPLEMENT_FIXTURE:-}"); then
+    printf 'inchworm: skip %s — preflight failed: %s (no stamp; next tick in the window retries)\n' \
+      "$repo_path" "$preflight_reason"
+    notify_failure "preflight failed" "$preflight_reason"
+    return 0
+  fi
+
+  ruby_yaml set_state "$repo_yml" "active_draft_pr" "null"
+  ruby_yaml set_state "$repo_yml" "last_run_date" "$today"
+  printf 'inchworm: eligible %s — discover\n' "$repo_path"
+  discover_out=$(discover_pipeline "$repo_path")
+  printf '%s\n' "$discover_out"
+
+  selected_line=$(printf '%s\n' "$discover_out" | grep -E 'inchworm: selected F-' | head -n1 || true)
+  if [[ -z "$selected_line" ]]; then
+    return 0
+  fi
+
+  find_id=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-\([^ ]*\).*/\1/p')
+  find_title=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-[^ ]* — //p')
+  if [[ -z "$find_id" ]]; then
+    return 0
+  fi
+  [[ -n "$find_title" ]] || find_title="$find_id"
+
+  run_implement_and_pr "$repo_path" "$repo_yml" "$find_id" "$find_title" "$today"
+}
+
 cmd_run() {
   local today weekday hour minute
   local repo_path repo_yml last_run blocking
-  local mins draft_url draft_head preflight_reason
-  local discover_out selected_line find_id find_title
+  local mins draft_url draft_head
 
   read -r today weekday hour minute <<<"$(parse_clock)"
 
@@ -1673,38 +1718,18 @@ cmd_run() {
       continue
     fi
 
-    # Nothing below this point is free — scouts cost agent calls and the stamp
-    # burns the day — so the things that must hold for any of it to land are
-    # checked first. A failure here is a day that never started.
-    if ! preflight_reason=$(preflight_repo "$repo_path" "${INCHWORM_IMPLEMENT_FIXTURE:-}"); then
-      printf 'inchworm: skip %s — preflight failed: %s (no stamp; next tick in the window retries)\n' \
-        "$repo_path" "$preflight_reason"
-      notify_failure "preflight failed" "$preflight_reason"
-      continue
-    fi
+    run_core_for_repo "$repo_path" "$today"
+  done < <(list_registered_repos)
+}
 
-    # Eligible: clear stale draft cache, stamp, then discover → implement.
-    ruby_yaml set_state "$repo_yml" "active_draft_pr" "null"
-    ruby_yaml set_state "$repo_yml" "last_run_date" "$today"
-    printf 'inchworm: eligible %s — discover\n' "$repo_path"
-    discover_out=$(discover_pipeline "$repo_path")
-    printf '%s\n' "$discover_out"
+cmd_now() {
+  local today repo_path
 
-    selected_line=$(printf '%s\n' "$discover_out" | grep -E 'inchworm: selected F-' | head -n1 || true)
-    if [[ -z "$selected_line" ]]; then
-      # none selected — stop (no implement, no worktree, no gh pr create)
-      continue
-    fi
+  read -r today _ _ _ <<<"$(parse_clock)"
 
-    # Parse: inchworm: selected F-<id> — <title>
-    find_id=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-\([^ ]*\).*/\1/p')
-    find_title=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-[^ ]* — //p')
-    if [[ -z "$find_id" ]]; then
-      continue
-    fi
-    [[ -n "$find_title" ]] || find_title="$find_id"
-
-    run_implement_and_pr "$repo_path" "$repo_yml" "$find_id" "$find_title" "$today"
+  while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    [[ -z "$repo_path" ]] && continue
+    run_core_for_repo "$repo_path" "$today"
   done < <(list_registered_repos)
 }
 
@@ -1812,6 +1837,10 @@ main() {
     run)
       shift
       cmd_run "$@"
+      ;;
+    now)
+      shift
+      cmd_now "$@"
       ;;
     status)
       shift

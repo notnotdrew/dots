@@ -168,6 +168,10 @@
 #   Soft-defer when origin/develop cannot be resolved (live); fixture mode may fall back.
 #
 # Create window: Mon–Fri local, half-open [08:00, 16:00).
+# Two entry points share one core (preflight + stamp + discover + implement +
+#   draft PR + review/fix/ping). `inchworm run` applies the create-window,
+#   same-day, and blocking-draft gates first (LaunchAgent uses this).
+#   `inchworm now` goes straight to core and skips those gates.
 # Phase 4 eligible: stamp + discover + implement + draft PR + Standard review +
 #   optional one fix pass + ping (when a find is selected and implement succeeds).
 #
@@ -1634,6 +1638,113 @@ test_run_skips_blocking_draft_without_stamp() {
 
   if [ -n "$problems" ]; then
     fail "$test_name" "$problems" "exit=$status" "output:" "$(cat "$out_file")" "active_draft_pr=$draft_cache"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_now_proceeds_outside_window_on_same_day() {
+  test_name="now skips create-window and same-day gates and still runs core"
+  now="2026-08-18T16:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "now-ungated"
+  seed_registered_repo "$repo_dir" "$config_dir" "2026-08-18"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"now-outside-window","source":"smell","title":"Manual second pick","summary":"now must skip the auto gates","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/now-ungated-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm now
+  ) >"$out_file" 2>&1
+  status=$?
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  expected_pr_url="https://example.test/pr/99"
+
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if grep -qiE 'outside create window|already launched today' "$out_file"; then
+    problems="${problems}now must not skip for window or same-day"$'\n'
+  fi
+  if [ "$after_last" != "2026-08-18" ]; then
+    problems="${problems}expected last_run_date 2026-08-18, got: $after_last"$'\n'
+  fi
+  if [ "$draft_cache" != "$expected_pr_url" ]; then
+    problems="${problems}expected state.active_draft_pr=$expected_pr_url, got: $draft_cache"$'\n'
+  fi
+  if ! grep -q 'now-outside-window' "$out_file"; then
+    problems="${problems}expected selected find id in output"$'\n'
+  fi
+  if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}expected gh pr create --draft"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_now_proceeds_with_blocking_draft() {
+  test_name="now skips the blocking-draft gate and still runs core"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "now-draft"
+  write_mock_gh "$mock_gh" "blocking_draft"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"now-despite-draft","source":"smell","title":"Second draft ok","summary":"manual now may stack a draft","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/now-draft-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm now
+  ) >"$out_file" 2>&1
+  status=$?
+
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  expected_pr_url="https://example.test/pr/99"
+
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if grep -qiE 'skip .*blocking draft' "$out_file"; then
+    problems="${problems}now must not skip for a blocking draft"$'\n'
+  fi
+  if [ "$draft_cache" != "$expected_pr_url" ]; then
+    problems="${problems}expected state.active_draft_pr=$expected_pr_url, got: $draft_cache"$'\n'
+  fi
+  if ! grep -q 'now-despite-draft' "$out_file"; then
+    problems="${problems}expected selected find id in output"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
     return
   fi
   pass "$test_name"
@@ -5168,6 +5279,8 @@ run_test test_run_still_open_at_1530
 run_test test_run_refuses_before_window
 run_test test_run_refuses_same_day_relaunch
 run_test test_run_skips_blocking_draft_without_stamp
+run_test test_now_proceeds_outside_window_on_same_day
+run_test test_now_proceeds_with_blocking_draft
 run_test test_run_eligible_implements_and_opens_draft_pr
 run_test test_run_pretrusts_implement_worktree
 run_test test_run_implement_failure_defers_without_pr_or_second_pick

@@ -146,7 +146,7 @@
   <h2>How a day runs</h2>
 
   <ul>
-    <li>A LaunchAgent runs <code>inchworm run</code> every 30 minutes, weekdays 8:00 to 15:30.</li>
+    <li>A LaunchAgent runs gated <code>inchworm run</code> every 30 minutes, weekdays 8:00 to 15:30. <code>inchworm now</code> is the same core without those gates.</li>
     <li>Each repo gets a gitignored <code>.inchworm.yml</code>: notes the agents have to follow, the last run date, the open draft URL.</li>
     <li>One find a day, one open draft. Miss a day and it stays missed.</li>
   </ul>

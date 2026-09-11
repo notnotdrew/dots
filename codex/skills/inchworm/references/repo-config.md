@@ -29,12 +29,12 @@ Branch namespace for implement branches, e.g. `drew` → `drew/<slug>-<YYYYMMDD>
 
 Coordinator-owned. Do not hand-edit unless recovering from a stuck run.
 
-- `last_run_date` — local calendar day of the last eligible create-window run
+- `last_run_date` — local calendar day of the last core run (gated or `now`)
 - `active_draft_pr` — URL of the open draft PR from the last run, if any
 
 ## Draft gate
 
-A run is blocked while one of our drafts is open. `gh pr list --author @me --state open` is the source of truth; a PR blocks when it is a draft in that list **and** either
+Gated `inchworm run` is blocked while one of our drafts is open. `inchworm now` skips this gate. `gh pr list --author @me --state open` is the source of truth; a PR blocks `run` when it is a draft in that list **and** either
 
 - its URL matches `state.active_draft_pr`, or
 - its branch matches `<branch_prefix>/<slug>-<YYYYMMDD>`
