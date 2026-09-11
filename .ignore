@@ -1,0 +1,19 @@
+# Runtime data written by the agent CLIs, not dotfiles. Excluded from ripgrep
+# (and therefore from agent search) because walking it reaches app bundles and
+# app support data, which makes macOS prompt for "data from other apps".
+# Not .gitignore: agent tools pass --no-ignore-vcs, which skips .gitignore.
+
+cursor/chats/
+cursor/ai-tracking/
+cursor/extensions/
+cursor/statsig-cache.json
+
+codex/computer-use/
+codex/cache/
+codex/sessions/
+codex/shell_snapshots/
+codex/tmp/
+codex/.tmp/
+codex/*.sqlite*
+
+cdx-artifacts/
