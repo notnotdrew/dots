@@ -69,13 +69,16 @@ precmd() {
     face_color="%F{green}"
   fi
 
-  # Worktrunk names worktrees "<repo>.<branch>" (slashes become dashes), which
-  # repeats the branch that vcs_info already shows. Drop the suffix.
+  # Worktrunk names worktrees "<repo>.<branch-at-creation>", which repeats the
+  # branch that vcs_info already shows. Show the repo name instead. Matching on
+  # the repo rather than the current branch keeps this working after the
+  # worktree is switched to a different branch than it was created with.
   prompt_dir=${(%):-%1~}
   local branch=${vcs_info_msg_0_#:}
-  if [[ -n $branch ]]; then
-    prompt_dir=${prompt_dir%.${branch}}
-    prompt_dir=${prompt_dir%.${branch//\//-}}
+  local common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2> /dev/null)
+  if [[ -n $common_dir ]]; then
+    local repo=${${common_dir:h}:t}
+    [[ $prompt_dir == $repo.* ]] && prompt_dir=$repo
   fi
 
   # Truncate long branch names for the prompt (keep the ticket-ish prefix).
