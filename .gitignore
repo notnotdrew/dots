@@ -27,6 +27,7 @@ codex/sqlite/
 codex/state*
 codex/thread-writer-locks/
 codex/tmp/
+codex/transcription-history.jsonl
 codex/vendor_imports/
 codex/version.json
 cursor/agent-cli-state.json
