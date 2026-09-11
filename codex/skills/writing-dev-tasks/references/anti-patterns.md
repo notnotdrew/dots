@@ -14,6 +14,7 @@ Common mistakes to avoid when writing well-scoped, verifiable development tasks.
 - [Dependency Upgrade With No Compatibility Gate](#dependency-upgrade-with-no-compatibility-gate)
 - [Feature Disguised as a Dev Task](#feature-disguised-as-a-dev-task)
 - [Oversized Task](#oversized-task)
+- [Linear Dump of the Full Task](#linear-dump-of-the-full-task)
 
 ## Behavior-Change Leak in a Refactor
 
@@ -173,6 +174,24 @@ Trying to land too much as one change so it can't be verified or reverted cleanl
    - Adopt the linter
    (each with its own Definition of Done; note ordering)
 ```
+
+## Linear Dump of the Full Task
+
+The task document is a working artifact. The Linear issue is a pickup note. Pasting Scope, Invariants, Related, root-cause essays, and neighboring tickets into Linear makes the next reader wade through your investigation instead of the work.
+
+```
+❌ Linear body: Summary, Root cause, Related PRs, Scope In/Out,
+   Invariants, Definition of Done, Notes (the full skill template)
+
+✅ Linear body: what failed, one evidence link, the one fact that
+   is not obvious, a few done checkboxes. If an agent wrote it:
+
+   Written by Cursor:
+
+   > the whole body, quoted
+```
+
+Keep the full task in chat or a plan when the change is large enough to need it. Shrink Linear until a teammate can act without scrolling past your reasoning.
 
 ---
 

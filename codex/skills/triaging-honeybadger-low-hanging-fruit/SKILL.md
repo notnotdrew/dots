@@ -124,4 +124,4 @@ Stop at the triage doc by default. Offer these, and act only on an explicit go-a
 >
 > Housekeeping: two `ScreenSteps::HttpError` faults are already guarded as of the June 12 deploy and only need resolving in the UI; the Postmark inactive-recipient fault is customer data, not a bug.
 >
-> Branch and worktree `hb-260803` at `~/Documents/dev/screensteps/screensteps-live.hb-260803`, with the full triage in `hb-low-hanging-fruit.md` (untracked). Skipped items and reasons are in the doc.
+> Branch and worktree `hb-260803` at `~/dev/screensteps/screensteps-live.hb-260803`, with the full triage in `hb-low-hanging-fruit.md` (untracked). Skipped items and reasons are in the doc.

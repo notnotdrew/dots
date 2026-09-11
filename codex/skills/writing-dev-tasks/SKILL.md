@@ -239,11 +239,22 @@ When polish is not worth the cost — generating many tasks in a batch, for inst
 
 ## Creating in Linear
 
-This skill writes the task. If you also create a Linear issue from it, follow `linear-cli`:
+This skill writes the task. The Linear issue is not that document.
+
+Put on the issue only what a stranger needs to pick it up: what is wrong, one piece of evidence, the one non-obvious fact if there is one, and a few done checkboxes. Do not paste Scope, Invariants, Related, discovery notes, or the essay that convinced you. That stays in chat or a plan.
+
+If you also create the issue, follow `linear-cli`:
 
 - Never create the issue in **Triage** unless the user explicitly asks for Triage.
 - Default to **Backlog**. Use **Todo** when they want it ready to pick up.
 - Always set workflow state on create. Omitting it often lands the issue in Triage.
+- If the agent wrote the body, prefix it with `Written by Cursor:` and put the whole body in a blockquote:
+
+```markdown
+Written by Cursor:
+
+> what failed, evidence, the one non-obvious fact, done checkboxes
+```
 
 ## Related Skills
 
