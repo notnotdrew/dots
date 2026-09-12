@@ -183,6 +183,8 @@ Write your answer as a JSON array to the file ${out_file} — nothing else belon
 id (slug without F- prefix), source ("${source}"), title, summary, rank (integer, lower is better), status ("open" or "new"); optional evidence (string).
 
 Write title and summary for a person, not a machine: the title reads like a commit subject, and the summary says why the change is worth making. ${evidence_blurb}
+
+If the problem sits inside unused or otherwise dead code, the find is to delete that code — not to repair a tiny spot in it. Emit the deletion when it is still a thin PR. If deletion is a product or API question, skip the candidate; do not propose a nibble of its internals.
 EOF
   append_repo_guidance_block "$guidance"
 }
@@ -496,7 +498,13 @@ match_review_selector() {
 
 review_agent_prompt() {
   cat <<'EOF'
-Review the PR for this branch and be prepared to discuss it. Before discussing, check for odd agent-like relics left by the agent that worked on it: unnecessary or overly verbose comments, "tombstone" comments or specs, and similar leftovers. If you find any, address them and fold them into the existing commits on this branch only (amend or squash; do not add a stack of cleanup commits named after tooling). Then git push --force-with-lease. Briefly summarize those changes. If there are no relics, say so and discuss the PR. Do not name the daily runner in commit messages or PR copy; path-shaped mentions are fine. Never force-push develop or main.
+Review the PR for this branch and be prepared to discuss it. Before discussing, do two checks.
+
+Relics: odd agent-like leftovers from the agent that worked on it — unnecessary or overly verbose comments, "tombstone" comments or specs, and similar. If you find any, address them and fold them into the existing commits on this branch only (amend or squash; do not add a stack of cleanup commits named after tooling). Then git push --force-with-lease. Briefly summarize those changes. If there are no relics, say so.
+
+Adequacy: whether the change goes far enough. Look at the surrounding code, not only the diff. If the patch only repairs a tiny spot in unused, unreferenced, or otherwise dead code, the real work was to delete that code, not to fix its internals. Lead the discussion with that. Do not treat the tiny fix as complete. Do not silently expand the PR into a large deletion; bring the deletion (or that it is too large) to the human.
+
+Then discuss the PR. Do not name the daily runner in commit messages or PR copy; path-shaped mentions are fine. Never force-push develop or main.
 EOF
 }
 
@@ -764,7 +772,7 @@ implement_with_agent() {
   if [[ -n "${find_evidence//[[:space:]]/}" ]]; then
     prompt+=$'\n'"Context: ${find_evidence}"
   fi
-  prompt+=$'\n\n'"Make the smallest change that addresses this. Stop when it is done, or when it turns out to be too large for one sitting."
+  prompt+=$'\n\n'"Make the smallest change that addresses this. Smallest means smallest blast radius, not the smallest diff. If the work is a defect inside unused or otherwise dead code, delete that code instead of patching it when the deletion is still a thin PR. If deletion is too large, stop and say so — do not nibble the internals. Stop when it is done, or when it turns out to be too large for one sitting."
   prompt+=$'\n\n'"Commit on the current branch. Write the message with the writing-git-commits skill: an imperative subject under 72 characters, and a body only when a reader needs context the diff cannot give them."
   prompt+=$'\n\n'"Then write two files for the pull request:"
   prompt+=$'\n'"- ${PR_DRAFT_DIR}/title.txt — one line, plain English, no ticket ids or prefixes"

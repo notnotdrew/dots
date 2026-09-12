@@ -2343,6 +2343,9 @@ test_run_live_scouts_all_four_sources() {
       problems="${problems}expected live ${source} scout agent invocation"$'\n'
     fi
   done
+  if ! grep -qiE 'dead code' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}scout prompts must tell agents not to patch dead code"$'\n'
+  fi
   if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}scout agent argv must not include --yolo/--force/--trust"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
   fi
@@ -2497,6 +2500,12 @@ EOF
     fi
     if ! printf '%s\n' "$flattened" | grep -F 'Work item:' | grep -Fq "$guidance_marker"; then
       problems="${problems}expected guidance on implementer prompt"$'\n'
+    fi
+    if ! printf '%s\n' "$flattened" | grep -F 'smell scout' | grep -qiE 'dead code'; then
+      problems="${problems}expected dead-code instruction on smell scout prompt"$'\n'
+    fi
+    if ! printf '%s\n' "$flattened" | grep -F 'Work item:' | grep -qiE 'dead code|nibble'; then
+      problems="${problems}expected dead-code / nibble instruction on implementer prompt"$'\n'
     fi
   fi
 
@@ -5156,6 +5165,9 @@ test_review_unique_draft_switches_worktree_and_launches_agent() {
   if ! grep -qiE 'discuss' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}agent prompt must prepare to discuss the PR"$'\n'
   fi
+  if ! grep -qiE 'far enough|dead code' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent prompt must check whether the change goes far enough (dead code vs a tiny fix)"$'\n'
+  fi
   if grep -E '(^|[[:space:]])-p([[:space:]]|$)|(^|[[:space:]])--print([[:space:]]|$)' \
     "$TEST_ROOT/agent-invocations.log" >/dev/null; then
     problems="${problems}review agent must be interactive (no -p/--print)"$'\n'
@@ -5252,6 +5264,9 @@ test_review_skill_keeps_human_command_distinct() {
   fi
   if ! printf '%s' "$blob" | grep -qiE 'relic'; then
     problems="${problems}skill/references must mention the relic sweep"$'\n'
+  fi
+  if ! printf '%s' "$blob" | grep -qiE 'far enough|dead code'; then
+    problems="${problems}skill/references must mention the adequacy / dead-code check"$'\n'
   fi
   if ! printf '%s' "$blob" | grep -qiE 'force-with-lease'; then
     problems="${problems}skill/references must mention force-with-lease for review"$'\n'

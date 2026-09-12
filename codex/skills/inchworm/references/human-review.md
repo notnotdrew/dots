@@ -25,7 +25,12 @@ A hand-cut draft on the same prefix without the date suffix is not listed unless
 
 ## Relic pass (child agent, not the coordinator)
 
-The launched agent is told to review the PR and be ready to discuss it. Before discussing, it sweeps for agent-like relics (verbose or tombstone comments/specs). If it finds any, it folds them into the **existing** commits on this branch (amend/squash; no tooling-named cleanup stack) and `git push --force-with-lease`. If none, it says so and discusses. Only the implement branch may be force-pushed; never `develop` or `main`. Reviewer-facing copy still follows [authored-output](authored-output.md) (tool name as a word vs path-shaped mentions).
+The launched agent is told to review the PR and be ready to discuss it. Before discussing, it does two checks:
+
+1. **Relics** — agent-like leftovers (verbose or tombstone comments/specs). If it finds any, it folds them into the **existing** commits on this branch (amend/squash; no tooling-named cleanup stack) and `git push --force-with-lease`. If none, it says so.
+2. **Adequacy** — whether the change goes far enough. A patch that only repairs a tiny spot in unused or otherwise dead code should have been a deletion of that code. Lead with that; do not treat the nibble as complete, and do not silently expand into a large deletion.
+
+Then it discusses. Only the implement branch may be force-pushed; never `develop` or `main`. Reviewer-facing copy still follows [authored-output](authored-output.md) (tool name as a word vs path-shaped mentions).
 
 ## Distinct from daily run
 

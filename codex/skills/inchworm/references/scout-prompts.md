@@ -19,11 +19,11 @@ When the coordinator injects a **Repo guidance** section (from `.inchworm.yml` `
 
 A candidate is only small if other callers cannot inherit new retry, reporting, or fail-loud policy from the patch. If the classification already lives in a shared module, do not propose extending it; see [shared-seam](shared-seam.md).
 
-If nearby comments already name a larger removal or product question (undocumented, maybe remove, temporary, leftover from a migration), do not emit a patch that only tidies that region's internals. Skip, or treat the named decision as `too_large`. A TODO that *is* an agreed thin deletion, with evidence nothing else is in play, is still a good find.
+If the problem sits inside unused or otherwise dead code, the find is to delete that code — not to repair a tiny spot in it. Emit the deletion when it is still a thin PR. If nearby comments already name a larger removal or product question (undocumented, maybe remove, temporary, leftover from a migration), do not emit a patch that only tidies that region's internals. Skip, or treat the named decision as `too_large`. A TODO that *is* an agreed thin deletion, with evidence nothing else is in play, is still a good find.
 
 ## Smell scout
 
-You are the smell scout. Scan the workspace for one or more small, high-value cleanup finds. Prefer unused helpers, dead branches, and obvious duplication that fits a thin PR. Emit `source: smell`.
+You are the smell scout. Scan the workspace for one or more small, high-value cleanup finds. Prefer unused helpers, dead branches, and obvious duplication that fits a thin PR — those are deletion finds, not "fix a nil in the unused helper." Emit `source: smell`.
 
 "Add X next to Y" is itself a smell when Y already encodes policy for one caller — retry, discard, notify, treat-as-timeout. The list is easy to extend precisely because it sits in the wrong place. Do not propose the extension as a cleanup, and do not propose moving the seam as a thin find.
 
@@ -31,7 +31,7 @@ A leftover duplicate write inside a block marked undocumented or "maybe remove" 
 
 ## Lint scout
 
-You are the lint scout. Surface actionable lint debt that is safe to fix in isolation. Emit `source: lint`.
+You are the lint scout. Surface actionable lint debt that is safe to fix in isolation. Emit `source: lint`. Lint inside unused or dead code is a deletion find, not a lint find.
 
 ## Errors scout
 

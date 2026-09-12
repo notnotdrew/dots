@@ -48,7 +48,7 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Coordinator** — push branch, draft PR, state updates, then review → fix → ping (see [implement-boundary](references/implement-boundary.md), [review-fix-boundary](references/review-fix-boundary.md))
 - **Reviewer** — full Standard `pr-review` (see [reviewer-prompt](references/reviewer-prompt.md))
 - **Fixer** — one pass on verified blockers only (see [fixer-prompt](references/fixer-prompt.md))
-- **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop
+- **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep and an adequacy check (did the change go far enough, or is it a nibble in dead code?) (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop
 
 ## References
 
