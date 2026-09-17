@@ -25,9 +25,9 @@ alias vi='vim'
 alias vim='vim'
 alias vrc='vim ~/.vimrc'
 alias wtc='wt switch --create --base=@'
-alias wtd='wt switch develop'
+alias wtd='wt switch main'
+alias wtm='wt switch main'
 alias wts='wt switch'
-alias wtsd='wt switch develop'
 alias zrc='vim ~/.zshrc'
 
 export BAT_THEME="base16"
