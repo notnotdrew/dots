@@ -1,23 +1,24 @@
 ---
 name: executing-draft-pr-plans
 description: Executes a simple commit plan as one reviewable draft pull request. Use when the user provides an ordered implementation plan and wants each step implemented, tested, reviewed, simplified, and committed separately before opening a draft PR.
-disable-model-invocation: true
 ---
 
 # Execute a Draft PR Plan
 
 Turn an ordered commit plan into one draft PR whose commit history follows the plan.
 
+This is the execute counterpart of `writing-simple-plans`. A plan from that skill states **Now**, **Done when**, **Not doing**, and numbered **Steps**: read **Done when** as the acceptance criteria, **Not doing** as hard non-goals, and each step as one commit.
+
 ## Establish the contract
 
 Before editing:
 
 1. Read the plan, repository instructions, PR template, and relevant code.
-2. Confirm that each plan step is one commit in one PR.
+2. Confirm that each plan step is one commit in one PR. Do not invent steps, split a step into implement/test/types commits, or merge two steps.
 3. Identify the acceptance criteria, non-goals, existing issue, branch, and user changes that must remain untouched.
 4. Resolve ambiguities that would materially change behavior or commit boundaries.
 
-Do not broaden the work beyond the plan.
+Do not broaden the work beyond the plan. If the steps are the wrong grain, hand off to `writing-simple-plans` rather than resequencing them here. If the user asked for TDD rather than a simple plan, use `planning-tdd`.
 
 ## Track the workflow
 
@@ -103,8 +104,9 @@ After every planned commit is complete:
 
 1. Verify the commit order matches the plan.
 2. Run the combined relevant test suite and lint checks.
-3. Push the branch.
-4. Open one draft PR using the repository template.
+3. Confirm the acceptance criteria hold and that no non-goal was smuggled in.
+4. Push the branch.
+5. Open one draft PR using the repository template.
 
 Keep the title and description brief and human:
 
