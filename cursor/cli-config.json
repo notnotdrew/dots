@@ -85,7 +85,7 @@
   },
   "version": 1,
   "editor": {
-    "vimMode": false
+    "vimMode": true
   },
   "display": {
     "showLineNumbers": false,
@@ -97,6 +97,7 @@
   "notifications": true,
   "hints": true,
   "modelSlashCommands": true,
+  "steering": true,
   "rewind": true,
   "model": {
     "modelId": "auto-smart",
