@@ -1,18 +1,12 @@
 onboarding = false
 
 [[keys.command]]
-key = "prefix+shift+a"
-type = "shell"
-command = "$HOME/bin/herdr-wait-toggle"
-description = "toggle WAIT prefix on workspace"
-
-[[keys.command]]
 key = "prefix+f"
 type = "plugin_action"
 command = "vv.golden-ratio.apply"
 description = "golden ratio"
 
-# herdr-annotate — prefix+shift+a stays WAIT; copy-context is prefix+shift+c.
+# herdr-annotate — copy-context is prefix+shift+c.
 [[keys.command]]
 key = "prefix+a"
 type = "plugin_action"
