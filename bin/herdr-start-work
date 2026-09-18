@@ -32,9 +32,21 @@ trap cleanup EXIT
 
 die() {
   printf '\nerror: %s\n' "$1" >&2
+  if [ -n "${2:-}" ] && [ -s "$2" ]; then
+    printf '\n%s\n' "$(<"$2")" >&2
+  fi
   # The popup closes the moment this exits, so hold it open to be read.
+  flush_input
   read -r -n 1 -s -p 'Press any key to close.' || true
   exit 1
+}
+
+# A popup receives every keystroke the session sees, prefix chords included, so
+# anything typed while a step runs waits in stdin and would answer the next
+# prompt before it is on screen.
+flush_input() {
+  local _
+  while IFS= read -r -s -t 0.05 -n 1024 _; do :; done
 }
 
 # Spin until the given pid exits. Planning takes ~30s with no output of its
@@ -83,6 +95,24 @@ trust_workspace() {
   mkdir -p "$dir"
   jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" --arg path "$checkout" \
     '{trustedAt: $at, workspacePath: $path}' >"$dir/.workspace-trusted"
+}
+
+# Herdr refuses a pane that is not sitting at its own shell prompt, and only
+# retries that itself while the shell is the foreground process. A zshrc that
+# shells out to direnv, mise, or compinit hides the shell behind a child, so a
+# pane seconds old fails and herdr gives up. Keep asking until it settles.
+# Prints the last failing response so die can show it.
+start_agent() {
+  local name="$1" pane="$2" response code
+  for _ in $(seq 15); do
+    response=$("$HERDR" agent start "$name" --kind "$AGENT_KIND" --pane "$pane" 2>&1) &&
+      return 0
+    code=$(jq -r '.error.code // empty' <<<"$response" 2>/dev/null) || code=
+    [ "$code" = agent_pane_busy ] || break
+    sleep 1
+  done
+  printf '%s\n' "$response"
+  return 1
 }
 
 # A fresh checkout spends its first seconds trusting the workspace, and a
@@ -147,6 +177,7 @@ run_commands_plan() {
   [ -n "$summary" ] && printf '%s\n\n' "$summary"
   printf '  %s\n' "${commands[@]}"
   printf '\nenter to run, any other key to cancel '
+  flush_input
   IFS= read -r -n 1 -s key || key=cancel
   case "$key" in
     '') printf '\n' ;;
@@ -212,7 +243,8 @@ if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
   command -v cursor-agent >/dev/null 2>&1 || die 'cursor-agent is required'
   printf '\n'
   plan_out=$(mktemp)
-  TMPFILES+=("$plan_out")
+  plan_err=$(mktemp)
+  TMPFILES+=("$plan_out" "$plan_err")
   cursor-agent -p -f --output-format text "Plan how to handle this request:
 
 $request
@@ -234,10 +266,10 @@ bucket already exists.
 
 Gather facts only. Do not create a branch, worktree, workspace, or any files.
 
-Reply with one minified JSON object and nothing else." >"$plan_out" 2>/dev/null &
+Reply with one minified JSON object and nothing else." >"$plan_out" 2>"$plan_err" &
   planner_pid=$!
   spinner "$planner_pid" 'Planning'
-  wait "$planner_pid" || die 'planning agent failed'
+  wait "$planner_pid" || die 'planning agent failed' "$plan_err"
 
   plan_raw=$(<"$plan_out")
   plan=$(printf '%s' "$plan_raw" | grep -o '{.*}' | tail -1) ||
@@ -299,11 +331,12 @@ create_args=(worktree create --workspace "$source_ws" --branch "$branch"
 trust_workspace "$checkout"
 
 create_out=$(mktemp)
-TMPFILES+=("$create_out")
-"$HERDR" "${create_args[@]}" >"$create_out" 2>/dev/null &
+create_err=$(mktemp)
+TMPFILES+=("$create_out" "$create_err")
+"$HERDR" "${create_args[@]}" >"$create_out" 2>"$create_err" &
 create_pid=$!
 spinner "$create_pid" 'Creating worktree'
-wait "$create_pid" || die 'worktree create failed'
+wait "$create_pid" || die 'worktree create failed' "$create_err"
 created=$(<"$create_out")
 
 workspace_id=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created")
@@ -324,7 +357,9 @@ if [ "$occupied" -gt 0 ]; then
   target="$pane_id"
 else
   target=$(agent_name "$item")
-  "$HERDR" agent start "$target" --kind "$AGENT_KIND" --pane "$pane_id" >/dev/null 2>&1 &
+  start_err=$(mktemp)
+  TMPFILES+=("$start_err")
+  start_agent "$target" "$pane_id" >"$start_err" 2>&1 &
   start_pid=$!
   spinner "$start_pid" "Starting $AGENT_KIND"
   # A startup blocked on the trust dialog reports not-ready but still leaves a
@@ -332,7 +367,7 @@ else
   if ! wait "$start_pid"; then
     "$HERDR" agent list |
       jq -e --arg p "$pane_id" '.result.agents[]? | select(.pane_id == $p)' >/dev/null ||
-      die "agent did not start in $pane_id"
+      die "agent did not start in $pane_id" "$start_err"
     target="$pane_id"
   fi
 fi
