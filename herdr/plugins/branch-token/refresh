@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Report each linked worktree's branch and ahead/behind counts as a $branch
+# sidebar token.
+#
+# Herdr suppresses the built-in branch and git_status tokens on indented
+# worktree children, and substitutes the branch for the workspace name only
+# when the workspace has no custom label. Custom tokens are not suppressed,
+# so this fills the gap for worktrees that have been renamed.
+#
+# Top-level workspaces are skipped: their built-in tokens still render, and
+# reporting here would show the branch twice.
+set -euo pipefail
+
+HERDR="${HERDR_BIN_PATH:-herdr}"
+SOURCE_ID=drew.branch-token
+
+branch_name() {
+  local checkout="$1" branch
+  branch=$(git -C "$checkout" rev-parse --abbrev-ref HEAD 2>/dev/null) || return 1
+  if [ "$branch" = HEAD ]; then
+    branch=$(git -C "$checkout" rev-parse --short HEAD 2>/dev/null) || return 1
+  fi
+  printf '%s' "$branch"
+}
+
+# Arrows lead the branch name so worktrees match the built-in git_status
+# token, which sits left of the branch in the sidebar row.
+upstream_arrows() {
+  local checkout="$1" counts behind ahead
+  counts=$(git -C "$checkout" rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null) || return 0
+  read -r behind ahead <<<"$counts"
+  [ "$ahead" -gt 0 ] && printf '↑%s ' "$ahead"
+  [ "$behind" -gt 0 ] && printf '↓%s ' "$behind"
+  return 0
+}
+
+"$HERDR" workspace list | jq -r '
+  .result.workspaces[]
+  | select(.worktree.is_linked_worktree == true)
+  | [.workspace_id, .worktree.checkout_path] | @tsv
+' | while IFS=$'\t' read -r workspace_id checkout; do
+  branch=$(branch_name "$checkout") || continue
+  "$HERDR" workspace report-metadata "$workspace_id" \
+    --source "$SOURCE_ID" \
+    --token "branch=$(upstream_arrows "$checkout")${branch}" >/dev/null
+done

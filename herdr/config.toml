@@ -77,6 +77,15 @@ width = "70%"
 height = "80%"
 description = "keys worth using"
 
+# Sets the $note token on the branch-row sidebar layout.
+[[keys.command]]
+key = "prefix+shift+m"
+type = "popup"
+command = "herdr-note"
+width = "50%"
+height = 8
+description = "workspace: set note"
+
 # Asks what to work on, then creates and staffs a child worktree workspace.
 [[keys.command]]
 key = "prefix+shift+s"
@@ -89,6 +98,18 @@ description = "workspace: start work on a task"
 [ui]
 # Prompt for a name when creating a workspace instead of generating one.
 prompt_new_workspace_name = true
+
+# Herdr suppresses the built-in branch and git_status tokens on indented
+# worktree children, so the drew.branch-token plugin reports $branch for those.
+# The two never appear together: whichever applies fills the branch row.
+# Row 2 holds the $note token, set by herdr-note.
+# Unreported tokens drop their row, so plain workspaces stay uncluttered.
+[ui.sidebar.spaces]
+rows = [
+  ["state_icon", { token = "workspace", bold = true }],
+  [{ token = "$note", dim = true }],
+  ["git_status", { token = "branch", dim = true }, { token = "$branch", dim = true }],
+]
 
 [ui.toast]
 delivery = "system"

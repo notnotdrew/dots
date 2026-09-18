@@ -1,0 +1,21 @@
+id = "drew.branch-token"
+name = "Branch token"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Report worktree branch and ahead/behind as a $branch sidebar token"
+platforms = ["macos"]
+
+[[startup]]
+command = ["./refresh"]
+
+[[events]]
+on = "workspace.focused"
+command = ["./refresh"]
+
+[[events]]
+on = "worktree.created"
+command = ["./refresh"]
+
+[[events]]
+on = "worktree.opened"
+command = ["./refresh"]

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Set the $note token on the focused Herdr workspace, shown on the third
+# Space sidebar row.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+# Bound to prefix+shift+m in ~/dots/herdr/config.toml as a popup command.
+#
+# Notes are display-only runtime state. Herdr keeps one until it is replaced,
+# cleared, or the workspace closes; nothing is written to disk.
+set -euo pipefail
+
+SOURCE_ID=herdr-note
+MAX_LENGTH=80
+
+die() {
+  printf '%s: error: %s\n' "$(basename "$0")" "$1" >&2
+  # The popup closes the moment this exits, so hold it open to be read.
+  read -r -n 1 -s -p 'Press any key to close.' || true
+  exit 1
+}
+
+command -v jq >/dev/null 2>&1 || die 'jq is required'
+
+workspaces=$(herdr workspace list) || die 'cannot reach the Herdr server'
+
+workspace_id=$(jq -r '.result.workspaces[] | select(.focused) | .workspace_id' <<<"$workspaces")
+[ -n "$workspace_id" ] || die 'no workspace is focused'
+
+label=$(jq -r --arg id "$workspace_id" \
+  '.result.workspaces[] | select(.workspace_id == $id) | .label' <<<"$workspaces")
+current=$(herdr workspace get "$workspace_id" | jq -r '.result.workspace.tokens.note // ""')
+
+printf 'Note for %s\n' "$label"
+printf 'Enter clears it when empty. Max %d characters.\n\n' "$MAX_LENGTH"
+IFS= read -r -e -i "$current" -p '> ' note || exit 0
+
+if [ -z "${note//[[:space:]]/}" ]; then
+  herdr workspace report-metadata "$workspace_id" \
+    --source "$SOURCE_ID" --clear-token note >/dev/null
+else
+  herdr workspace report-metadata "$workspace_id" \
+    --source "$SOURCE_ID" --token "note=$note" >/dev/null
+fi
