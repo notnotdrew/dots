@@ -99,6 +99,11 @@
   "modelSlashCommands": true,
   "steering": true,
   "rewind": true,
+  "statusLine": {
+    "type": "command",
+    "command": "~/.cursor/statusline.sh",
+    "padding": 2
+  },
   "model": {
     "modelId": "auto-smart",
     "displayModelId": "auto-smart",
