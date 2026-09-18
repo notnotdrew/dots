@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Run an agent on "tidy herdr" in a dots child worktree, keeping exactly one
+# of them around.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+# Bound to prefix+shift+y in ~/dots/herdr/config.toml as a popup command.
+#
+# Pins the repo to dots so this still works from a screensteps workspace.
+# Skips the planner; naming is fixed: item tidy, project Herdr.
+set -euo pipefail
+
+HERDR="${HERDR_BIN_PATH:-herdr}"
+REPO_ROOT=/Users/drew/dots
+BRANCH_PREFIX=drew/tidy-herdr-
+ITEM=tidy
+PROJECT=Herdr
+TASK='Tidy Herdr: follow the starting-herdr-work skill for the workspace itself, then improve the Herdr setup in this checkout. Prefer small, local changes.'
+
+die() {
+  printf '\nerror: %s\n' "$1" >&2
+  read -r -n 1 -s -p 'Press any key to close.' || true
+  exit 1
+}
+
+command -v jq >/dev/null 2>&1 || die 'jq is required'
+
+# Checkout paths Herdr currently has open, so a sweep never pulls a worktree
+# out from under a live workspace.
+open_checkouts=$("$HERDR" workspace list |
+  jq -r '.result.workspaces[].worktree.checkout_path // empty')
+
+# Remove leftover tidy worktrees that are closed, clean, and hold no commits
+# of their own. Anything with work in it stays put.
+while read -r checkout branch; do
+  [ -n "$checkout" ] || continue
+  [ "$checkout" != "$REPO_ROOT" ] || continue
+  case "$branch" in "$BRANCH_PREFIX"*) ;; *) continue ;; esac
+  grep -qxF "$checkout" <<<"$open_checkouts" && continue
+  [ -z "$(git -C "$checkout" status --porcelain 2>/dev/null)" ] || continue
+  [ "$(git -C "$REPO_ROOT" rev-list --count "main..$branch" 2>/dev/null || echo 1)" -eq 0 ] || continue
+
+  printf 'Removing stale worktree %s\n' "${checkout##*/}"
+  git -C "$REPO_ROOT" worktree remove "$checkout" >/dev/null 2>&1 || continue
+  git -C "$REPO_ROOT" branch -D "$branch" >/dev/null 2>&1 || true
+done < <(git -C "$REPO_ROOT" worktree list --porcelain |
+  awk '/^worktree /{p=substr($0,10)} /^branch /{sub("refs/heads/","",$2); print p, $2}')
+
+# One tidy workspace at a time: reuse an open one instead of adding another.
+existing=$("$HERDR" workspace list | jq -r --arg prefix "$REPO_ROOT.${BRANCH_PREFIX//\//-}" '
+  .result.workspaces[]
+  | select(.worktree.checkout_path // "" | startswith($prefix))
+  | .workspace_id' | head -1)
+
+if [ -n "$existing" ]; then
+  exec herdr-start-work --attach "$existing" "$TASK"
+fi
+
+day=$(date +%Y%m%d)
+branch="$BRANCH_PREFIX$day"
+if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
+  branch="$BRANCH_PREFIX$day-$(date +%H%M%S)"
+fi
+
+plan=$(jq -nc \
+  --arg repo_root "$REPO_ROOT" \
+  --arg branch "$branch" \
+  --arg item "$ITEM" \
+  --arg project "$PROJECT" \
+  --arg prompt "$TASK" \
+  '{repo_root:$repo_root, branch:$branch, base:"", item:$item, project:$project, prompt:$prompt}')
+
+exec herdr-start-work --from-json "$plan"
