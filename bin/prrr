@@ -3,10 +3,16 @@
 #
 # Usage:
 #   prrr                        Home picker: start a new review, or open a local one
+#   prrr list                   Print one TSV row per review, no terminal needed
 #   prrr start <number|url>     Start (or re-run) a review for that PR
+#   prrr start --requested      Start a review for every PR requesting your review
 #   prrr --clean [number|url]   Remove local artifacts/worktrunks for closed/merged
 #                               PRs, or local reviews older than 14 days
 #   prrr <number|url>           Pick an artifact for that PR review
+#
+# list columns are status, owner/repo, number, title, url. status is "new" for
+# a PR requesting your review with no local review, "rerun" for one you have
+# reviewed locally that still requests you, and "local" for the rest.
 #
 # Home picker:
 #   +        open PR requesting your review, not reviewed locally yet
@@ -40,7 +46,7 @@ readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/dev}"
 readonly EXIT_CANCELLED=130
 readonly CLEAN_MAX_AGE_DAYS=14
 readonly WORKSPACE_LABEL_MAX=52
-readonly USAGE="usage: ${SCRIPT_NAME} [start <PR-number-or-URL> | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
+readonly USAGE="usage: ${SCRIPT_NAME} [list | start <PR-number-or-URL> | start --requested | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
   printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
@@ -405,6 +411,57 @@ list_home_choices() {
     | cut -f2-
 }
 
+# Print "status<TAB>owner/repo<TAB>number<TAB>title<TAB>url" for the same set the
+# home picker shows, newest local review first. Needs no terminal, so scripts
+# and agents can ask what is waiting without driving fzf.
+list_reviews() {
+  local name_with_owner number title url owner repo artifact_dir
+  local path mtime status
+  local -A requested=()
+  local -a new_rows=() local_rows=()
+
+  while IFS=$'\t' read -r name_with_owner number title url; do
+    [[ -n "$url" ]] || continue
+    owner="${name_with_owner%%/*}"
+    repo="${name_with_owner#*/}"
+    artifact_dir="${ARTIFACTS_ROOT}/${owner}--${repo}/pr-${number}"
+    requested["$artifact_dir"]=1
+    # Reviewed locally already: the local row below carries the rerun status.
+    [[ -d "$artifact_dir" ]] && continue
+    new_rows+=("new"$'\t'"${name_with_owner}"$'\t'"${number}"$'\t'"${title}"$'\t'"${url}")
+  done < <(list_review_requested_prs)
+
+  if ((${#new_rows[@]} > 0)); then
+    printf '%s\n' "${new_rows[@]}"
+  fi
+
+  [[ -d "$ARTIFACTS_ROOT" ]] || return 0
+
+  while IFS= read -r path; do
+    [[ -d "$path" ]] || continue
+    is_review_dir "$path" || continue
+    parse_review_identity "$path" owner repo number
+    mtime="$(stat -f '%m' "$path")"
+    if [[ -n "${requested[$path]:-}" ]]; then
+      status=rerun
+    else
+      status=local
+    fi
+    local_rows+=(
+      "${mtime}"$'\t'"${status}"$'\t'"${owner}/${repo}"$'\t'"${number}"$'\t'"$(review_title "$path")"$'\t'"https://github.com/${owner}/${repo}/pull/${number}"
+    )
+  done < <(find "$ARTIFACTS_ROOT" -mindepth 2 -maxdepth 2 -type d -name 'pr-*' 2>/dev/null)
+
+  if ((${#local_rows[@]} == 0)); then
+    return 0
+  fi
+
+  # "rerun" before "local" (reverse alphabetical), newest first within each.
+  printf '%s\n' "${local_rows[@]}" \
+    | sort -t $'\t' -k2,2r -k1,1nr \
+    | cut -f2-
+}
+
 # Print "basename<TAB>abspath" for files in a review dir.
 list_artifacts() {
   local review_dir=$1
@@ -415,6 +472,10 @@ list_artifacts() {
     printf '%s\t%s\n' "$(basename "$path")" "$path"
   done < <(find "$review_dir" -maxdepth 1 -type f ! -name '.*' | sort)
 }
+
+# Set by launch_review to "started" or "unchanged", so a batch caller can tell
+# the two apart without reading the resolver's message.
+launch_action=""
 
 # Resolve the epoch checkout here so the workspace can open on it, then hand the
 # review itself to pr-review, which resolves again and reuses that checkout.
@@ -431,6 +492,7 @@ launch_review() {
   local -a resolve_args=(--ensure)
   local arg
 
+  launch_action=""
   [[ -x "$PR_REVIEW" ]] || die "missing launcher: $PR_REVIEW"
   [[ -x "$RESOLVE_CHECKOUT" ]] || die "missing checkout resolver: $RESOLVE_CHECKOUT"
   require_herdr
@@ -448,6 +510,7 @@ launch_review() {
 
   [[ -n "${ACTION:-}" ]] || die "checkout resolver returned no ACTION"
   if [[ "$ACTION" == noop ]]; then
+    launch_action=unchanged
     printf '%s\n' "${MESSAGE:-nothing to review}"
     return 0
   fi
@@ -457,6 +520,7 @@ launch_review() {
   label="$(workspace_label "$owner" "$repo" "$pr_number")"
   command="$(shell_command "$PR_REVIEW" "${review_args[@]}" "$pr_url")"
   run_in_pr_workspace "$label" "$CHECKOUT_PATH" "$command"
+  launch_action=started
 }
 
 # Resolve clone + start a review for a GitHub PR URL.
@@ -562,6 +626,52 @@ start_review_from_ref() {
       start_review_from_url "https://github.com/${repo_slug}/pull/${ref}"
       ;;
   esac
+}
+
+# Start one PR's review in a subshell, printing the action it took. A die() in
+# here must not stop the batch, and launch_review's cd would otherwise decide
+# which clone the next PR resolves to.
+start_one_requested() {
+  local url=$1
+
+  (start_review_from_url "$url" >&2 && printf '%s' "${launch_action:-started}")
+}
+
+# Start (or re-run) a review for every open PR that requests your review.
+# A PR whose head has not moved since its last ready review no-ops in the
+# checkout resolver, so running this repeatedly costs nothing.
+start_requested_reviews() {
+  local status repo number title url action
+  local started=0 unchanged=0 failed=0
+  local -a urls=()
+
+  require_cmds gh
+
+  while IFS=$'\t' read -r status repo number title url; do
+    case "$status" in
+      new | rerun) urls+=("$url") ;;
+    esac
+  done < <(list_reviews)
+
+  if ((${#urls[@]} == 0)); then
+    printf '%s: no open PRs are requesting your review\n' "$SCRIPT_NAME" >&2
+    return 0
+  fi
+
+  for url in "${urls[@]}"; do
+    if action="$(start_one_requested "$url")"; then
+      case "$action" in
+        unchanged) unchanged=$((unchanged + 1)) ;;
+        *) started=$((started + 1)) ;;
+      esac
+    else
+      failed=$((failed + 1))
+    fi
+  done
+
+  printf '%s: %d requested, %d started, %d already current, %d failed\n' \
+    "$SCRIPT_NAME" "${#urls[@]}" "$started" "$unchanged" "$failed" >&2
+  ((failed == 0))
 }
 
 # Home picker: browse a local review, or start a new one.
@@ -1131,9 +1241,21 @@ main() {
     exit 0
   fi
 
+  if (($# >= 1)) && [[ "$1" == list ]]; then
+    if (($# != 1)); then
+      die "usage: ${SCRIPT_NAME} list"
+    fi
+    list_reviews
+    exit 0
+  fi
+
   if (($# >= 1)) && [[ "$1" == start ]]; then
     if (($# != 2)); then
-      die "usage: ${SCRIPT_NAME} start <PR-number-or-URL>"
+      die "usage: ${SCRIPT_NAME} start <PR-number-or-URL>|--requested"
+    fi
+    if [[ "$2" == --requested ]]; then
+      start_requested_reviews || exit 1
+      exit 0
     fi
     start_review_from_ref "$2"
     exit 0
