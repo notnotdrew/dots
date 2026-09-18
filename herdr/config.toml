@@ -67,6 +67,16 @@ type = "plugin_action"
 command = "worktrunk.open-with-remotes"
 description = "worktree: switch / create including remotes"
 
+# Curated shortlist of keys worth using, kept in herdr/keybindings.md.
+# prefix+? still shows the full live keymap.
+[[keys.command]]
+key = "prefix+u"
+type = "popup"
+command = "herdr-help"
+width = "70%"
+height = "80%"
+description = "keys worth using"
+
 # Asks what to work on, then creates and staffs a child worktree workspace.
 [[keys.command]]
 key = "prefix+shift+s"

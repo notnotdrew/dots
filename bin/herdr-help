@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Show the curated Herdr keybinding cheatsheet.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+# Bound to prefix+u in ~/dots/herdr/config.toml as a popup command.
+#
+# This is the hand-maintained shortlist, not the live keymap. prefix+? still
+# shows every active binding straight from the running config.
+set -euo pipefail
+
+sheet=$HOME/dots/herdr/keybindings.md
+
+if [ ! -f "$sheet" ]; then
+  printf '%s: error: %s is missing\n' "$(basename "$0")" "$sheet" >&2
+  # The popup closes the moment this exits, so hold it open to be read.
+  read -r -n 1 -s -p 'Press any key to close.' || true
+  exit 1
+fi
+
+if command -v bat >/dev/null 2>&1; then
+  exec bat --language=md --style=plain --paging=always "$sheet"
+fi
+
+exec less -R "$sheet"
