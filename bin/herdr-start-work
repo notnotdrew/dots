@@ -2,6 +2,10 @@
 # Ask what to work on, let an agent resolve the naming, then create the child
 # worktree workspace, focus it, and hand the task to an agent running there.
 #
+# Some requests are not a task for a fresh checkout but a command that already
+# does the job ("start any open prrr reviews"). Those come back as a commands
+# plan, which runs here and exits without opening anything.
+#
 # Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
 # Bound to prefix+shift+s in ~/dots/herdr/config.toml as a popup command.
 #
@@ -12,12 +16,18 @@ set -euo pipefail
 HERDR="${HERDR_BIN_PATH:-herdr}"
 NOTE_SOURCE=herdr-note
 AGENT_KIND=cursor
+# Commands a plan is allowed to dispatch, space separated.
+DISPATCHABLE='prrr'
 
 # Background steps write output to temp files so the spinner owns the
 # terminal. Register each one here; a helper cannot, because command
 # substitution would append to the array inside a subshell.
 TMPFILES=()
-cleanup() { [ ${#TMPFILES[@]} -gt 0 ] && rm -f "${TMPFILES[@]}"; }
+cleanup() {
+  [ ${#TMPFILES[@]} -gt 0 ] && rm -f "${TMPFILES[@]}"
+  # An EXIT trap that ends on a false test takes the script's status with it.
+  return 0
+}
 trap cleanup EXIT
 
 die() {
@@ -92,6 +102,71 @@ send_task() {
   return 1
 }
 
+# A plan is an agent's word, not a shell. Reject anything that is not a
+# DISPATCHABLE command with plain arguments, before it is shown to be run.
+check_command() {
+  local command="$1" head
+
+  case "$command" in
+    *[!A-Za-z0-9\ _.,:/@=+-]*)
+      die "command has characters I will not run: $command"
+      ;;
+  esac
+  head=${command%%[[:space:]]*}
+  [ -n "$head" ] || die 'plan has an empty command'
+  case " $DISPATCHABLE " in
+    *" $head "*) ;;
+    *) die "not a dispatchable command: $head (allowed: $DISPATCHABLE)" ;;
+  esac
+}
+
+# Run one checked command as literal argv, with no shell in between.
+dispatch_command() {
+  local command="$1"
+  local -a argv=()
+
+  read -r -a argv <<<"$command"
+  printf '\n$ %s\n' "$command"
+  "${argv[@]}"
+}
+
+# Show what the plan wants to run, then run it on enter. The commands open
+# their own workspaces if they need one; this script opens nothing.
+run_commands_plan() {
+  local plan="$1" summary key command status=0
+  local -a commands=()
+
+  mapfile -t commands < <(jq -r '.commands[]?' <<<"$plan")
+  [ ${#commands[@]} -gt 0 ] || die "plan has no commands: $plan"
+
+  for command in "${commands[@]}"; do
+    check_command "$command"
+  done
+
+  summary=$(jq -r '.summary // empty' <<<"$plan")
+  [ -n "$summary" ] && printf '%s\n\n' "$summary"
+  printf '  %s\n' "${commands[@]}"
+  printf '\nenter to run, any other key to cancel '
+  IFS= read -r -n 1 -s key || key=cancel
+  case "$key" in
+    '') printf '\n' ;;
+    *)
+      printf '\ncancelled\n'
+      return 0
+      ;;
+  esac
+
+  for command in "${commands[@]}"; do
+    dispatch_command "$command" || status=$?
+  done
+  [ "$status" -eq 0 ] || die "command failed (exit $status)"
+
+  # The popup closes the moment this exits. Hold it open long enough to read,
+  # but not so long that it lingers after a command has moved focus.
+  printf '\n'
+  read -r -t 5 -n 1 -s -p 'Press any key to close.' || true
+}
+
 command -v jq >/dev/null 2>&1 || die 'jq is required'
 
 plan=
@@ -138,19 +213,28 @@ if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
   printf '\n'
   plan_out=$(mktemp)
   TMPFILES+=("$plan_out")
-  cursor-agent -p -f --output-format text "Plan a new Herdr worktree workspace for this request:
+  cursor-agent -p -f --output-format text "Plan how to handle this request:
 
 $request
 
-Follow the starting-herdr-work skill for naming. Resolve any Linear ticket with
+Pick one of two plans.
+
+A commands plan, when a tool already does the whole job and no new checkout is
+needed. Only \`prrr\` can be dispatched; read the usage header at the top of
+~/bin/prrr to see what it offers, and use its own flags rather than stringing
+commands together. Those commands open their own workspaces when they need one.
+{\"kind\":\"commands\",\"summary\":\"one spoken line about what will run\",\"commands\":[\"prrr start --requested\"]}
+
+A worktree plan, for work that needs its own branch and checkout. Follow the
+starting-herdr-work skill for naming. Resolve any Linear ticket with
 \`linear issue view <ID> --json --no-pager\` and use its \`branchName\` verbatim.
 Reuse an existing sibling project name from \`herdr workspace list\` when that
 bucket already exists.
+{\"kind\":\"worktree\",\"repo_root\":\"absolute path to the main checkout\",\"branch\":\"git branch name\",\"base\":\"base ref or empty string\",\"item\":\"short lowercase item\",\"project\":\"Title Case project\",\"prompt\":\"task prompt for the coding agent\"}
 
 Gather facts only. Do not create a branch, worktree, workspace, or any files.
 
-Reply with one minified JSON object and nothing else:
-{\"repo_root\":\"absolute path to the main checkout\",\"branch\":\"git branch name\",\"base\":\"base ref or empty string\",\"item\":\"short lowercase item\",\"project\":\"Title Case project\",\"prompt\":\"task prompt for the coding agent\"}" >"$plan_out" 2>/dev/null &
+Reply with one minified JSON object and nothing else." >"$plan_out" 2>/dev/null &
   planner_pid=$!
   spinner "$planner_pid" 'Planning'
   wait "$planner_pid" || die 'planning agent failed'
@@ -161,6 +245,16 @@ Reply with one minified JSON object and nothing else:
 fi
 if [ -z "$attach_ws" ]; then
 jq -e . >/dev/null 2>&1 <<<"$plan" || die "plan is not valid JSON: $plan"
+
+# herdr-tidy and older callers pass a worktree plan with no kind.
+case "$(jq -r '.kind // "worktree"' <<<"$plan")" in
+  commands)
+    run_commands_plan "$plan"
+    exit 0
+    ;;
+  worktree) ;;
+  *) die "unknown plan kind: $plan" ;;
+esac
 
 repo_root=$(jq -r '.repo_root // empty' <<<"$plan")
 branch=$(jq -r '.branch // empty' <<<"$plan")
