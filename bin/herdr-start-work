@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# Ask what to work on, let an agent resolve the naming, then create the child
+# worktree workspace, focus it, and hand the task to an agent running there.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+# Bound to prefix+shift+s in ~/dots/herdr/config.toml as a popup command.
+#
+# The planning agent only gathers facts and returns JSON. Every mutation
+# happens here so a bad plan cannot create branches or move panes on its own.
+set -euo pipefail
+
+HERDR="${HERDR_BIN_PATH:-herdr}"
+NOTE_SOURCE=herdr-note
+AGENT_KIND=cursor
+
+# Background steps write output to temp files so the spinner owns the
+# terminal. Register each one here; a helper cannot, because command
+# substitution would append to the array inside a subshell.
+TMPFILES=()
+cleanup() { [ ${#TMPFILES[@]} -gt 0 ] && rm -f "${TMPFILES[@]}"; }
+trap cleanup EXIT
+
+die() {
+  printf '\nerror: %s\n' "$1" >&2
+  # The popup closes the moment this exits, so hold it open to be read.
+  read -r -n 1 -s -p 'Press any key to close.' || true
+  exit 1
+}
+
+# Spin until the given pid exits. Planning takes ~30s with no output of its
+# own, so show elapsed time to distinguish slow from hung.
+spinner() {
+  local pid="$1" label="$2" frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' start=$SECONDS i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf '\r%s %s %ds' "${frames:i%10:1}" "$label" "$((SECONDS - start))"
+    i=$((i + 1))
+    sleep 0.1
+  done
+  printf '\r%s %s %ds\n' '✓' "$label" "$((SECONDS - start))"
+}
+
+# Herdr agent names must match [a-z][a-z0-9_-]{0,31} and be unique among live
+# agents.
+agent_name() {
+  local base
+  base=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')
+  base=${base#-}
+  base=${base%-}
+  base=${base:0:28}
+  case "$base" in
+    [a-z]*) ;;
+    *) base="work-$base" ;;
+  esac
+  local name="$base" suffix=2
+  while "$HERDR" agent list | jq -e --arg n "$name" \
+    '.result.agents[]? | select(.name == $n)' >/dev/null 2>&1; do
+    name="${base}-${suffix}"
+    suffix=$((suffix + 1))
+  done
+  printf '%s' "$name"
+}
+
+# cursor-agent asks to trust every unseen path, and Herdr reports that dialog
+# as idle rather than blocked, so the task would be typed into it. Write the
+# marker cursor-agent itself writes on trust, before the agent ever starts.
+# Answering the dialog after the fact races with it closing, which leaves a
+# stray keystroke in the composer.
+trust_workspace() {
+  local checkout="$1" slug dir
+  slug=$(printf '%s' "${checkout#/}" | tr '/.' '-')
+  dir="$HOME/.cursor/projects/$slug"
+  [ -e "$dir/.workspace-trusted" ] && return 0
+  mkdir -p "$dir"
+  jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" --arg path "$checkout" \
+    '{trustedAt: $at, workspacePath: $path}' >"$dir/.workspace-trusted"
+}
+
+# A fresh checkout spends its first seconds trusting the workspace, and a
+# prompt sent during that window is swallowed while the agent still reports
+# idle. Retry while it stays idle; a working agent already took the text.
+send_task() {
+  local name="$1" text="$2" status
+  for _ in 1 2 3; do
+    if "$HERDR" agent prompt "$name" "$text" >/dev/null 2>&1; then
+      return 0
+    fi
+    status=$("$HERDR" agent get "$name" 2>/dev/null |
+      jq -r '.result.agent.agent_status // "unknown"')
+    [ "$status" = working ] && return 0
+    sleep 3
+  done
+  return 1
+}
+
+command -v jq >/dev/null 2>&1 || die 'jq is required'
+
+plan=
+request=
+attach_ws=
+case "${1:-}" in
+  --from-json)
+    plan=${2:-}
+    [ -n "$plan" ] || die 'missing JSON after --from-json'
+    ;;
+  --attach)
+    attach_ws=${2:-}
+    task=${3:-}
+    [ -n "$attach_ws" ] && [ -n "$task" ] ||
+      die 'usage: herdr-start-work --attach <workspace_id> <task>'
+    ;;
+  '')
+    printf 'What do you want to work on?\n'
+    printf 'A Linear ticket (PRO-1234), a URL, or a short phrase.\n\n'
+    IFS= read -r -e -p '> ' request || exit 0
+    [ -n "${request//[[:space:]]/}" ] || exit 0
+    ;;
+  *)
+    request="$*"
+    ;;
+esac
+
+if [ -n "$attach_ws" ]; then
+  workspace_id="$attach_ws"
+  item=$("$HERDR" workspace get "$workspace_id" 2>/dev/null |
+    jq -r '.result.workspace.label // empty') || true
+  [ -n "$item" ] || die "no such workspace: $workspace_id"
+  pane_id=$("$HERDR" pane list --workspace "$workspace_id" |
+    jq -r '.result.panes[0].pane_id // empty')
+  [ -n "$pane_id" ] || die "no pane in $workspace_id"
+  trust_workspace "$("$HERDR" pane list --workspace "$workspace_id" |
+    jq -r '.result.panes[0].cwd')"
+  "$HERDR" workspace focus "$workspace_id" >/dev/null
+  printf 'Reusing %s (%s)\n\n' "$item" "$workspace_id"
+fi
+
+if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
+  command -v cursor-agent >/dev/null 2>&1 || die 'cursor-agent is required'
+  printf '\n'
+  plan_out=$(mktemp)
+  TMPFILES+=("$plan_out")
+  cursor-agent -p -f --output-format text "Plan a new Herdr worktree workspace for this request:
+
+$request
+
+Follow the starting-herdr-work skill for naming. Resolve any Linear ticket with
+\`linear issue view <ID> --json --no-pager\` and use its \`branchName\` verbatim.
+Reuse an existing sibling project name from \`herdr workspace list\` when that
+bucket already exists.
+
+Gather facts only. Do not create a branch, worktree, workspace, or any files.
+
+Reply with one minified JSON object and nothing else:
+{\"repo_root\":\"absolute path to the main checkout\",\"branch\":\"git branch name\",\"base\":\"base ref or empty string\",\"item\":\"short lowercase item\",\"project\":\"Title Case project\",\"prompt\":\"task prompt for the coding agent\"}" >"$plan_out" 2>/dev/null &
+  planner_pid=$!
+  spinner "$planner_pid" 'Planning'
+  wait "$planner_pid" || die 'planning agent failed'
+
+  plan_raw=$(<"$plan_out")
+  plan=$(printf '%s' "$plan_raw" | grep -o '{.*}' | tail -1) ||
+    die "could not find JSON in plan: $plan_raw"
+fi
+if [ -z "$attach_ws" ]; then
+jq -e . >/dev/null 2>&1 <<<"$plan" || die "plan is not valid JSON: $plan"
+
+repo_root=$(jq -r '.repo_root // empty' <<<"$plan")
+branch=$(jq -r '.branch // empty' <<<"$plan")
+base=$(jq -r '.base // empty' <<<"$plan")
+item=$(jq -r '.item // empty' <<<"$plan")
+project=$(jq -r '.project // empty' <<<"$plan")
+task=$(jq -r '.prompt // empty' <<<"$plan")
+
+[ -n "$repo_root" ] || die "plan has no repo_root: $plan"
+[ -n "$branch" ] || die "plan has no branch: $plan"
+[ -n "$item" ] || die "plan has no item: $plan"
+[ -n "$task" ] || task="$request"
+
+# A linked worktree resolves to the main checkout, so the new worktree always
+# hangs off the real repo.
+git_common=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+  die "not a git repo: $repo_root"
+repo_root=$(dirname "$git_common")
+
+printf 'item:    %s\n' "$item"
+printf 'project: %s\n' "${project:-none}"
+printf 'branch:  %s\n' "$branch"
+printf 'repo:    %s\n\n' "$repo_root"
+
+source_ws=$("$HERDR" worktree list --cwd "$repo_root" 2>/dev/null |
+  jq -r '.result.source.source_workspace_id // empty') || true
+if [ -z "$source_ws" ]; then
+  printf 'Opening parent workspace...\n'
+  source_ws=$("$HERDR" workspace create --cwd "$repo_root" \
+    --label "$(basename "$repo_root")" --no-focus |
+    jq -r '.result.workspace.workspace_id')
+  [ -n "$source_ws" ] || die 'could not open a parent workspace'
+fi
+
+# Match the sibling checkout layout worktrunk already uses for this repo.
+checkout="${repo_root}.$(printf '%s' "$branch" | tr '/' '-')"
+
+create_args=(worktree create --workspace "$source_ws" --branch "$branch"
+  --path "$checkout" --label "$item" --focus)
+[ -n "$base" ] && create_args+=(--base "$base")
+
+trust_workspace "$checkout"
+
+create_out=$(mktemp)
+TMPFILES+=("$create_out")
+"$HERDR" "${create_args[@]}" >"$create_out" 2>/dev/null &
+create_pid=$!
+spinner "$create_pid" 'Creating worktree'
+wait "$create_pid" || die 'worktree create failed'
+created=$(<"$create_out")
+
+workspace_id=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created")
+pane_id=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created")
+[ -n "$workspace_id" ] && [ -n "$pane_id" ] || die "unexpected create response: $created"
+
+if [ -n "$project" ]; then
+  "$HERDR" workspace report-metadata "$workspace_id" \
+    --source "$NOTE_SOURCE" --token "note=$project" >/dev/null
+fi
+fi
+
+# An attached workspace usually already hosts an agent. Agent commands accept
+# the pane id as a target, so reuse it rather than stacking a second agent.
+occupied=$("$HERDR" agent list |
+  jq --arg p "$pane_id" '[.result.agents[]? | select(.pane_id == $p)] | length')
+if [ "$occupied" -gt 0 ]; then
+  target="$pane_id"
+else
+  target=$(agent_name "$item")
+  "$HERDR" agent start "$target" --kind "$AGENT_KIND" --pane "$pane_id" >/dev/null 2>&1 &
+  start_pid=$!
+  spinner "$start_pid" "Starting $AGENT_KIND"
+  # A startup blocked on the trust dialog reports not-ready but still leaves a
+  # usable agent in the pane, so only give up when the pane is truly empty.
+  if ! wait "$start_pid"; then
+    "$HERDR" agent list |
+      jq -e --arg p "$pane_id" '.result.agents[]? | select(.pane_id == $p)' >/dev/null ||
+      die "agent did not start in $pane_id"
+    target="$pane_id"
+  fi
+fi
+
+"$HERDR" agent wait "$target" --timeout 30000 >/dev/null 2>&1 || true
+send_task "$target" "$task" >/dev/null 2>&1 &
+send_pid=$!
+spinner "$send_pid" 'Sending task'
+wait "$send_pid" || die "could not send the task to $target"
+
+printf '\nWorking on %s in %s.\n' "$item" "$workspace_id"
