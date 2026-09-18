@@ -4,7 +4,9 @@ description: >-
   Opens a Herdr child worktree and names its sidebar for the task: workspace
   label = item, $note = project (reuse existing project names). Use when the
   user says "work on …", "tidy …", starts a Linear ticket in Herdr, or asks to
-  spin up a worktree workspace for a task.
+  spin up a worktree workspace for a task. Also decides when a request is just
+  a command to dispatch, such as "start any open prrr reviews", and needs no
+  workspace at all.
 ---
 
 # Starting Herdr work
@@ -16,6 +18,19 @@ Turn a short request into a focused child worktree whose Space sidebar reads:
 3. **branch** — filled by the `drew.branch-token` plugin on focus
 
 Requires `HERDR_ENV=1`. If unset, say you are not inside Herdr and stop.
+
+## First: does this need a workspace at all?
+
+Some requests are already a command. "Start any open prrr reviews" is
+`prrr start --requested`, and prrr opens a workspace per PR on its own. When a
+tool does the whole job, dispatch it and stop. No branch, no worktree, no agent.
+
+`prrr list` prints what is waiting as `status`, `owner/repo`, `number`, `title`,
+`url`, with status `new`, `rerun`, or `local`. It needs no terminal, so use it
+to say what you started.
+
+Only take this path when the tool covers the whole request. Anything that needs
+a branch gets a worktree, named as below.
 
 ## Naming rules
 
@@ -115,10 +130,15 @@ Tell the user the new workspace id, item, project, and branch in one short line.
 - Invent a new spelling of an existing project (`csv` vs `CSV`).
 - Run `herdr server stop` or kill Herdr.
 - Create a worktree when the user only wanted a rename/note fix on an existing space — update that workspace in place instead.
+- Create a worktree for a request an existing command already handles.
 
 ## Keybinding
 
-`prefix+shift+s` opens a popup running `~/bin/herdr-start-work`, which does this whole flow unattended: it asks for the request, runs a headless planning agent that returns the JSON fields above, then creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
+`prefix+shift+s` opens a popup running `~/bin/herdr-start-work`, which does this whole flow unattended: it asks for the request, then runs a headless planning agent that answers with one of two plans.
+
+A worktree plan carries the JSON fields above, and the script creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
+
+A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it on enter, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
 
 `prefix+shift+y` is the same flow with a fixed request: item `tidy`, project `Herdr`, repo `~/dots`, branch `drew/tidy-herdr-YYYYMMDD`. It does not ask, and it does not use the focused workspace's repo.
 
