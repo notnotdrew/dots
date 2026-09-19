@@ -37,9 +37,13 @@ gh pr diff "$PR_NUMBER" --repo "$OWNER/$REPO"
 gh pr checks "$PR_NUMBER" --repo "$OWNER/$REPO"
 gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" \
   --json files --jq '.files[].path'
+gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/comments" \
+  --jq '.[] | {id, author: .user.login, path, line, body}'
 ```
 
-Retain all four evidence classes: metadata, the full GitHub patch, check results, and changed paths. If an optional metadata field is unavailable in the installed GitHub CLI or repository schema, rerun without only that unavailable field and record the omission as a gap. Do not silently drop required identity, base/head object IDs, the patch, or changed paths.
+The `comments` metadata field returns issue-level discussion only. Inline review comments require the pulls comments endpoint, so query it separately rather than assuming the PR has no prior review.
+
+Retain all five evidence classes: metadata, the full GitHub patch, check results, changed paths, and existing review comments. If an optional metadata field is unavailable in the installed GitHub CLI or repository schema, rerun without only that unavailable field and record the omission as a gap. Do not silently drop required identity, base/head object IDs, the patch, or changed paths.
 
 Capture both output and exit status from `gh pr checks`. A nonzero status caused by failing or pending checks is check evidence, not by itself a context-gathering command failure.
 
@@ -50,6 +54,7 @@ Record at least:
 - additions, deletions, changed-file count and paths, and PR commit subjects and object IDs;
 - check names and conclusions, including pending, skipped, failing, unavailable, or absent checks;
 - review decisions and materially relevant review or discussion comments;
+- every existing inline review comment with its author, path, line, and asserted claim, marking which authors are automated reviewers such as `cursor[bot]`, so synthesis can tell a new finding from one already posted;
 - linked-closing-issue data and issue keys or URLs present in the title, body, comments, branches, or commits.
 
 Treat reviews and comments as evidence, not conclusions. Reopen the cited code or command result before relying on a technical claim from discussion.

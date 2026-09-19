@@ -58,6 +58,10 @@ Otherwise repeat the following record. IDs use a positive integer displayed with
 - DuplicateOf: <none|Fnnn>
 - Supersedes: <none|Fnnn>
 - RawOutput: <none|retained-output-reference>
+- PriorArt: <none|author and reference for an already-posted comment making this claim>
+- PriorArtDelta: <none|what this finding establishes beyond that posted comment>
+
+`PriorArt` names a comment already on the pull request, including one from an automated reviewer. It is not `DuplicateOf`, which links ledger records only, and it never changes the disposition: a claim someone else already posted is still verified and retained here.
 
 Use `DuplicateOf` when another ledger finding represents the same affected behavior and semantic claim, even if wording or line anchors differ. Use `Supersedes` when this finding replaces an earlier ledger finding. Every linked ID must exist in this ledger.
 

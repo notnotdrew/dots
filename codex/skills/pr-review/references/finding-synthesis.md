@@ -46,6 +46,14 @@ For semantic duplicates:
 
 Do not use `Supersedes` for same-batch duplicates. Supersession means one ledger finding replaces another finding, not that two reviewers reported the same claim.
 
+## Prior Art Already Posted On The Pull Request
+
+Compare every represented claim against the existing review comments gathered during context, including comments left by automated reviewers. Use the same affected-behavior and claim test as semantic comparison.
+
+A matching posted comment is prior publication, not a ledger record. Do not dismiss the finding, set `DuplicateOf`, or drop it from coverage: the author still needs it verified. Set `PriorArt` to the comment author and reference, and set `PriorArtDelta` to whatever this finding establishes that the posted comment does not, such as the mechanism behind the behavior, a reproduction, the reason the code was previously safe, or a corrected claim. When the finding adds nothing beyond the posted comment, record `PriorArtDelta: none`.
+
+This distinction decides what the reader does with the finding. A finding with prior art and no delta is something to agree with in a line; one with a real delta is worth its own comment. Never present an already-posted finding as new.
+
 ## PERFECT Principle And Class
 
 Assign each represented claim to the earliest applicable PERFECT principle:
@@ -128,6 +136,8 @@ DispositionReason: <reason tied to evidence>
 DuplicateOf: <none|Fnn>
 Supersedes: <none|Fnn>
 RawOutput: <none|merged retained-output references>
+PriorArt: <none|author and reference for an already-posted comment making this claim>
+PriorArtDelta: <none|what this finding establishes beyond that posted comment>
 Disagreement: <none|participants, competing assertions, resolution or unresolved question>
 CoverageUpdate: <none|normalized coverage record update>
 ReadinessEscalation: <none|blocker, gathered evidence, affected coverage, remediation>

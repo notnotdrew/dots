@@ -66,11 +66,12 @@ After the ordered verdicts, add a section only for each principle with retained 
   - Why: <one line on what actually produces the issue>
   - Fix: <one line on a high-level potential fix>
   - Anchor: <file:line in the PR where a review comment could be anchored>
+  - PriorArt: <none, or the author who already posted this claim and what this adds>
 ```
 
 List every finding that is verified in the current ledger and current epoch exactly once under its assigned principle, and reference no other ledger record or stale historical state. Omit empty principle sections; if every list is empty, omit the Findings section.
 
-Every retained finding carries `Scenario`, `Why`, `Fix`, and `Anchor`. Keep each to a single high-level line; the more explanation required, the less useful it is. Derive `Scenario`, `Why`, and `Fix` from the ledger finding's `Claim`, `Impact`, and `AffectedBehavior`, and derive `Anchor` from its `Scope` or `Evidence` source locations, choosing the most representative changed line when several apply.
+Every retained finding carries `Scenario`, `Why`, `Fix`, `Anchor`, and `PriorArt`. Keep each to a single high-level line; the more explanation required, the less useful it is. Carry `PriorArt` through from the ledger so a finding another reviewer already posted is never presented as new. Derive `Scenario`, `Why`, and `Fix` from the ledger finding's `Claim`, `Impact`, and `AffectedBehavior`, and derive `Anchor` from its `Scope` or `Evidence` source locations, choosing the most representative changed line when several apply.
 
 ## Verification Gaps
 
