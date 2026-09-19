@@ -15,7 +15,7 @@ Before editing:
 
 1. Read the plan, repository instructions, PR template, and relevant code.
 2. Confirm that each plan step is one commit in one PR. Do not invent steps, split a step into implement/test/types commits, or merge two steps.
-3. Identify the acceptance criteria, non-goals, existing issue, branch, and user changes that must remain untouched.
+3. Identify the acceptance criteria, non-goals, existing issue, branch, **PR base**, and user changes that must remain untouched. The PR base is the existing PR’s base, a stacked parent branch, or the repository default. Describe the PR against that base, not against `main` if this branch sits on other unmerged work.
 4. Resolve ambiguities that would materially change behavior or commit boundaries.
 
 Do not broaden the work beyond the plan. If the steps are the wrong grain, hand off to `writing-simple-plans` rather than resequencing them here. If the user asked for TDD rather than a simple plan, use `planning-tdd`.
@@ -106,16 +106,18 @@ After every planned commit is complete:
 2. Run the combined relevant test suite and lint checks.
 3. Confirm the acceptance criteria hold and that no non-goal was smuggled in.
 4. Push the branch.
-5. Open one draft PR using the repository template.
+5. Open one draft PR using the repository template as the body skeleton.
+
+Keep every template heading and checkbox line. Check only the matching type. Do not add sections the template does not have (`Summary`, `Test plan`, verification checklists) even when another instruction uses that shape.
 
 Keep the title and description brief and human:
 
-- what behavior changed
+- what this PR’s diff against its base does
 - why it matters
-- important omission or boundary, if needed
-- how it was verified, when the template requests it
+- an important omission or boundary, if needed
+- how it was verified, only if the template has a place for it
 
-Do not narrate the implementation process or add technical detail that reviewers do not need.
+Do not narrate the implementation process, restack parent-branch work, or add operational detail the files already show. After a rebase onto a new base, rewrite the description so it still matches the remaining diff.
 
 ## Review the complete PR
 
@@ -131,7 +133,7 @@ The review must check:
 - over-testing and under-testing
 - accidental scope expansion
 - commit placement and history quality
-- PR wording
+- PR wording: template skeleton intact, brief, describes this PR’s remaining diff against its base. Do not expand the body with stack context or process notes.
 
 Treat findings as evidence, not commands. Reconcile them with earlier test-attack and simplification decisions.
 
