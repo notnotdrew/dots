@@ -67,16 +67,15 @@ type = "plugin_action"
 command = "worktrunk.open-with-remotes"
 description = "worktree: switch / create including remotes"
 
-# These four run as type = "pane", not type = "popup". A popup is
-# session-modal: while it is up, prefix chords and workspace switching are
-# swallowed, so a minute-long herdr-start-work traps the whole session. A pane
-# is a real pane in the current tab that closes when the command exits, so the
-# flow can be left running while you work elsewhere.
+# The help and note commands run as panes, not popups. A popup is session-modal:
+# while it is up, prefix chords and workspace switching are swallowed.
+# Start-work and tidy use detached shell launchers that focus their dedicated
+# workspace and run the interactive command in its one pane.
 # Panes take no width/height; herdr warns and ignores them.
 #
 # A pane is not ephemeral, though: it holds a split in whichever workspace was
-# focused, and nothing in Herdr lists plain panes across workspaces. Each of
-# these scripts sources bin/lib/herdr-pane-agent.bash to claim a row in the
+# focused, and nothing in Herdr lists plain panes across workspaces. Each
+# interactive script sources bin/lib/herdr-pane-agent.bash to claim a row in the
 # Agents panel while it runs, so a split left waiting for a keypress can be
 # found from anywhere with ctrl+shift+up / ctrl+shift+down.
 
@@ -95,18 +94,19 @@ type = "pane"
 command = "herdr-note"
 description = "workspace: set note"
 
-# Asks what to work on, then creates and staffs a child worktree workspace.
+# Focuses the persistent start-work workspace, then asks what to work on and
+# creates and staffs a child worktree workspace. Reuses a running intake.
 [[keys.command]]
 key = "prefix+shift+s"
-type = "pane"
-command = "herdr-start-work"
+type = "shell"
+command = "herdr-open-start-work herdr-start-work"
 description = "workspace: start work on a task"
 
-# Same flow, hardcoded to "tidy herdr" on a dots worktree.
+# Same dedicated workspace, hardcoded to "tidy herdr" on a dots worktree.
 [[keys.command]]
 key = "prefix+shift+y"
-type = "pane"
-command = "herdr-tidy"
+type = "shell"
+command = "herdr-open-start-work herdr-tidy"
 description = "workspace: tidy herdr"
 
 [ui]

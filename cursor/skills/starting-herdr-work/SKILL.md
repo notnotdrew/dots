@@ -134,15 +134,26 @@ Tell the user the new workspace id, item, project, and branch in one short line.
 
 ## Keybinding
 
-`prefix+shift+s` opens a pane running `~/bin/herdr-start-work`, which does this whole flow unattended: it asks for the request, then runs a headless planning agent that answers with one of two plans.
+`prefix+shift+s` focuses a persistent plain workspace named `start work`, creating
+it at `~/.local/state/herdr-start-work` when needed, then runs
+`~/bin/herdr-start-work` in its one pane. A second press while that pane is busy
+only returns to it. The flow asks for the request, then runs a headless planning
+agent that answers with one of two plans.
 
-That pane splits whichever workspace is focused, so the planner gets a home of its own at `~/.local/state/herdr-start-work` rather than the inherited cwd, and is told the launching checkout instead of reading it. A launch from a scratch git dir under `/tmp` or `/var/folders` reports no repo, and a plan that names one as `repo_root` is refused.
+The planner receives no checkout hint: start-work is normally unrelated to the
+workspace Drew just left, so it resolves `repo_root` from the request alone. A
+plan that names a scratch git dir under `/tmp` or `/var/folders` is refused.
+The workspace stays open after the command exits so the next intake can reuse
+it. While the command runs, its Agents-panel row still makes the pane findable
+after focus moves to a new worktree.
 
 A worktree plan carries the JSON fields above, and the script creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
 
 A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it on enter, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
 
-`prefix+shift+y` is the same flow with a fixed request: item `tidy`, project `Herdr`, repo `~/dots`, branch `drew/tidy-herdr-YYYYMMDD`. It does not ask, and it does not use the focused workspace's repo.
+`prefix+shift+y` shares the same dedicated workspace and one-at-a-time behavior,
+with a fixed request: item `tidy`, project `Herdr`, repo `~/dots`, branch
+`drew/tidy-herdr-YYYYMMDD`. It does not ask.
 
 Use the manual steps above when the user is already chatting with you. Point them at the keybinding when they want to launch work without an open session.
 

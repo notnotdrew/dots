@@ -7,8 +7,8 @@
 # plan, which runs here and exits without opening anything.
 #
 # Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
-# Bound to prefix+shift+s in ~/dots/herdr/config.toml as a pane command, so
-# the session stays usable while this runs.
+# Opened in a dedicated workspace by herdr-open-start-work, so the session stays
+# usable and the flow never splits an unrelated workspace.
 #
 # The planning agent only gathers facts and returns JSON. Every mutation
 # happens here so a bad plan cannot create branches or move panes on its own.
@@ -119,20 +119,6 @@ is_scratch_path() {
     case "$path" in "${root%/}"/*) return 0 ;; esac
   done
   return 1
-}
-
-# A pane command splits whichever workspace is focused, so this pane starts in
-# a cwd nobody chose for planning: usually the repo Drew was reading, sometimes
-# a scratch clone under /tmp that only looks like one. Report the first and
-# refuse the second, rather than letting the planner read its own cwd and
-# branch from whatever it finds.
-launch_repo() {
-  local git_common root
-  git_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
-    return 0
-  root=$(dirname "$git_common")
-  is_scratch_path "$root" && return 0
-  printf '%s' "$root"
 }
 
 # Set up the planner's home and trim its run log.
@@ -317,23 +303,16 @@ if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
   plan_out="$PLAN_HOME/runs/$run_id.out"
   plan_err="$PLAN_HOME/runs/$run_id.err"
 
-  repo_hint=$(launch_repo)
-  if [ -n "$repo_hint" ]; then
-    launched_from="This pane was launched from the checkout at $repo_hint. Use that
-as repo_root unless the request names a different repo."
-  else
-    launched_from="This pane was launched from somewhere with no repo worth
-branching from, so work repo_root out from the request itself."
-  fi
-
-  # --workspace keeps planning in PLAN_HOME whatever the pane's cwd is, so the
-  # repo above is the only checkout the planner is told about.
+  # The intake workspace is deliberately unrelated to any checkout. Resolve
+  # repo_root from the request instead of biasing the plan toward whatever
+  # workspace happened to be focused before this one.
   cursor-agent --workspace "$PLAN_HOME" --trust -p -f --output-format text \
     "Plan how to handle this request:
 
 $request
 
-$launched_from
+Work repo_root out from the request itself. The intake workspace deliberately
+does not provide a launching checkout as a hint.
 
 Pick one of two plans.
 

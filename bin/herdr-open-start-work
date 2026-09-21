@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Focus the dedicated start-work workspace and run one intake flow there.
+set -euo pipefail
+
+HERDR="${HERDR_BIN_PATH:-herdr}"
+PLAN_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-start-work"
+WORKSPACE_LABEL='start work'
+LOCK_DIR="$PLAN_HOME/.open-lock"
+
+case "${1:-}" in
+  herdr-start-work | herdr-tidy) command_name="$1" ;;
+  *)
+    printf 'usage: %s herdr-start-work|herdr-tidy\n' "$(basename "$0")" >&2
+    exit 2
+    ;;
+esac
+
+command -v jq >/dev/null 2>&1 || {
+  printf '%s: jq is required\n' "$(basename "$0")" >&2
+  exit 1
+}
+
+mkdir -p "$PLAN_HOME"
+
+# Shell key commands are detached and can overlap. Serialize discovery and
+# launch so two quick presses cannot both create a workspace or run the pane.
+locked=
+for _ in {1..100}; do
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" >"$LOCK_DIR/pid"
+    locked=1
+    break
+  fi
+  if read -r owner <"$LOCK_DIR/pid" 2>/dev/null &&
+    ! kill -0 "$owner" 2>/dev/null; then
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+    continue
+  fi
+  sleep 0.05
+done
+[ -n "$locked" ] || {
+  printf '%s: timed out waiting for the launch lock\n' "$(basename "$0")" >&2
+  exit 1
+}
+trap 'rm -f "$LOCK_DIR/pid"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+
+workspace_id=
+pane_id=
+workspaces=$("$HERDR" workspace list)
+
+# The cwd makes this ours even if another workspace happens to share the
+# human-readable label.
+while IFS= read -r candidate; do
+  panes=$("$HERDR" pane list --workspace "$candidate")
+  candidate_pane=$(jq -r --arg cwd "$PLAN_HOME" \
+    '.result.panes[]? | select(.cwd == $cwd) | .pane_id' <<<"$panes" |
+    head -1)
+  if [ -n "$candidate_pane" ]; then
+    workspace_id="$candidate"
+    pane_id="$candidate_pane"
+    break
+  fi
+done < <(jq -r --arg label "$WORKSPACE_LABEL" \
+  '.result.workspaces[]? | select(.label == $label) | .workspace_id' \
+  <<<"$workspaces")
+
+if [ -z "$workspace_id" ]; then
+  created=$("$HERDR" workspace create \
+    --cwd "$PLAN_HOME" --label "$WORKSPACE_LABEL" --focus)
+  workspace_id=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created")
+  pane_id=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created")
+  [ -n "$workspace_id" ] && [ -n "$pane_id" ] || {
+    printf '%s: unexpected workspace create response\n' "$(basename "$0")" >&2
+    exit 1
+  }
+else
+  "$HERDR" workspace focus "$workspace_id" >/dev/null
+fi
+
+# A new pane may still be running zsh startup helpers. Wait for its prompt, but
+# return immediately when an intake is already running. Process inspection
+# closes the small gap before herdr-pane-agent has reported its Agents row.
+for _ in {1..15}; do
+  panes=$("$HERDR" pane list --workspace "$workspace_id")
+  if jq -e '
+    .result.panes[]?
+    | select(.agent == "start-work" or .agent == "tidy")
+  ' >/dev/null <<<"$panes"; then
+    exit 0
+  fi
+
+  process_info=$("$HERDR" pane process-info --pane "$pane_id")
+  if jq -e '
+    .result.process_info.foreground_processes[]?.cmdline // ""
+    | test("(^|/)(herdr-start-work|herdr-tidy)( |$)")
+  ' >/dev/null <<<"$process_info"; then
+    exit 0
+  fi
+  if jq -e '
+    .result.process_info as $process
+    | $process.foreground_process_group_id == $process.shell_pid
+  ' >/dev/null <<<"$process_info"; then
+    "$HERDR" pane run "$pane_id" "$command_name" >/dev/null
+    exit 0
+  fi
+
+  sleep 1
+done
+
+# Leave an unexpectedly occupied pane alone. The focused workspace shows what
+# is using it, and the next keypress can retry after that command finishes.

@@ -41,6 +41,15 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
 ## Recently added or discussed
 
+    2026-09-21  start-work and tidy now share a persistent "start work"
+                workspace rooted at ~/.local/state/herdr-start-work. Their
+                detached key commands focus or create it, then run the flow
+                in its one pane; another press while it is busy only returns
+                there. The workspace stays open for reuse, and the running
+                pane still claims its Agents row after focus moves away.
+                Planning no longer gets the previously focused checkout as a
+                hint: it resolves the repo from the request, avoiding an
+                unrelated default at the cost of requiring enough repo context.
     2026-09-21  start-work plans in ~/.local/state/herdr-start-work instead of
                 whichever workspace the pane landed in. It used to read its
                 own cwd for the repo to branch from, which is a scratch clone
@@ -83,9 +92,8 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
     them, and the pane is sized by the tab layout instead.
 
     A pane command is not ephemeral. It takes over the workspace it was
-    launched in, holding a split there until it exits, and start-work
-    focuses the new worktree while its own pane is still reporting progress
-    into the workspace you left. Nothing in Herdr lists plain panes across
-    workspaces, which is how one gets lost. That is why they claim an
-    Agents row: it is the one surface that names another workspace's pane
-    and rolls its state up onto the Spaces row.
+    launched in, holding a split there until it exits. Help and note still
+    run this way. Start-work and tidy avoid unrelated layouts by launching
+    into their persistent workspace instead. All four interactive scripts
+    claim an Agents row while running: it names the workspace and pane after
+    focus moves elsewhere and rolls their state up onto the Spaces row.
