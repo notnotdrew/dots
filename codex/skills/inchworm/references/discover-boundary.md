@@ -6,8 +6,8 @@ After scouts → curator → pick, either a find is selected or none remains.
 
 Scouts cost agent calls and the stamp burns the day, so the conditions the day
 depends on are checked while nothing has been spent yet: `wt` on `PATH`, an
-`origin` remote, a successful `git fetch origin`, and a resolvable
-`origin/develop`.
+`origin` remote, a successful `git fetch origin --prune`, and a resolvable
+trunk (`origin/<base_branch>`, default `main`).
 
 A preflight failure is an unattempted day, not a failed one:
 

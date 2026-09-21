@@ -73,7 +73,7 @@
 #
 # After the fixer pass (fixture or live):
 #   1. Commit leftover fixer edits under the find's subject/body
-#   2. Squash origin/develop..HEAD into one authored commit (always). Message:
+#   2. Squash origin/main..HEAD into one authored commit (always). Message:
 #      pre-fix implement commit if present and clean; else the find fallback
 #      if that is clean; else restore HEAD to the pre-fix SHA, do not push
 #   3. Update the existing draft branch: git push --force-with-lease origin HEAD
@@ -163,9 +163,9 @@
 #   On eligible (no blocking draft): clear stale active_draft_pr to null before/at stamp,
 #   OR overwrite only when a new PR opens.
 #   Soft quirk: mode malformed (non-JSON pr list) → treat as no blocking draft; do not crash.
-#   Phase 3 create: gh pr create --draft --base develop … → prints https://example.test/pr/99
-#   Implement base: always git fetch origin then branch from origin/develop (not HEAD).
-#   Soft-defer when origin/develop cannot be resolved (live); fixture mode may fall back.
+#   Phase 3 create: gh pr create --draft --base main … → prints https://example.test/pr/99
+#   Implement base: always git fetch origin then branch from origin/main (not HEAD).
+#   Soft-defer when origin/main cannot be resolved (live); fixture mode may fall back.
 #
 # Create window: Mon–Fri local, half-open [08:00, 16:00).
 # Two entry points share one core (preflight + stamp + discover + implement +
@@ -362,12 +362,12 @@ make_repo() {
   printf '%s\n' "# fixture" >"$repo_dir/README.md"
   git -C "$repo_dir" add README.md
   git -C "$repo_dir" commit -q -m "fixture"
-  # Implement worktrees always base on origin/develop — keep fixtures on develop.
-  git -C "$repo_dir" branch -M develop
+  # Implement worktrees always base on origin/main — keep fixtures on main.
+  git -C "$repo_dir" branch -M main
 }
 
 # Give a fixture repo a pushable origin (bare) so fetch/push/PR-base paths can run.
-# Pushes local develop even when another branch is checked out.
+# Pushes local main even when another branch is checked out.
 add_local_origin() {
   repo_dir=$1
   origin_dir=$2
@@ -377,26 +377,26 @@ add_local_origin() {
   if ! git -C "$repo_dir" remote get-url origin >/dev/null 2>&1; then
     git -C "$repo_dir" remote add origin "$origin_dir"
   fi
-  if ! git -C "$repo_dir" show-ref --verify --quiet refs/heads/develop; then
-    git -C "$repo_dir" branch develop HEAD
+  if ! git -C "$repo_dir" show-ref --verify --quiet refs/heads/main; then
+    git -C "$repo_dir" branch main HEAD
   fi
-  git -C "$repo_dir" push -q -u origin refs/heads/develop:refs/heads/develop
+  git -C "$repo_dir" push -q -u origin refs/heads/main:refs/heads/main
 }
 
-# Push a new commit to origin/develop via a throwaway clone (does not update
+# Push a new commit to origin/main via a throwaway clone (does not update
 # the main repo's remote-tracking refs until fetch).
-push_remote_only_develop_commit() {
+push_remote_only_main_commit() {
   origin_dir=$1
   marker_content=$2
   clone_dir=$3
   git clone -q "$origin_dir" "$clone_dir"
   git -C "$clone_dir" config user.email "fixture@example.com"
   git -C "$clone_dir" config user.name "Fixture Author"
-  git -C "$clone_dir" checkout -q develop
-  printf '%s\n' "$marker_content" >"$clone_dir/remote-only-develop.txt"
-  git -C "$clone_dir" add remote-only-develop.txt
-  git -C "$clone_dir" commit -q -m "remote-only develop tip"
-  git -C "$clone_dir" push -q origin develop
+  git -C "$clone_dir" checkout -q main
+  printf '%s\n' "$marker_content" >"$clone_dir/remote-only-main.txt"
+  git -C "$clone_dir" add remote-only-main.txt
+  git -C "$clone_dir" commit -q -m "remote-only main tip"
+  git -C "$clone_dir" push -q origin main
   git -C "$clone_dir" rev-parse HEAD
 }
 
@@ -915,9 +915,10 @@ assert_no_gh_pr_create() {
   return 0
 }
 
-# Assert mock gh saw `pr create` with `--draft` and `--base develop`.
-assert_gh_pr_create_draft() {
+# Assert mock gh saw `pr create` with `--draft` and the named `--base`.
+assert_gh_pr_create_draft_base() {
   log=$1
+  base=$2
   [ -f "$log" ] || return 1
   if ! grep -E '(^|[[:space:]])pr[[:space:]].*create' "$log" >/dev/null 2>&1; then
     return 1
@@ -925,10 +926,15 @@ assert_gh_pr_create_draft() {
   if ! grep -E '(^|[[:space:]])--draft([[:space:]]|$)' "$log" >/dev/null 2>&1; then
     return 1
   fi
-  if ! grep -E '(^|[[:space:]])--base[[:space:]]+develop([[:space:]]|$)' "$log" >/dev/null 2>&1; then
+  if ! grep -E "(^|[[:space:]])--base[[:space:]]+${base}([[:space:]]|\$)" "$log" >/dev/null 2>&1; then
     return 1
   fi
   return 0
+}
+
+# Assert mock gh saw `pr create` with `--draft` and `--base main`.
+assert_gh_pr_create_draft() {
+  assert_gh_pr_create_draft_base "$1" main
 }
 
 # Count non-empty lines in an invocations log (0 if missing/empty).
@@ -1152,7 +1158,7 @@ TOOL_NAME_WORD_RE='(^|[^[:alnum:]_./])inchworm([^[:alnum:]_]|$)'
 assert_no_tool_name_in_branch_commits() {
   repo=$1
   branch=$2
-  git -C "$repo" log --format='%B' "origin/develop..$branch" 2>/dev/null |
+  git -C "$repo" log --format='%B' "origin/main..$branch" 2>/dev/null |
     grep -qiE "$TOOL_NAME_WORD_RE" && return 1
   return 0
 }
@@ -1162,16 +1168,16 @@ assert_no_tool_name_in_branch_commits() {
 assert_no_tool_name_in_remote_commits() {
   origin=$1
   branch=$2
-  git -C "$origin" log --format='%B' "develop..$branch" 2>/dev/null |
+  git -C "$origin" log --format='%B' "main..$branch" 2>/dev/null |
     grep -qiE "$TOOL_NAME_WORD_RE" && return 1
   return 0
 }
 
-# Commits ahead of origin/develop on an implement branch (0 when unknown).
+# Commits ahead of origin/main on an implement branch (0 when unknown).
 branch_commit_count() {
   repo=$1
   branch=$2
-  git -C "$repo" rev-list --count "origin/develop..$branch" 2>/dev/null || printf '0'
+  git -C "$repo" rev-list --count "origin/main..$branch" 2>/dev/null || printf '0'
 }
 
 # True when a path is present in a branch's tree (works on a bare origin too).
@@ -1260,6 +1266,14 @@ state:
   last_run_date: ${last_run_yaml}
   active_draft_pr: null
 EOF
+}
+
+# Name the repo's trunk in a seeded .inchworm.yml. Column 0 closes the state
+# block above it, so the key lands at the top level.
+set_repo_base_branch() {
+  repo_yml=$1
+  base=$2
+  printf 'base_branch: "%s"\n' "$base" >>"$repo_yml"
 }
 
 # Shared eligible-run bootstrap: registered repo, mocks, data/fixture dirs.
@@ -2554,16 +2568,16 @@ test_run_live_implement_commits_agent_work() {
   if [ -z "$branch_name" ]; then
     problems="${problems}expected an implement branch after live implement"$'\n'
   else
-    ahead=$(git -C "$repo_dir" rev-list --count "origin/develop..$branch_name" 2>/dev/null || printf '0')
+    ahead=$(git -C "$repo_dir" rev-list --count "origin/main..$branch_name" 2>/dev/null || printf '0')
     if [ "$ahead" -lt 1 ]; then
-      problems="${problems}expected >=1 commit ahead of origin/develop on $branch_name, got: $ahead"$'\n'
+      problems="${problems}expected >=1 commit ahead of origin/main on $branch_name, got: $ahead"$'\n'
     fi
     if ! git -C "$repo_dir" show "$branch_name:agent-work.txt" >/dev/null 2>&1; then
       problems="${problems}agent work must be committed on $branch_name"$'\n'
     fi
   fi
   if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
-    problems="${problems}expected gh pr create --draft --base develop after committed implement"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+    problems="${problems}expected gh pr create --draft --base main after committed implement"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
   fi
   if [ "$draft_cache" != "https://example.test/pr/99" ]; then
     problems="${problems}expected active_draft_pr set, got: $draft_cache"$'\n'
@@ -2808,7 +2822,7 @@ test_run_rewrites_commit_that_names_the_runner() {
     problems="${problems}expected implement branch"$'\n'
   else
     if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
-      problems="${problems}commit messages must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/develop..$branch_name")"$'\n'
+      problems="${problems}commit messages must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/main..$branch_name")"$'\n'
     fi
     subject=$(git -C "$repo_dir" log -1 --format='%s' "$branch_name" 2>/dev/null || true)
     if [ "$subject" != "Stop retrying failed exports" ]; then
@@ -3154,20 +3168,20 @@ test_run_hand_cut_draft_does_not_block() {
   pass "$test_name"
 }
 
-# --- Implement base: always origin/develop after fetch -----------------------
+# --- Implement base: always origin/main after fetch -----------------------
 
 test_run_implement_base_ignores_checked_out_feature() {
   # Regression: checked-out feature branch must not become the implement base.
-  test_name="implement worktree bases on origin/develop, not checked-out feature"
+  test_name="implement worktree bases on origin/main, not checked-out feature"
   now="2026-08-18T10:00:00"
   implement_fixture=success
   setup_eligible_run_env "base-feature"
 
-  printf 'develop-tip\n' >"$repo_dir/develop-marker.txt"
-  git -C "$repo_dir" add develop-marker.txt
-  git -C "$repo_dir" commit -q -m "develop tip marker"
-  develop_tip=$(git -C "$repo_dir" rev-parse HEAD)
-  git -C "$repo_dir" push -q origin develop
+  printf 'main-tip\n' >"$repo_dir/main-marker.txt"
+  git -C "$repo_dir" add main-marker.txt
+  git -C "$repo_dir" commit -q -m "main tip marker"
+  main_tip=$(git -C "$repo_dir" rev-parse HEAD)
+  git -C "$repo_dir" push -q origin main
 
   git -C "$repo_dir" checkout -q -b feature/local-wip
   printf 'feature-only\n' >"$repo_dir/feature-marker.txt"
@@ -3176,7 +3190,7 @@ test_run_implement_base_ignores_checked_out_feature() {
   feature_tip=$(git -C "$repo_dir" rev-parse HEAD)
 
   write_smell_candidates_json "$fixture_dir" \
-    '[{"id":"base-feature","source":"smell","title":"Base from develop","summary":"must ignore feature HEAD","rank":1,"status":"open"}]'
+    '[{"id":"base-feature","source":"smell","title":"Base from main","summary":"must ignore feature HEAD","rank":1,"status":"open"}]'
 
   out_file="$TEST_ROOT/run-base-feature-out.txt"
   (
@@ -3203,22 +3217,22 @@ test_run_implement_base_ignores_checked_out_feature() {
   if [ -z "$branch_name" ]; then
     problems="${problems}expected implement branch"$'\n'
   else
-    if ! git -C "$repo_dir" merge-base --is-ancestor origin/develop "$branch_name"; then
-      problems="${problems}origin/develop must be an ancestor of $branch_name"$'\n'
+    if ! git -C "$repo_dir" merge-base --is-ancestor origin/main "$branch_name"; then
+      problems="${problems}origin/main must be an ancestor of $branch_name"$'\n'
     fi
     if git -C "$repo_dir" merge-base --is-ancestor "$feature_tip" "$branch_name"; then
       problems="${problems}$branch_name must not include feature tip $feature_tip (based on feature HEAD)"$'\n'
     fi
-    inchworm_base=$(git -C "$repo_dir" merge-base "$branch_name" origin/develop)
-    if [ "$inchworm_base" != "$(git -C "$repo_dir" rev-parse origin/develop)" ]; then
-      problems="${problems}merge-base with origin/develop must be origin/develop tip"$'\n'
+    inchworm_base=$(git -C "$repo_dir" merge-base "$branch_name" origin/main)
+    if [ "$inchworm_base" != "$(git -C "$repo_dir" rev-parse origin/main)" ]; then
+      problems="${problems}merge-base with origin/main must be origin/main tip"$'\n'
     fi
-    if [ "$(git -C "$repo_dir" rev-parse origin/develop)" != "$develop_tip" ]; then
-      problems="${problems}origin/develop tip drift: expected $develop_tip"$'\n'
+    if [ "$(git -C "$repo_dir" rev-parse origin/main)" != "$main_tip" ]; then
+      problems="${problems}origin/main tip drift: expected $main_tip"$'\n'
     fi
   fi
   if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
-    problems="${problems}expected gh pr create --draft --base develop"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+    problems="${problems}expected gh pr create --draft --base main"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
   fi
 
   if [ -n "$problems" ]; then
@@ -3230,27 +3244,151 @@ test_run_implement_base_ignores_checked_out_feature() {
   pass "$test_name"
 }
 
+test_run_base_branch_config_moves_the_trunk() {
+  # A repo that names a non-default trunk in .inchworm.yml.
+  test_name="base_branch config moves both the implement base and the PR base"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "base-config"
+
+  git -C "$repo_dir" checkout -q -b develop
+  printf 'develop-tip\n' >"$repo_dir/develop-marker.txt"
+  git -C "$repo_dir" add develop-marker.txt
+  git -C "$repo_dir" commit -q -m "develop tip marker"
+  develop_tip=$(git -C "$repo_dir" rev-parse HEAD)
+  git -C "$repo_dir" push -q origin develop
+  git -C "$repo_dir" checkout -q main
+
+  set_repo_base_branch "$repo_dir/.inchworm.yml" develop
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"base-config","source":"smell","title":"Base from develop","summary":"the trunk is not the default","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-base-config-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    unset INCHWORM_BASE_BRANCH 2>/dev/null || true
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  branch_name=$(first_implement_branch "$repo_dir")
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [ -z "$branch_name" ]; then
+    problems="${problems}expected implement branch"$'\n'
+  elif ! git -C "$repo_dir" merge-base --is-ancestor "$develop_tip" "$branch_name"; then
+    problems="${problems}$branch_name must be based on the develop tip $develop_tip"$'\n'
+  fi
+  if ! assert_gh_pr_create_draft_base "$TEST_ROOT/gh-invocations.log" develop; then
+    problems="${problems}expected gh pr create --draft --base develop"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "branches:" "$(git -C "$repo_dir" branch -vv 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_trunk_deleted_on_remote_is_not_reused_from_stale_ref() {
+  # Regression: when the trunk is deleted on the remote, the local
+  # remote-tracking ref outlives it. A fetch without --prune keeps resolving
+  # that stale ref, so every run branches from a frozen snapshot and only
+  # fails later, at `gh pr create`, against a base that no longer exists.
+  # Unlike the missing-origin/main test, the stale ref is left in place here.
+  test_name="trunk deleted on the remote is pruned, not reused from a stale ref"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "pruned-trunk"
+
+  stale_tip=$(git -C "$repo_dir" rev-parse refs/remotes/origin/main)
+  git -C "$repo_dir" branch -M leftover
+  git -C "$repo_dir" push -q origin leftover
+  # Bare repos refuse to delete the branch HEAD points at.
+  git -C "$origin_dir" symbolic-ref HEAD refs/heads/leftover
+  git -C "$repo_dir" push -q origin --delete main
+  # Deleting through our own clone prunes the ref as a side effect. Put it back:
+  # when someone else deletes the branch, this clone keeps the ref until it prunes.
+  git -C "$repo_dir" update-ref refs/remotes/origin/main "$stale_tip"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"stale-trunk","source":"smell","title":"Stale trunk","summary":"live path must soft-fail","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-pruned-trunk-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0 (soft skip), got $status"$'\n'
+  fi
+  if git -C "$repo_dir" rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+    problems="${problems}stale refs/remotes/origin/main must be pruned by the fetch"$'\n'
+  fi
+  if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}must not open a PR against a base the remote no longer has"$'\n'
+  fi
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}last_run_date must stay null when there is no base to work from, got: $after_last"$'\n'
+  fi
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}expected a failure alert, got: $(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "refs:" "$(git -C "$repo_dir" show-ref 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
 test_run_implement_fetches_origin_before_worktree() {
-  # Worktree must see a develop tip that only exists on origin after fetch.
-  test_name="implement fetches origin so worktree sees remote develop tip"
+  # Worktree must see a main tip that only exists on origin after fetch.
+  test_name="implement fetches origin so worktree sees remote main tip"
   now="2026-08-18T10:00:00"
   implement_fixture=success
   setup_eligible_run_env "base-fetch"
 
-  remote_tip=$(push_remote_only_develop_commit \
+  remote_tip=$(push_remote_only_main_commit \
     "$TEST_ROOT/run-base-fetch-origin.git" \
-    "only-on-remote-develop" \
+    "only-on-remote-main" \
     "$TEST_ROOT/run-base-fetch-remote-clone")
 
   # Stale tracking ref proves we have not fetched yet.
-  local_tracking=$(git -C "$repo_dir" rev-parse origin/develop)
+  local_tracking=$(git -C "$repo_dir" rev-parse origin/main)
   if [ "$local_tracking" = "$remote_tip" ]; then
-    fail "$test_name" "precondition failed: origin/develop already at remote tip before run"
+    fail "$test_name" "precondition failed: origin/main already at remote tip before run"
     return
   fi
 
   write_smell_candidates_json "$fixture_dir" \
-    '[{"id":"base-fetch","source":"smell","title":"Fetch then base","summary":"must fetch origin/develop","rank":1,"status":"open"}]'
+    '[{"id":"base-fetch","source":"smell","title":"Fetch then base","summary":"must fetch origin/main","rank":1,"status":"open"}]'
 
   out_file="$TEST_ROOT/run-base-fetch-out.txt"
   (
@@ -3274,21 +3412,21 @@ test_run_implement_fetches_origin_before_worktree() {
   if [ "$status" -ne 0 ]; then
     problems="${problems}expected exit 0, got $status"$'\n'
   fi
-  if [ "$(git -C "$repo_dir" rev-parse origin/develop)" != "$remote_tip" ]; then
-    problems="${problems}expected origin/develop updated to remote tip $remote_tip after fetch"$'\n'
+  if [ "$(git -C "$repo_dir" rev-parse origin/main)" != "$remote_tip" ]; then
+    problems="${problems}expected origin/main updated to remote tip $remote_tip after fetch"$'\n'
   fi
   if [ -z "$branch_name" ]; then
     problems="${problems}expected implement branch"$'\n'
   elif ! git -C "$repo_dir" merge-base --is-ancestor "$remote_tip" "$branch_name"; then
-    problems="${problems}$branch_name must include remote-only develop tip $remote_tip"$'\n'
+    problems="${problems}$branch_name must include remote-only main tip $remote_tip"$'\n'
   fi
-  if ! git -C "$repo_dir" show "$branch_name:remote-only-develop.txt" >/dev/null 2>&1; then
-    problems="${problems}inchworm branch must contain remote-only-develop.txt from fetched develop"$'\n'
+  if ! git -C "$repo_dir" show "$branch_name:remote-only-main.txt" >/dev/null 2>&1; then
+    problems="${problems}inchworm branch must contain remote-only-main.txt from fetched main"$'\n'
   fi
 
   if [ -n "$problems" ]; then
     fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
-      "origin/develop=$(git -C "$repo_dir" rev-parse origin/develop 2>/dev/null || true)" \
+      "origin/main=$(git -C "$repo_dir" rev-parse origin/main 2>/dev/null || true)" \
       "remote_tip=$remote_tip"
     return
   fi
@@ -3424,22 +3562,23 @@ test_run_draft_pr_create_failure_keeps_find_open() {
   pass "$test_name"
 }
 
-test_run_missing_origin_develop_skips_without_stamp() {
-  test_name="missing origin/develop skips without stamping and alerts"
+test_run_missing_origin_main_skips_without_stamp() {
+  test_name="missing origin/main skips without stamping and alerts"
   now="2026-08-18T10:00:00"
-  setup_eligible_run_env "missing-develop"
+  setup_eligible_run_env "missing-main"
 
-  # Origin exists but only has a non-develop branch — no origin/develop.
-  git -C "$repo_dir" branch -M main
-  git -C "$repo_dir" push -q origin refs/heads/main:refs/heads/main
-  git -C "$repo_dir" push -q origin --delete develop 2>/dev/null || true
-  git -C "$repo_dir" update-ref -d refs/remotes/origin/develop 2>/dev/null || true
-  git -C "$repo_dir" branch -D develop 2>/dev/null || true
+  # Origin exists but only has a non-main branch — no origin/main.
+  git -C "$repo_dir" branch -M leftover
+  git -C "$repo_dir" push -q origin leftover
+  git -C "$origin_dir" symbolic-ref HEAD refs/heads/leftover
+  git -C "$repo_dir" push -q origin --delete main 2>/dev/null || true
+  git -C "$repo_dir" update-ref -d refs/remotes/origin/main 2>/dev/null || true
+  git -C "$repo_dir" branch -D main 2>/dev/null || true
 
   write_smell_candidates_json "$fixture_dir" \
-    '[{"id":"missing-dev","source":"smell","title":"No develop","summary":"live path must soft-fail","rank":1,"status":"open"}]'
+    '[{"id":"missing-main","source":"smell","title":"No main","summary":"live path must soft-fail","rank":1,"status":"open"}]'
 
-  out_file="$TEST_ROOT/run-missing-develop-out.txt"
+  out_file="$TEST_ROOT/run-missing-main-out.txt"
   (
     export INCHWORM_CONFIG_DIR="$config_dir"
     export INCHWORM_NOW="$now"
@@ -3462,7 +3601,7 @@ test_run_missing_origin_develop_skips_without_stamp() {
     problems="${problems}expected exit 0 (soft skip), got $status"$'\n'
   fi
   if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
-    problems="${problems}must not open a PR when origin/develop is missing"$'\n'
+    problems="${problems}must not open a PR when origin/main is missing"$'\n'
   fi
   if [ "$draft_cache" != "null" ]; then
     problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
@@ -3472,10 +3611,10 @@ test_run_missing_origin_develop_skips_without_stamp() {
     problems="${problems}last_run_date must stay null when there is no base to work from, got: $after_last"$'\n'
   fi
   if [ -e "$finds_md" ]; then
-    problems="${problems}must not judge a find when origin/develop is missing: $finds_md"$'\n'
+    problems="${problems}must not judge a find when origin/main is missing: $finds_md"$'\n'
   fi
-  if ! grep -qiE 'origin/develop|fetch origin|no origin' "$out_file"; then
-    problems="${problems}expected clear signal mentioning origin/develop or fetch failure"$'\n'
+  if ! grep -qiE 'origin/main|fetch origin|no origin' "$out_file"; then
+    problems="${problems}expected clear signal mentioning origin/main or fetch failure"$'\n'
   fi
   if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
     problems="${problems}expected a failure alert, got: $(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
@@ -3852,10 +3991,10 @@ test_run_fixer_work_lands_on_the_implement_branch() {
     fi
     ahead=$(branch_commit_count "$repo_dir" "$branch_name")
     if [ "$ahead" != "1" ]; then
-      problems="${problems}expected one authored commit ahead of origin/develop, got: $ahead"$'\n'"$(git -C "$repo_dir" log --oneline "origin/develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}expected one authored commit ahead of origin/main, got: $ahead"$'\n'"$(git -C "$repo_dir" log --oneline "origin/main..$branch_name" 2>/dev/null || true)"$'\n'
     fi
     if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
-      problems="${problems}rewritten history must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/develop..$branch_name")"$'\n'
+      problems="${problems}rewritten history must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/main..$branch_name")"$'\n'
     fi
   fi
   if ! grep -qiE 'skipping the post-fix push.*--force-with-lease' "$out_file"; then
@@ -3921,10 +4060,10 @@ test_run_fixer_rewrite_pushes_authored_history() {
   else
     ahead=$(branch_commit_count "$repo_dir" "$branch_name")
     if [ "$ahead" != "1" ]; then
-      problems="${problems}expected implement + fix squashed to one commit, got: $ahead"$'\n'"$(git -C "$repo_dir" log --oneline "origin/develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}expected implement + fix squashed to one commit, got: $ahead"$'\n'"$(git -C "$repo_dir" log --oneline "origin/main..$branch_name" 2>/dev/null || true)"$'\n'
     fi
     if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
-      problems="${problems}history after the fix must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/develop..$branch_name")"$'\n'
+      problems="${problems}history after the fix must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/main..$branch_name")"$'\n'
     fi
     subject=$(git -C "$repo_dir" log -1 --format='%s' "$branch_name" 2>/dev/null || true)
     # Implementer named the runner, so the pre-fix commit is already the find
@@ -3949,7 +4088,7 @@ test_run_fixer_rewrite_pushes_authored_history() {
       problems="${problems}the fix must reach the remote branch the human is pinged about"$'\n'
     fi
     if ! assert_no_tool_name_in_remote_commits "$origin_dir" "$branch_name"; then
-      problems="${problems}pushed history must not name the runner:"$'\n'"$(git -C "$origin_dir" log --format='%B' "develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}pushed history must not name the runner:"$'\n'"$(git -C "$origin_dir" log --format='%B' "main..$branch_name" 2>/dev/null || true)"$'\n'
     fi
   fi
   if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
@@ -4025,7 +4164,7 @@ test_run_fixer_preserves_clean_implementer_message() {
       problems="${problems}a clean implementer message must allow the fix to be published"$'\n'
     fi
     if ! assert_no_tool_name_in_branch_commits "$repo_dir" "$branch_name"; then
-      problems="${problems}squashed history must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/develop..$branch_name")"$'\n'
+      problems="${problems}squashed history must not name the runner:"$'\n'"$(git -C "$repo_dir" log --format='%B' "origin/main..$branch_name")"$'\n'
     fi
   fi
   if grep -qiE 'refusing to push|fix stayed local' "$out_file"; then
@@ -4152,10 +4291,10 @@ test_run_dirty_fix_history_is_not_pushed() {
       problems="${problems}the first push must have put the implement work on the remote"$'\n'
     fi
     if branch_has_file "$origin_dir" "$branch_name" "fix-work.txt"; then
-      problems="${problems}must not push the fix when squash cannot publish"$'\n'"$(git -C "$origin_dir" log --format='%B' "develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}must not push the fix when squash cannot publish"$'\n'"$(git -C "$origin_dir" log --format='%B' "main..$branch_name" 2>/dev/null || true)"$'\n'
     fi
     if branch_has_file "$repo_dir" "$branch_name" "fix-work.txt"; then
-      problems="${problems}local HEAD must match pre-fix history; fix-work.txt must not remain"$'\n'"$(git -C "$repo_dir" log --oneline "origin/develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}local HEAD must match pre-fix history; fix-work.txt must not remain"$'\n'"$(git -C "$repo_dir" log --oneline "origin/main..$branch_name" 2>/dev/null || true)"$'\n'
     fi
     local_sha=$(git -C "$repo_dir" rev-parse "$branch_name" 2>/dev/null || printf 'none')
     remote_sha=$(git -C "$origin_dir" rev-parse --verify --quiet "refs/heads/$branch_name" 2>/dev/null || printf 'none')
@@ -4163,7 +4302,7 @@ test_run_dirty_fix_history_is_not_pushed() {
       problems="${problems}local $branch_name must match the already-pushed implement SHA (local=$local_sha remote=$remote_sha)"$'\n'
     fi
     if ! assert_no_tool_name_in_remote_commits "$origin_dir" "$branch_name"; then
-      problems="${problems}pushed history must stay clean:"$'\n'"$(git -C "$origin_dir" log --format='%B' "develop..$branch_name" 2>/dev/null || true)"$'\n'
+      problems="${problems}pushed history must stay clean:"$'\n'"$(git -C "$origin_dir" log --format='%B' "main..$branch_name" 2>/dev/null || true)"$'\n'
     fi
   fi
   if ! grep -qiE 'refusing to push|fix stayed local' "$out_file"; then
@@ -5135,7 +5274,7 @@ test_review_unique_draft_switches_worktree_and_launches_agent() {
   test_name="unique review draft switches Worktrunk and launches a relic/force-with-lease agent"
   setup_review_command_env "review-unique"
   branch="${TEST_BRANCH_PREFIX}/foo-20260817"
-  git -C "$repo_dir" branch "$branch" develop
+  git -C "$repo_dir" branch "$branch" main
   write_review_gh_list "$repo_dir" \
     "[{\"number\":42,\"url\":\"https://example.test/pr/42\",\"isDraft\":true,\"headRefName\":\"${branch}\"}]"
   expected_wt=$(review_worktree_path_for "$repo_dir" "$branch")
@@ -5190,8 +5329,8 @@ test_review_argv_skips_prompt_when_unique() {
   setup_review_command_env "review-argv"
   branch_a="${TEST_BRANCH_PREFIX}/foo-20260817"
   branch_b="${TEST_BRANCH_PREFIX}/other-20260818"
-  git -C "$repo_dir" branch "$branch_a" develop
-  git -C "$repo_dir" branch "$branch_b" develop
+  git -C "$repo_dir" branch "$branch_a" main
+  git -C "$repo_dir" branch "$branch_b" main
   write_review_gh_list "$repo_dir" \
     "[{\"number\":42,\"url\":\"https://example.test/pr/42\",\"isDraft\":true,\"headRefName\":\"${branch_a}\"},{\"number\":50,\"url\":\"https://example.test/pr/50\",\"isDraft\":true,\"headRefName\":\"${branch_b}\"}]"
 
@@ -5226,7 +5365,7 @@ repos:
   - path: ${repo_a}
   - path: ${repo_b}
 EOF
-  git -C "$repo_b" branch "$branch_b" develop
+  git -C "$repo_b" branch "$branch_b" main
   write_review_gh_list "$repo_b" \
     "[{\"number\":50,\"url\":\"https://example.test/pr/50\",\"isDraft\":true,\"headRefName\":\"${branch_b}\"}]"
   : >"$TEST_ROOT/wt-invocations.log"
@@ -5318,10 +5457,12 @@ run_test test_run_branch_prefix_falls_back_to_git_identity
 run_test test_run_recorded_draft_blocks_after_branch_rename
 run_test test_run_hand_cut_draft_does_not_block
 run_test test_run_implement_base_ignores_checked_out_feature
+run_test test_run_base_branch_config_moves_the_trunk
+run_test test_run_trunk_deleted_on_remote_is_not_reused_from_stale_ref
 run_test test_run_implement_fetches_origin_before_worktree
 run_test test_run_preflight_fetch_failure_skips_without_stamp
 run_test test_run_draft_pr_create_failure_keeps_find_open
-run_test test_run_missing_origin_develop_skips_without_stamp
+run_test test_run_missing_origin_main_skips_without_stamp
 run_test test_run_pick_open_over_deferred
 run_test test_run_pick_prefers_lower_rank
 run_test test_run_review_none_pings_without_fixer

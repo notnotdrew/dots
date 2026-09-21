@@ -15,7 +15,7 @@ The human is pinged next, so this is the point where the remote draft branch has
 
 1. `commit_leftover_changes` — fixers routinely edit files and never commit them; the leftover commit uses the find's subject and body
 2. If nothing changed since the fixer started, stop: the pushed branch already matches
-3. Squash `origin/develop..HEAD` into one authored commit (always — not only when a message is dirty). Message order: clean pre-fix implement commit, else clean find fallback. If squash `reset --soft` fails, or neither message is clean, `reset --hard` to the pre-fix SHA so the checkout matches the already-pushed implement history; do not push. See [authored-output](authored-output.md)
+3. Squash `origin/<base_branch>..HEAD` into one authored commit (always — not only when a message is dirty). Message order: clean pre-fix implement commit, else clean find fallback. If squash `reset --soft` fails, or neither message is clean, `reset --hard` to the pre-fix SHA so the checkout matches the already-pushed implement history; do not push. See [authored-output](authored-output.md)
 4. `git push --force-with-lease origin HEAD` — updates the branch the draft PR already points at; the lease is what stops a human's commit being dropped
 
 Rules:

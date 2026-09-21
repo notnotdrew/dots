@@ -107,6 +107,8 @@ when "ensure_repo_yml"
         "guidance" => "",
         # Branch namespace, e.g. "drew" → drew/<slug>-<date>. Blank uses git user.name.
         "branch_prefix" => "",
+        # Trunk to branch from and open PRs against. Blank uses "main".
+        "base_branch" => "",
         "state" => {
           "last_run_date" => nil,
           "active_draft_pr" => nil

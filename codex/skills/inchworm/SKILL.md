@@ -17,15 +17,15 @@ LaunchAgent ticks call gated `inchworm run`. `inchworm now` is the same core wit
 
 On an eligible `inchworm run`:
 
-1. Preflight before spending anything: `wt`, `origin`, a successful `git fetch origin`, a resolvable `origin/develop`. A failure here is a day that never started — no stamp, no scouts, no find touched, alert the human, and the next tick in the window retries (see [discover-boundary](references/discover-boundary.md))
+1. Preflight before spending anything: `wt`, `origin`, a successful `git fetch origin --prune`, a resolvable trunk (`origin/<base_branch>`, default `main`). A failure here is a day that never started — no stamp, no scouts, no find touched, alert the human, and the next tick in the window retries (see [discover-boundary](references/discover-boundary.md))
 2. Stamp `last_run_date` (burns the day; no second pick same day)
 3. Ensure the finds directory for the repo path hash
 4. Run scouts (smell, lint, errors, backlog — fixtures when `INCHWORM_SCOUT_FIXTURE_DIR` is set; otherwise live `INCHWORM_AGENT` per source)
 5. Curator merges candidates into `finds.md`, then tidies (drop `deferred`/`too_large`; cap open at 20)
 6. Pick the highest-priority open find (lowest rank)
 7. If none: **stop** — no implementer, no worktree, no `gh pr create`
-8. If selected: run the **implementer** in a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on freshly fetched `origin/develop`
-9. On success: **push** the branch — the first push, `git push -u origin HEAD`, never forced — then coordinator `gh pr create --draft --base develop`, set `state.active_draft_pr` to the PR URL, mark find `in_pr`
+8. If selected: run the **implementer** in a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on the freshly fetched trunk
+9. On success: **push** the branch — the first push, `git push -u origin HEAD`, never forced — then coordinator `gh pr create --draft --base <base_branch>`, set `state.active_draft_pr` to the PR URL, mark find `in_pr`
 10. On implement failure: no PR, **no second pick** (stamp already burned), skip review / fixer / ping, and alert the human. The find is marked `deferred` (or `too_large`) only when the attempt actually judged *it*; when the network, `gh`, or the remote is what failed, the find stays `open` so the next day can pick it up again — the next tidy drops `deferred`
 11. After successful draft PR: run full **Standard `pr-review`** once (not lite) → map verified blockers → optional one **fixer** pass → squash implement + fix into one authored commit and update the draft branch with `git push --force-with-lease` → **ping** immediately; then `wt remove --no-delete-branch` the implement checkout (keep the branch)
 

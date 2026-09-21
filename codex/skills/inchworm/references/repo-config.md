@@ -8,6 +8,7 @@ guidance: |
   Use honeybadger for error investigation.
   Do not work on the HubSpot sync — it is going away.
 branch_prefix: ""
+base_branch: ""
 state:
   last_run_date: null
   active_draft_pr: null
@@ -24,6 +25,12 @@ Empty or omitted → no section added. Because `.inchworm.yml` is gitignored, gu
 ## `branch_prefix`
 
 Branch namespace for implement branches, e.g. `drew` → `drew/<slug>-<YYYYMMDD>`. Blank falls back to `git config user.name`, then the local part of `user.email`. `INCHWORM_BRANCH_PREFIX` overrides both.
+
+## `base_branch`
+
+The repo's trunk: implement branches are cut from `origin/<base_branch>` and the draft PR opens against it. Blank means `main`. `INCHWORM_BASE_BRANCH` overrides it.
+
+Set this when a repo renames its trunk. The preflight fetch prunes, so a trunk that no longer exists on the remote fails the day loudly instead of resolving to a stale remote-tracking ref and branching from a frozen snapshot.
 
 ## `state`
 
