@@ -9,6 +9,8 @@
 # Skips the planner; naming is fixed: item tidy, project Herdr.
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/lib/herdr-pane-agent.bash"
+
 HERDR="${HERDR_BIN_PATH:-herdr}"
 REPO_ROOT=/Users/drew/dots
 BRANCH_PREFIX=drew/tidy-herdr-
@@ -21,6 +23,11 @@ die() {
   read -r -n 1 -s -p 'Press any key to close.' || true
   exit 1
 }
+
+# The worktree sweep below runs before anything is handed off, and this pane
+# holds a die prompt if it fails. herdr-start-work relabels on exec.
+herdr_pane_agent tidy
+trap herdr_pane_agent_release EXIT
 
 command -v jq >/dev/null 2>&1 || die 'jq is required'
 

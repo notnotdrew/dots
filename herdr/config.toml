@@ -71,8 +71,14 @@ description = "worktree: switch / create including remotes"
 # session-modal: while it is up, prefix chords and workspace switching are
 # swallowed, so a minute-long herdr-start-work traps the whole session. A pane
 # is a real pane in the current tab that closes when the command exits, so the
-# flow can be left running while you work elsewhere and focused again later.
+# flow can be left running while you work elsewhere.
 # Panes take no width/height; herdr warns and ignores them.
+#
+# A pane is not ephemeral, though: it holds a split in whichever workspace was
+# focused, and nothing in Herdr lists plain panes across workspaces. Each of
+# these scripts sources bin/lib/herdr-pane-agent.bash to claim a row in the
+# Agents panel while it runs, so a split left waiting for a keypress can be
+# found from anywhere with ctrl+shift+up / ctrl+shift+down.
 
 # Curated shortlist of keys worth using, kept in herdr/keybindings.md.
 # prefix+? still shows the full live keymap.

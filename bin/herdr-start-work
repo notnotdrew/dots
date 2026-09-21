@@ -14,6 +14,8 @@
 # happens here so a bad plan cannot create branches or move panes on its own.
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/lib/herdr-pane-agent.bash"
+
 HERDR="${HERDR_BIN_PATH:-herdr}"
 NOTE_SOURCE=herdr-note
 AGENT_KIND=cursor
@@ -25,6 +27,7 @@ DISPATCHABLE='prrr'
 # substitution would append to the array inside a subshell.
 TMPFILES=()
 cleanup() {
+  herdr_pane_agent_release
   [ ${#TMPFILES[@]} -gt 0 ] && rm -f "${TMPFILES[@]}"
   # An EXIT trap that ends on a false test takes the script's status with it.
   return 0
@@ -53,12 +56,17 @@ flush_input() {
 # own, so show elapsed time to distinguish slow from hung.
 spinner() {
   local pid="$1" label="$2" frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' start=$SECONDS i=0
+  # Every long step runs behind this spinner, so it owns the reported state:
+  # working while the step runs, back to blocked between steps, where the
+  # flow is either asking something or finished with a message to read.
+  herdr_pane_state working
   while kill -0 "$pid" 2>/dev/null; do
     printf '\r%s %s %ds' "${frames:i%10:1}" "$label" "$((SECONDS - start))"
     i=$((i + 1))
     sleep 0.1
   done
   printf '\r%s %s %ds\n' '✓' "$label" "$((SECONDS - start))"
+  herdr_pane_state blocked
 }
 
 # Herdr agent names must match [a-z][a-z0-9_-]{0,31} and be unique among live
@@ -197,6 +205,12 @@ run_commands_plan() {
   printf '\n'
   read -r -t 5 -n 1 -s -p 'Press any key to close.' || true
 }
+
+# This pane outlives the workspace it was launched from: the worktree below is
+# created with --focus, so the rest of this run reports progress into a split
+# Drew has already left. Claim an Agents row before anything can block, die
+# included.
+herdr_pane_agent start-work
 
 command -v jq >/dev/null 2>&1 || die 'jq is required'
 

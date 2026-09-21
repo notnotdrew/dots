@@ -9,6 +9,8 @@
 # cleared, or the workspace closes; nothing is written to disk.
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/lib/herdr-pane-agent.bash"
+
 SOURCE_ID=herdr-note
 MAX_LENGTH=80
 
@@ -20,6 +22,9 @@ die() {
 }
 
 command -v jq >/dev/null 2>&1 || die 'jq is required'
+
+herdr_pane_agent note
+trap herdr_pane_agent_release EXIT
 
 workspaces=$(herdr workspace list) || die 'cannot reach the Herdr server'
 

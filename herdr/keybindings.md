@@ -17,8 +17,8 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
 ## Agents and navigation
 
-    ctrl+shift+up     previous agent in the Agents panel
-    ctrl+shift+down   next agent in the Agents panel
+    ctrl+shift+up     previous agent or pane command in the Agents panel
+    ctrl+shift+down   next agent or pane command in the Agents panel
     prefix+h/j/k/l    move between panes
     prefix+n / p      next / previous tab
     prefix+1..9       jump to tab 1-9
@@ -41,6 +41,12 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
 ## Recently added or discussed
 
+    2026-09-21  the four pane commands now report themselves to the Agents
+                panel while they run, labelled keys, note, start-work or
+                tidy. Step to one with ctrl+shift+up / ctrl+shift+down: the
+                row names the workspace and tab holding it, and blocked
+                means it is waiting on a keypress. They release the row and
+                the pane name on exit.
     2026-09-21  prefix+u, prefix+shift+m, prefix+shift+s and prefix+shift+y
                 run as panes instead of popups. A popup is session-modal:
                 nothing else reaches herdr until it closes, so a minute of
@@ -69,3 +75,11 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
     so anything that waits on an agent or a long command belongs in a pane.
     Only popups take width and height; on a pane herdr warns and ignores
     them, and the pane is sized by the tab layout instead.
+
+    A pane command is not ephemeral. It takes over the workspace it was
+    launched in, holding a split there until it exits, and start-work
+    focuses the new worktree while its own pane is still reporting progress
+    into the workspace you left. Nothing in Herdr lists plain panes across
+    workspaces, which is how one gets lost. That is why they claim an
+    Agents row: it is the one surface that names another workspace's pane
+    and rolls its state up onto the Spaces row.

@@ -9,6 +9,8 @@
 # shows every active binding straight from the running config.
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/lib/herdr-pane-agent.bash"
+
 sheet=$HOME/dots/herdr/keybindings.md
 
 if [ ! -f "$sheet" ]; then
@@ -18,8 +20,14 @@ if [ ! -f "$sheet" ]; then
   exit 1
 fi
 
-if command -v bat >/dev/null 2>&1; then
-  exec bat --language=md --style=plain --paging=always "$sheet"
-fi
+# Reading a cheatsheet is not a decision, so this one sits idle rather than
+# blocked. It still gets a row in the Agents panel to find and close.
+# The pager runs as a child rather than exec so the release trap still fires.
+herdr_pane_agent keys idle
+trap herdr_pane_agent_release EXIT
 
-exec less -R "$sheet"
+if command -v bat >/dev/null 2>&1; then
+  bat --language=md --style=plain --paging=always "$sheet"
+else
+  less -R "$sheet"
+fi
