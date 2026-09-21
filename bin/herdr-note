@@ -3,7 +3,7 @@
 # Space sidebar row.
 #
 # Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
-# Bound to prefix+shift+m in ~/dots/herdr/config.toml as a popup command.
+# Bound to prefix+shift+m in ~/dots/herdr/config.toml as a pane command.
 #
 # Notes are display-only runtime state. Herdr keeps one until it is replaced,
 # cleared, or the workspace closes; nothing is written to disk.
@@ -14,7 +14,7 @@ MAX_LENGTH=80
 
 die() {
   printf '%s: error: %s\n' "$(basename "$0")" "$1" >&2
-  # The popup closes the moment this exits, so hold it open to be read.
+  # The pane closes the moment this exits, so hold it open to be read.
   read -r -n 1 -s -p 'Press any key to close.' || true
   exit 1
 }

@@ -7,7 +7,8 @@
 # plan, which runs here and exits without opening anything.
 #
 # Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
-# Bound to prefix+shift+s in ~/dots/herdr/config.toml as a popup command.
+# Bound to prefix+shift+s in ~/dots/herdr/config.toml as a pane command, so
+# the session stays usable while this runs.
 #
 # The planning agent only gathers facts and returns JSON. Every mutation
 # happens here so a bad plan cannot create branches or move panes on its own.
@@ -35,15 +36,14 @@ die() {
   if [ -n "${2:-}" ] && [ -s "$2" ]; then
     printf '\n%s\n' "$(<"$2")" >&2
   fi
-  # The popup closes the moment this exits, so hold it open to be read.
+  # The pane closes the moment this exits, so hold it open to be read.
   flush_input
   read -r -n 1 -s -p 'Press any key to close.' || true
   exit 1
 }
 
-# A popup receives every keystroke the session sees, prefix chords included, so
-# anything typed while a step runs waits in stdin and would answer the next
-# prompt before it is on screen.
+# Anything typed into this pane while a step runs waits in stdin and would
+# answer the next prompt before it is on screen.
 flush_input() {
   local _
   while IFS= read -r -s -t 0.05 -n 1024 _; do :; done
@@ -192,7 +192,7 @@ run_commands_plan() {
   done
   [ "$status" -eq 0 ] || die "command failed (exit $status)"
 
-  # The popup closes the moment this exits. Hold it open long enough to read,
+  # The pane closes the moment this exits. Hold it open long enough to read,
   # but not so long that it lingers after a command has moved focus.
   printf '\n'
   read -r -t 5 -n 1 -s -p 'Press any key to close.' || true

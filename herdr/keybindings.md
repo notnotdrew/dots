@@ -41,6 +41,12 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
 ## Recently added or discussed
 
+    2026-09-21  prefix+u, prefix+shift+m, prefix+shift+s and prefix+shift+y
+                run as panes instead of popups. A popup is session-modal:
+                nothing else reaches herdr until it closes, so a minute of
+                planning in start-work locked out workspace switching. As
+                panes they open a split in the current tab, close on exit,
+                and can be left running while you go elsewhere.
     2026-09-18  ctrl+shift+up / ctrl+shift+down step the Agents panel. Herdr
                 has no navigate-mode surface for agents, and iTerm composes
                 alt chords into characters because Option Key Sends is
@@ -56,3 +62,10 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
     prefix+shift+r is worktrunk, not herdr's reload_config default, so
     reload from a shell instead: herdr server reload-config
+
+    Custom commands come in three flavours: shell runs detached with no
+    terminal, pane opens a split that closes when the command exits, and
+    popup opens one session-modal window. Herdr 0.9 has no non-modal popup,
+    so anything that waits on an agent or a long command belongs in a pane.
+    Only popups take width and height; on a pane herdr warns and ignores
+    them, and the pane is sized by the tab layout instead.

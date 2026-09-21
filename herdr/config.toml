@@ -67,41 +67,40 @@ type = "plugin_action"
 command = "worktrunk.open-with-remotes"
 description = "worktree: switch / create including remotes"
 
+# These four run as type = "pane", not type = "popup". A popup is
+# session-modal: while it is up, prefix chords and workspace switching are
+# swallowed, so a minute-long herdr-start-work traps the whole session. A pane
+# is a real pane in the current tab that closes when the command exits, so the
+# flow can be left running while you work elsewhere and focused again later.
+# Panes take no width/height; herdr warns and ignores them.
+
 # Curated shortlist of keys worth using, kept in herdr/keybindings.md.
 # prefix+? still shows the full live keymap.
 [[keys.command]]
 key = "prefix+u"
-type = "popup"
+type = "pane"
 command = "herdr-help"
-width = "70%"
-height = "80%"
 description = "keys worth using"
 
 # Sets the $note token on the branch-row sidebar layout.
 [[keys.command]]
 key = "prefix+shift+m"
-type = "popup"
+type = "pane"
 command = "herdr-note"
-width = "50%"
-height = 8
 description = "workspace: set note"
 
 # Asks what to work on, then creates and staffs a child worktree workspace.
 [[keys.command]]
 key = "prefix+shift+s"
-type = "popup"
+type = "pane"
 command = "herdr-start-work"
-width = "70%"
-height = 16
 description = "workspace: start work on a task"
 
 # Same flow, hardcoded to "tidy herdr" on a dots worktree.
 [[keys.command]]
 key = "prefix+shift+y"
-type = "popup"
+type = "pane"
 command = "herdr-tidy"
-width = "70%"
-height = 16
 description = "workspace: tidy herdr"
 
 [ui]

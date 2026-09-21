@@ -3,7 +3,7 @@
 # of them around.
 #
 # Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
-# Bound to prefix+shift+y in ~/dots/herdr/config.toml as a popup command.
+# Bound to prefix+shift+y in ~/dots/herdr/config.toml as a pane command.
 #
 # Pins the repo to dots so this still works from a screensteps workspace.
 # Skips the planner; naming is fixed: item tidy, project Herdr.

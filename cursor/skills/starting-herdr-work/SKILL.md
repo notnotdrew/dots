@@ -134,7 +134,7 @@ Tell the user the new workspace id, item, project, and branch in one short line.
 
 ## Keybinding
 
-`prefix+shift+s` opens a popup running `~/bin/herdr-start-work`, which does this whole flow unattended: it asks for the request, then runs a headless planning agent that answers with one of two plans.
+`prefix+shift+s` opens a pane running `~/bin/herdr-start-work`, which does this whole flow unattended: it asks for the request, then runs a headless planning agent that answers with one of two plans.
 
 A worktree plan carries the JSON fields above, and the script creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
 

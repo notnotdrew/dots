@@ -2,7 +2,8 @@
 # Show the curated Herdr keybinding cheatsheet.
 #
 # Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
-# Bound to prefix+u in ~/dots/herdr/config.toml as a popup command.
+# Bound to prefix+u in ~/dots/herdr/config.toml as a pane command, so it can
+# stay open in a split while you use the keys it lists.
 #
 # This is the hand-maintained shortlist, not the live keymap. prefix+? still
 # shows every active binding straight from the running config.
@@ -12,7 +13,7 @@ sheet=$HOME/dots/herdr/keybindings.md
 
 if [ ! -f "$sheet" ]; then
   printf '%s: error: %s is missing\n' "$(basename "$0")" "$sheet" >&2
-  # The popup closes the moment this exits, so hold it open to be read.
+  # The pane closes the moment this exits, so hold it open to be read.
   read -r -n 1 -s -p 'Press any key to close.' || true
   exit 1
 fi
