@@ -124,6 +124,17 @@ dir_is_github_repo() {
   [[ "$normalized" == "$want" ]]
 }
 
+# Print the main checkout for a directory in a repo. A linked worktree's
+# toplevel is the worktree itself, and its common dir is the clone's .git.
+main_checkout() {
+  local dir=$1
+  local common
+
+  common="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    || return 1
+  dirname "$common"
+}
+
 # Resolve a local clone for owner/repo.
 # Prefer the current checkout when it already matches; otherwise DEV_ROOT/owner/repo.
 resolve_clone_dir() {
@@ -135,7 +146,10 @@ resolve_clone_dir() {
 
   if toplevel="$(git rev-parse --show-toplevel 2>/dev/null)"; then
     if dir_is_github_repo "$toplevel" "$want"; then
-      printf '%s\n' "$toplevel"
+      # Every caller wants the clone, not whichever worktree we were run from:
+      # wt and the artifacts key off it, and herdr refuses worktree actions
+      # sourced from a linked worktree.
+      main_checkout "$toplevel" || printf '%s\n' "$toplevel"
       return 0
     fi
   fi
