@@ -41,6 +41,12 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
 ## Recently added or discussed
 
+    2026-09-21  start-work plans in ~/.local/state/herdr-start-work instead of
+                whichever workspace the pane landed in. It used to read its
+                own cwd for the repo to branch from, which is a scratch clone
+                under /tmp often enough to matter. It is handed the launching
+                checkout now, and refuses to branch from a scratch one. The
+                last 20 plans stay in runs/ there.
     2026-09-21  the four pane commands now report themselves to the Agents
                 panel while they run, labelled keys, note, start-work or
                 tidy. Step to one with ctrl+shift+up / ctrl+shift+down: the

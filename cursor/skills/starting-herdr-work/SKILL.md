@@ -76,7 +76,7 @@ Copy and check off:
 
 ### 1. Parent repo
 
-Prefer the focused workspace's checkout. If it is already a linked worktree, create against the repo's source workspace:
+Prefer the focused workspace's checkout, unless it is a scratch git dir under `/tmp` or `/var/folders`. Those are probes and test fixtures, so ask which repo instead. If the checkout is already a linked worktree, create against the repo's source workspace:
 
 ```bash
 herdr workspace list
@@ -135,6 +135,8 @@ Tell the user the new workspace id, item, project, and branch in one short line.
 ## Keybinding
 
 `prefix+shift+s` opens a pane running `~/bin/herdr-start-work`, which does this whole flow unattended: it asks for the request, then runs a headless planning agent that answers with one of two plans.
+
+That pane splits whichever workspace is focused, so the planner gets a home of its own at `~/.local/state/herdr-start-work` rather than the inherited cwd, and is told the launching checkout instead of reading it. A launch from a scratch git dir under `/tmp` or `/var/folders` reports no repo, and a plan that names one as `repo_root` is refused.
 
 A worktree plan carries the JSON fields above, and the script creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
 
