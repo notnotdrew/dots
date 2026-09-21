@@ -28,9 +28,10 @@
 #   ctrl-d deep review with --full-rebuild (same-head needs a forced epoch)
 #   ctrl-r resume the most recent agent session for this PR
 #
-# Every agent launch runs in a Herdr workspace named after the PR, sitting in
-# that PR's WorkTrunk checkout. A second launch for the same PR opens a tab in
-# the workspace that already exists.
+# Every agent launch runs in a Herdr workspace labelled "[PR] <title>", with
+# $note "PR Review", opened on that PR's WorkTrunk checkout so it nests under
+# the repo's own workspace. A second launch for the same PR opens a tab in the
+# workspace that already exists.
 
 set -euo pipefail
 
@@ -46,6 +47,7 @@ readonly DEV_ROOT="${PRRR_DEV_ROOT:-${HOME}/dev}"
 readonly EXIT_CANCELLED=130
 readonly CLEAN_MAX_AGE_DAYS=14
 readonly WORKSPACE_LABEL_MAX=52
+readonly WORKSPACE_NOTE='PR Review'
 readonly USAGE="usage: ${SCRIPT_NAME} [list | start <PR-number-or-URL> | start --requested | --clean [PR-number-or-URL] | <PR-number-or-URL>]"
 
 die() {
@@ -190,6 +192,16 @@ workspace_label() {
   printf '%s\n' "$label"
 }
 
+# Set $note the same way herdr-note does, so prefix+shift+m can edit it later.
+set_workspace_note() {
+  local workspace_id=$1
+
+  herdr workspace report-metadata "$workspace_id" \
+    --source herdr-note \
+    --token "note=${WORKSPACE_NOTE}" >/dev/null \
+    || die "herdr workspace report-metadata failed for ${workspace_id}"
+}
+
 # Quote arguments into one command line for `herdr pane run`.
 shell_command() {
   local part command=""
@@ -226,19 +238,53 @@ find_pr_workspace() {
 }
 
 # Run a command in this PR's Herdr workspace, in a pane rooted at its checkout.
-# Reuses the PR's workspace when it exists so re-reviews and follow-up agents
-# stack up as tabs instead of new workspaces.
+# Opens the checkout as a worktree workspace so the space carries repo metadata
+# and nests under its parent repo. Reuses the PR's workspace when it exists so
+# re-reviews and follow-up agents stack up as tabs instead of new workspaces.
 run_in_pr_workspace() {
-  local label=$1
-  local checkout_path=$2
-  local command=$3
-  local workspace_id pane_id
+  local clone_dir=$1
+  local label=$2
+  local checkout_path=$3
+  local command=$4
+  local workspace_id opened
+  local pane_id=""
+  local -a open_args=(--cwd "$clone_dir" --path "$checkout_path" --focus)
+  # Falling back to the clone means no epoch checkout survived for this PR, and
+  # naming that workspace after the PR would rename the repo's own space.
+  local own_workspace=true
 
   require_herdr
 
+  if [[ "$checkout_path" == "$clone_dir" ]]; then
+    own_workspace=false
+  else
+    open_args+=(--label "$label")
+  fi
+
   workspace_id="$(find_pr_workspace "$label" "$checkout_path")"
 
-  if [[ -n "$workspace_id" ]]; then
+  if [[ -z "$workspace_id" ]]; then
+    # --cwd has to be the repo parent; herdr refuses to branch off a linked
+    # worktree, and the epoch checkout is always one.
+    opened="$(herdr worktree open "${open_args[@]}")" \
+      || die "herdr worktree open failed for ${checkout_path}"
+    workspace_id="$(printf '%s' "$opened" | jq -r '.result.workspace.workspace_id // empty')"
+    # herdr reports its own failures as JSON on a zero exit.
+    [[ -n "$workspace_id" ]] || die "herdr worktree open failed for ${checkout_path}: $(
+      printf '%s' "$opened" | jq -r '.error.message // "no workspace in response"'
+    )"
+
+    # A checkout already open keeps whatever is running in its root pane.
+    if [[ "$(printf '%s' "$opened" | jq -r '.result.already_open')" != true ]]; then
+      pane_id="$(printf '%s' "$opened" | jq -r '.result.root_pane.pane_id // empty')"
+      [[ -n "$pane_id" ]] || die "herdr worktree open returned no pane"
+      [[ "$own_workspace" == true ]] && set_workspace_note "$workspace_id"
+      printf '%s: opened herdr workspace %s "%s" on %s\n' \
+        "$SCRIPT_NAME" "$workspace_id" "$label" "$(basename "$checkout_path")" >&2
+    fi
+  fi
+
+  if [[ -z "$pane_id" ]]; then
     pane_id="$(
       herdr tab create --workspace "$workspace_id" --cwd "$checkout_path" --focus \
         | jq -r '.result.root_pane.pane_id // empty'
@@ -246,14 +292,6 @@ run_in_pr_workspace() {
     [[ -n "$pane_id" ]] || die "herdr tab create returned no pane"
     printf '%s: new tab in herdr workspace %s "%s" on %s\n' \
       "$SCRIPT_NAME" "$workspace_id" "$label" "$(basename "$checkout_path")" >&2
-  else
-    pane_id="$(
-      herdr workspace create --cwd "$checkout_path" --label "$label" --focus \
-        | jq -r '.result.root_pane.pane_id // empty'
-    )" || die "herdr workspace create failed"
-    [[ -n "$pane_id" ]] || die "herdr workspace create returned no pane"
-    printf '%s: opened herdr workspace %s "%s" on %s\n' \
-      "$SCRIPT_NAME" "${pane_id%%:*}" "$label" "$(basename "$checkout_path")" >&2
   fi
 
   herdr pane run "$pane_id" "$command" >/dev/null \
@@ -519,7 +557,7 @@ launch_review() {
 
   label="$(workspace_label "$owner" "$repo" "$pr_number")"
   command="$(shell_command "$PR_REVIEW" "${review_args[@]}" "$pr_url")"
-  run_in_pr_workspace "$label" "$CHECKOUT_PATH" "$command"
+  run_in_pr_workspace "$clone_dir" "$label" "$CHECKOUT_PATH" "$command"
   launch_action=started
 }
 
@@ -775,7 +813,7 @@ discuss_artifact() {
       "Read ${artifact_path} carefully and be ready to discuss it. When ready, give a short briefing on what the artifact is and its key points, then wait for my questions."
   )"
 
-  run_in_pr_workspace "$label" "$checkout_path" "$command"
+  run_in_pr_workspace "$clone_dir" "$label" "$checkout_path" "$command"
 }
 
 # Re-run pr-review for an existing series.
@@ -925,7 +963,7 @@ resume_pr_agent_session() {
 
   label="$(workspace_label "$owner" "$repo" "$pr_number")"
   command="$(shell_command agent --workspace "$clone_dir" --resume "$chat_id")"
-  run_in_pr_workspace "$label" "$checkout_path" "$command"
+  run_in_pr_workspace "$clone_dir" "$label" "$checkout_path" "$command"
 }
 
 pick_artifact() {
