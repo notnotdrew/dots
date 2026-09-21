@@ -1,0 +1,5 @@
+# Private overlay skills. Linked from ~/dots-private by its update_symlinks.
+# Do not commit. Add a name here when you add a skill under
+# dots-private/dev/.../.cursor/skills/.
+using-screensteps-staging-api
+triaging-screensteps-on-call
