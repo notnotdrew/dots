@@ -1,0 +1,18 @@
+---
+description: Commit dots changes on main, not the current worktree
+alwaysApply: true
+---
+
+# Commit on main
+
+This is a personal dots repo. Agents usually sit in a linked worktree (Herdr start-work, WorkTrunk). A commit on that worktree branch is easy to forget: Drew hears the fix landed, treats `~/dots` as the live tree, and the work never reaches `main`.
+
+When asked to commit (or when the work should persist):
+
+1. Apply the change on the main checkout at `~/dots`, on the `main` branch.
+2. Commit there. Do not leave the only copy on the worktree branch.
+3. If you edited files in this worktree first, copy or apply the same patch to `~/dots` before committing, then restore the worktree copy so it does not look like a second uncommitted change.
+
+A worktree commit is allowed if Drew asks for that branch. Default is `~/dots` `main`.
+
+This rule is only for this repo. Do not copy it to other checkouts.
