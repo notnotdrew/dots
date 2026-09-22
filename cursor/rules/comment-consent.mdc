@@ -1,0 +1,12 @@
+---
+description: Do not post GitHub or Linear comments unless Drew asked.
+alwaysApply: true
+---
+
+# Comment consent
+
+Never post comments to GitHub or Linear unless Drew explicitly consents, requests, or approves it. That includes replies to a human on a PR, issue, or ticket.
+
+Drafting in chat or a local file is fine. Do not publish with `gh`, Linear MCP/CLI, or any other tool until he asked.
+
+A plan, review, or “I’ll reply” is not consent. “Post this,” “reply to that comment,” or “comment on the ticket” is.
