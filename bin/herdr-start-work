@@ -210,10 +210,10 @@ dispatch_command() {
   "${argv[@]}"
 }
 
-# Show what the plan wants to run, then run it on enter. The commands open
-# their own workspaces if they need one; this script opens nothing.
+# Show what the plan wants to run, then run it. The commands open their own
+# workspaces if they need one; this script opens nothing.
 run_commands_plan() {
-  local plan="$1" summary key command status=0
+  local plan="$1" summary command status=0
   local -a commands=()
 
   mapfile -t commands < <(jq -r '.commands[]?' <<<"$plan")
@@ -226,16 +226,6 @@ run_commands_plan() {
   summary=$(jq -r '.summary // empty' <<<"$plan")
   [ -n "$summary" ] && printf '%s\n\n' "$summary"
   printf '  %s\n' "${commands[@]}"
-  printf '\nenter to run, any other key to cancel '
-  flush_input
-  IFS= read -r -n 1 -s key || key=cancel
-  case "$key" in
-    '') printf '\n' ;;
-    *)
-      printf '\ncancelled\n'
-      return 0
-      ;;
-  esac
 
   for command in "${commands[@]}"; do
     dispatch_command "$command" || status=$?

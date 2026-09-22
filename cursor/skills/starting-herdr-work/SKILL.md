@@ -149,7 +149,7 @@ after focus moves to a new worktree.
 
 A worktree plan carries the JSON fields above, and the script creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
 
-A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it on enter, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
+A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
 
 `prefix+shift+y` shares the same dedicated workspace and one-at-a-time behavior,
 with a fixed request: item `tidy`, project `Herdr`, repo `~/dots`, branch
