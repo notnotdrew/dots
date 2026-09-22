@@ -69,7 +69,7 @@ Copy and check off:
 ```
 - [ ] 1. Confirm Herdr + parent repo
 - [ ] 2. Resolve item, project, branch
-- [ ] 3. Create worktree workspace
+- [ ] 3. Find or create worktree workspace
 - [ ] 4. Set $note (project)
 - [ ] 5. Focus and confirm sidebar fields
 ```
@@ -86,7 +86,30 @@ herdr worktree list --workspace "$HERDR_WORKSPACE_ID"
 
 Use `.result.source.source_workspace_id` as `--workspace` for create. Do not create a top-level duplicate of the main checkout.
 
-### 2. Create
+### 2. Find or create
+
+A ticket that comes back a second time already has its checkout, and herdr
+refuses to create over a branch it is holding. Look first:
+
+```bash
+herdr worktree list --cwd "<repo_root>" \
+  | jq -r --arg branch "<branch>" \
+    '.result.worktrees[]? | select(.branch == $branch) | .path'
+```
+
+When that prints a path, open it instead. The response carries the same
+`workspace_id` and `root_pane`, plus `already_open` when the space was already
+on screen.
+
+```bash
+herdr worktree open \
+  --workspace <source_workspace_id> \
+  --path "<existing path>" \
+  --label "<item>" \
+  --focus
+```
+
+Only when nothing came back:
 
 ```bash
 herdr worktree create \
@@ -147,7 +170,7 @@ The workspace stays open after the command exits so the next intake can reuse
 it. While the command runs, its Agents-panel row still makes the pane findable
 after focus moves to a new worktree.
 
-A worktree plan carries the JSON fields above, and the script creates the worktree, sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane.
+A worktree plan carries the JSON fields above. The script reuses the checkout already on the plan's branch and creates one only when there is none, then sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane. Reusing means a second run on the same ticket lands back in that worktree and hands the task to the agent already sitting there.
 
 A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
 

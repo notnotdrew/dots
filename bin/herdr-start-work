@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Ask what to work on, let an agent resolve the naming, then create the child
-# worktree workspace, focus it, and hand the task to an agent running there.
+# Ask what to work on, let an agent resolve the naming, then open the child
+# worktree workspace for that branch, creating it when it is not there yet,
+# focus it, and hand the task to an agent running there.
 #
 # Some requests are not a task for a fresh checkout but a command that already
 # does the job ("start any open prrr reviews"). Those come back as a commands
@@ -368,8 +369,13 @@ printf 'project: %s\n' "${project:-none}"
 printf 'branch:  %s\n' "$branch"
 printf 'repo:    %s\n\n' "$repo_root"
 
-source_ws=$("$HERDR" worktree list --cwd "$repo_root" 2>/dev/null |
-  jq -r '.result.source.source_workspace_id // empty') || true
+# A checkout whose directory is gone still holds its branch, and git hands
+# that branch to no one else until it forgets the dead entry.
+git -C "$repo_root" worktree prune || true
+
+worktrees=$("$HERDR" worktree list --cwd "$repo_root" 2>/dev/null) || worktrees=
+
+source_ws=$(jq -r '.result.source.source_workspace_id // empty' <<<"$worktrees")
 if [ -z "$source_ws" ]; then
   printf 'Opening parent workspace...\n'
   source_ws=$("$HERDR" workspace create --cwd "$repo_root" \
@@ -381,24 +387,50 @@ fi
 # Match the sibling checkout layout worktrunk already uses for this repo.
 checkout="${repo_root}.$(printf '%s' "$branch" | tr '/' '-')"
 
-create_args=(worktree create --workspace "$source_ws" --branch "$branch"
-  --path "$checkout" --label "$item" --focus)
-[ -n "$base" ] && create_args+=(--base "$base")
+# The same item gets started twice all the time: a ticket comes back, or an
+# earlier run died with its worktree already on disk. Herdr will not create
+# over a branch it already has, so reuse that checkout and only create when
+# there is none.
+existing=$(jq -r --arg branch "$branch" \
+  '[.result.worktrees[]? | select(.branch == $branch)][0].path // empty' <<<"$worktrees")
+[ -d "$existing" ] || existing=
+
+# Two branches can slug down to the same sibling path, and a checkout removed
+# by hand leaves its directory behind. Either way the path is not this
+# branch's to take, and opening it would put the agent on someone else's work.
+if [ -z "$existing" ] && [ -e "$checkout" ]; then
+  die "$branch is not what is checked out at $checkout"
+fi
+
+if [ -n "$existing" ]; then
+  checkout="$existing"
+  action=open
+  spin_label='Opening worktree'
+  worktree_args=(worktree open --workspace "$source_ws" --path "$checkout"
+    --label "$item" --focus)
+  printf 'Reusing %s\n' "${checkout##*/}"
+else
+  action=create
+  spin_label='Creating worktree'
+  worktree_args=(worktree create --workspace "$source_ws" --branch "$branch"
+    --path "$checkout" --label "$item" --focus)
+  [ -n "$base" ] && worktree_args+=(--base "$base")
+fi
 
 trust_workspace "$checkout"
 
-create_out=$(mktemp)
-create_err=$(mktemp)
-TMPFILES+=("$create_out" "$create_err")
-"$HERDR" "${create_args[@]}" >"$create_out" 2>"$create_err" &
-create_pid=$!
-spinner "$create_pid" 'Creating worktree'
-wait "$create_pid" || die 'worktree create failed' "$create_err"
-created=$(<"$create_out")
+worktree_out=$(mktemp)
+worktree_err=$(mktemp)
+TMPFILES+=("$worktree_out" "$worktree_err")
+"$HERDR" "${worktree_args[@]}" >"$worktree_out" 2>"$worktree_err" &
+worktree_pid=$!
+spinner "$worktree_pid" "$spin_label"
+wait "$worktree_pid" || die "worktree $action failed" "$worktree_err"
+opened=$(<"$worktree_out")
 
-workspace_id=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created")
-pane_id=$(jq -r '.result.root_pane.pane_id // empty' <<<"$created")
-[ -n "$workspace_id" ] && [ -n "$pane_id" ] || die "unexpected create response: $created"
+workspace_id=$(jq -r '.result.workspace.workspace_id // empty' <<<"$opened")
+pane_id=$(jq -r '.result.root_pane.pane_id // empty' <<<"$opened")
+[ -n "$workspace_id" ] && [ -n "$pane_id" ] || die "unexpected worktree $action response: $opened"
 
 if [ -n "$project" ]; then
   "$HERDR" workspace report-metadata "$workspace_id" \
