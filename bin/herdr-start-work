@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Ask what to work on, let an agent resolve the naming, then open the child
 # worktree workspace for that branch, creating it when it is not there yet,
-# focus it, and hand the task to an agent running there.
+# and hand the task to an agent running there. Nothing here takes the screen:
+# the new space waits in the sidebar until Drew steps onto it.
 #
 # Some requests are not a task for a fresh checkout but a command that already
 # does the job ("start any open prrr reviews"). Those come back as a commands
@@ -239,10 +240,10 @@ run_commands_plan() {
   read -r -t 5 -n 1 -s -p 'Press any key to close.' || true
 }
 
-# This pane outlives the workspace it was launched from: the worktree below is
-# created with --focus, so the rest of this run reports progress into a split
-# Drew has already left. Claim an Agents row before anything can block, die
-# included.
+# Planning alone takes half a minute, so this pane is usually not the one on
+# screen by the time it has something to say, and nothing in Herdr lists a
+# waiting split from another workspace. Claim an Agents row before anything
+# can block, die included.
 herdr_pane_agent start-work
 
 command -v jq >/dev/null 2>&1 || die 'jq is required'
@@ -282,7 +283,6 @@ if [ -n "$attach_ws" ]; then
   [ -n "$pane_id" ] || die "no pane in $workspace_id"
   trust_workspace "$("$HERDR" pane list --workspace "$workspace_id" |
     jq -r '.result.panes[0].cwd')"
-  "$HERDR" workspace focus "$workspace_id" >/dev/null
   printf 'Reusing %s (%s)\n\n' "$item" "$workspace_id"
 fi
 
@@ -402,18 +402,21 @@ if [ -z "$existing" ] && [ -e "$checkout" ]; then
   die "$branch is not what is checked out at $checkout"
 fi
 
+# The space opens in the background. Everything below targets it by pane id,
+# so none of it needs the space on screen, and taking the screen mid-run puts
+# the next thing Drew types into an agent that is already working.
 if [ -n "$existing" ]; then
   checkout="$existing"
   action=open
   spin_label='Opening worktree'
   worktree_args=(worktree open --workspace "$source_ws" --path "$checkout"
-    --label "$item" --focus)
+    --label "$item" --no-focus)
   printf 'Reusing %s\n' "${checkout##*/}"
 else
   action=create
   spin_label='Creating worktree'
   worktree_args=(worktree create --workspace "$source_ws" --branch "$branch"
-    --path "$checkout" --label "$item" --focus)
+    --path "$checkout" --label "$item" --no-focus)
   [ -n "$base" ] && worktree_args+=(--base "$base")
 fi
 

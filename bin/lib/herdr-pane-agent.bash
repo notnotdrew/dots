@@ -8,8 +8,9 @@
 # flow sitting on a prompt has taken over the layout it was launched in.
 # Nothing in Herdr lists plain panes across workspaces: the Spaces panel shows
 # workspaces and the Agents panel shows recognized agents, so a waiting split
-# is invisible from any other workspace. herdr-start-work makes that worse on
-# purpose by focusing the new worktree while its own pane is still running.
+# is invisible from any other workspace. herdr-start-work runs for a minute or
+# more and never takes the screen, so by the time it needs an answer Drew is
+# usually somewhere else.
 #
 # Reporting the pane as an agent puts it in the surface built for this exact
 # question. The Agents panel lists it with its workspace and tab,

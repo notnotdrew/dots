@@ -11,11 +11,11 @@ description: >-
 
 # Starting Herdr work
 
-Turn a short request into a focused child worktree whose Space sidebar reads:
+Turn a short request into a child worktree whose Space sidebar reads:
 
 1. **item** — what you're doing (`invite groups`, `daily view metric`, `tidy herdr`)
 2. **project** — bucket reused across siblings (`CSV`, `Planhat`, `Herdr`)
-3. **branch** — filled by the `drew.branch-token` plugin on focus
+3. **branch** — filled by the `drew.branch-token` plugin when the worktree opens
 
 Requires `HERDR_ENV=1`. If unset, say you are not inside Herdr and stop.
 
@@ -106,7 +106,7 @@ herdr worktree open \
   --workspace <source_workspace_id> \
   --path "<existing path>" \
   --label "<item>" \
-  --focus
+  --no-focus
 ```
 
 Only when nothing came back:
@@ -117,10 +117,12 @@ herdr worktree create \
   --branch "<branch>" \
   --path "<repo_root>.<branch with / replaced by ->" \
   --label "<item>" \
-  --focus
+  --no-focus
 ```
 
 Read `.result.workspace.workspace_id` and `.result.root_pane.pane_id` from the response.
+
+Always pass `--no-focus`. The new space is addressed by the ids in that response, so nothing here needs it on screen, and taking the screen drops whatever the user is typing into a pane they did not ask to be in. Tell them where it is instead.
 
 Always pass `--path`. Herdr otherwise checks out under `~/.herdr/worktrees/`, while these repos keep worktrees beside the main checkout (`screensteps-live.drew-pro-8766-add-invite-groups-and-sites`), matching worktrunk.
 
@@ -142,7 +144,7 @@ herdr workspace report-metadata <workspace_id> \
 herdr workspace get <workspace_id>
 ```
 
-Expect `label` = item and `tokens.note` = project. Branch text appears after focus via `drew.branch-token`; do not fake it with another token.
+Expect `label` = item and `tokens.note` = project. Branch text appears via `drew.branch-token` once the worktree is created or opened; do not fake it with another token.
 
 Tell the user the new workspace id, item, project, and branch in one short line. Then continue the requested work in that checkout unless they only asked to set up the space.
 
@@ -167,10 +169,10 @@ The planner receives no checkout hint: start-work is normally unrelated to the
 workspace Drew just left, so it resolves `repo_root` from the request alone. A
 plan that names a scratch git dir under `/tmp` or `/var/folders` is refused.
 The workspace stays open after the command exits so the next intake can reuse
-it. While the command runs, its Agents-panel row still makes the pane findable
-after focus moves to a new worktree.
+it. While the command runs, its Agents-panel row makes the pane findable from
+wherever Drew happens to be.
 
-A worktree plan carries the JSON fields above. The script reuses the checkout already on the plan's branch and creates one only when there is none, then sets `$note`, focuses the workspace, and starts a `cursor` agent on the task in its root pane. Reusing means a second run on the same ticket lands back in that worktree and hands the task to the agent already sitting there.
+A worktree plan carries the JSON fields above. The script reuses the checkout already on the plan's branch and creates one only when there is none, then sets `$note` and starts a `cursor` agent on the task in its root pane. The new space opens unfocused and everything after it is addressed by pane id, so Drew keeps the pane he was in and steps over when he wants to. Reusing means a second run on the same ticket lands back in that worktree and hands the task to the agent already sitting there.
 
 A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
 

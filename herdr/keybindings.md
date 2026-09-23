@@ -41,6 +41,11 @@ shortlist worth building muscle memory for. Open it with `prefix+u`.
 
 ## Recently added or discussed
 
+    2026-09-23  start-work no longer follows the worktree it opens. The space
+                is created with --no-focus and its agent is started and
+                prompted by pane id, so nothing typed during the handoff can
+                land in it. Step onto it from the Agents panel or its Spaces
+                row when you are ready.
     2026-09-21  start-work and tidy now share a persistent "start work"
                 workspace rooted at ~/.local/state/herdr-start-work. Their
                 detached key commands focus or create it, then run the flow
