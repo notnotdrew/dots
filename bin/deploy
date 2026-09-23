@@ -336,7 +336,9 @@ trigger_workflow() {
     echo "✓ Deploy finished successfully"
   else
     echo "Monitor the run in GitHub Actions (refresh if needed)."
-    echo "When done, post in #deployment-${ENV_NAME} (e.g. rails: ${BRANCH_NAME}) and mark with :checkered_flag:."
+    if [[ "$ENV_NAME" != "production" ]]; then
+      echo "When done, post in #deployment-${ENV_NAME} (e.g. rails: ${BRANCH_NAME}) and mark with :checkered_flag:."
+    fi
   fi
 }
 
