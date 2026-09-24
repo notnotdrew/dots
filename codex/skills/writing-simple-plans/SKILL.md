@@ -1,6 +1,6 @@
 ---
 name: writing-simple-plans
-description: Writes a short ordered plan.md of meaningful, isolated decisions that reach a named end state. Use when the user asks for a simple plan, plan.md, "plan it like grug", or a default implementation plan rather than a TDD, carpaccio, or grilling session.
+description: Writes a short ordered plan.md of meaningful, isolated decisions that reach a named end state. After writing, loops simplify-code on the planned implementation until a fresh subagent says it is already simple enough. Use when the user asks for a simple plan, plan.md, "plan it like grug", or a default implementation plan rather than a TDD, carpaccio, or grilling session.
 ---
 
 # Writing Simple Plans
@@ -15,6 +15,7 @@ This is the default “how do we get there” skill. It is not a review, not a g
 2. Ask only if a load-bearing fact is missing. One short ask.
 3. Write `plan.md` with Now, Done when, Not doing, and ordered Steps.
 4. Check grain: each step is one isolated decision, not a layer and not a tiny chore.
+5. Loop `simplify-code` on the implementation that `plan.md` describes. Fresh subagent each pass. Stop when that subagent says the plan is already simple enough, or (rarely) when a rewrite is not desirable.
 
 If the user named a path, write there. Otherwise write `plan.md` in the workspace root.
 
@@ -91,6 +92,17 @@ Keep Now and Not doing short. The Steps list is the plan. Number them. One thoug
 
 Omit a section only when it would be empty theater. Do not add Overview, TDD Strategy, Phases, or Risk Matrices.
 
+## Simplify the planned implementation
+
+After `plan.md` is written, this session is the orchestrator. Loop a simplify pass on that file. Do not skip it. Do not execute the plan.
+
+Each iteration:
+
+1. Spawn a **fresh** subagent. Do not reuse or continue a prior simplify session.
+2. Tell it to follow `simplify-code` with the implementation described in `plan.md` as the target. Same skill, same rules: preserve behavior, leave it alone when nothing is worthwhile, earn every edit. Map behavior to **Done when** and the user's goal. The file to change is `plan.md`. Do not invent a second simplify protocol, look-for list, or stop condition.
+3. If that subagent says the plan is already simple enough (`simplify-code`'s do-nothing outcome), stop.
+4. If it rewrites the plan, inspect. Keep the prior `plan.md` until you accept. Accept and loop again. Reject only when the rewrite is not desirable: it drops **Done when**, does something in **Not doing**, or turns steps into chores. That stop is rare. On reject, restore the previous `plan.md` and stop.
+
 ## Examples
 
 **Input:** “simple plan: stop the billing page from showing the old plan for a minute after upgrade”
@@ -143,5 +155,6 @@ Omit a section only when it would be empty theater. Do not add Overview, TDD Str
 - End state first; steps exist to reach it.
 - Ask once, then write. Do not stall for nice-to-have context.
 - Prefer fewer, clearer steps over a complete-looking document.
+- After writing `plan.md`, run the `simplify-code` loop.
 - If the user asked for TDD, stop and use `planning-tdd` instead of smuggling cycles into this template.
 - Do not execute the plan unless the user asks.
