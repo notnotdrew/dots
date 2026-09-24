@@ -1,6 +1,7 @@
 # Implement boundary
 
-After discover selects a find, the coordinator runs implement then (on success) opens a draft PR.
+After discover selects a find, the coordinator creates the checkout, delegates
+planning and execution to fresh agents, then records the resulting draft.
 
 ## Worktrunk + branch
 
@@ -10,36 +11,46 @@ After discover selects a find, the coordinator runs implement then (on success) 
 - If a stale directory already sits at the target path, `--clobber` (or remove/recreate) and still succeed
 - `origin` missing, `git fetch origin --prune` failing, or the trunk unresolvable is caught by preflight before the stamp (see [discover-boundary](discover-boundary.md)); reaching implement without a base is a soft-fail that leaves the find `open`
 
-## Implement fixtures (`INCHWORM_IMPLEMENT_FIXTURE`)
+## Deterministic fixtures (`INCHWORM_IMPLEMENT_FIXTURE`)
 
 | Value | Behavior |
 | --- | --- |
-| `success` | Worktree + tiny commit; ready for draft PR |
+| `success` | Simulate the completed workflow with a tiny commit and draft PR |
 | `fail` | Mark find `deferred`; no PR; print implement-failed signal |
 | `too_large` | Mark find `too_large`; no PR |
-| unset | Real implementer agent (`INCHWORM_AGENT` or `agent`) — never `--yolo` / `--force` / `--trust` |
+| unset | Fresh planner agent, then fresh draft-PR executor agent (`INCHWORM_AGENT` or `agent`) |
 
-## Success path
+## Live delegation
 
-1. Implementer finishes in the worktree
-2. Read and delete the agent's PR draft under `.inchworm/pr/`, commit any leftover changes, then check no commit message names the runner
-3. Push branch: `git push -u origin HEAD` — the first push, never forced (skipped entirely when `INCHWORM_IMPLEMENT_FIXTURE` is set; live soft-fails → deferred)
-4. Coordinator: `gh pr create --draft --base <base_branch> --title … --body-file …`
-5. Set `state.active_draft_pr` to the printed PR URL
-6. Mark find `status: in_pr`
-7. Print opened-draft signal + URL
-8. Continue to review → fix → ping (see [review-fix-boundary](review-fix-boundary.md)); a fixer pass rewrites this branch and pushes it again with `--force-with-lease`, and after ping the implement Worktrunk checkout is removed with `wt remove --no-delete-branch` (keep the branch)
+1. Launch a fresh agent in the checkout and tell it to follow
+   `writing-simple-plans`, writing `.inchworm/plan.md`.
+2. The planner does not edit production code. If it reports that the change
+   cannot fit one thin PR, mark the find `too_large` and stop.
+3. Launch a second fresh agent and tell it to follow
+   `executing-draft-pr-plans` using that plan.
+4. The execution skill owns implementation, test attack, simplification,
+   verification, commits, draft creation, Standard review, fix folding, and the
+   final force-with-lease push. It does not ready or merge the PR.
+5. The coordinator queries open PRs for the exact branch and requires a draft
+   URL. It does not repeat any execution or review stage.
+6. Set `state.active_draft_pr`, mark the find `in_pr`, ping, and remove the
+   checkout with `wt remove --no-delete-branch`.
+
+`writing-simple-plans` and `executing-draft-pr-plans` remain generic. Their
+normal input receives the selected find, repo guidance, base branch, and the
+thin-change constraints; neither skill contains runner-specific behavior.
 
 ## Failure / no second pick
 
 `too_large` is a correct result, not a fallback: if you cannot bound who inherits the retry, fail, or report policy, or the safe version needs that seam moved first, end the day without a PR (see [shared-seam](shared-seam.md)).
 
-On implement failure (`fail` / agent non-zero / push fail / draft fail / `too_large` / cannot resolve the trunk):
+On failure (planner/executor non-zero, missing plan, missing draft, `too_large`,
+or inability to resolve the trunk):
 
 - Do **not** call `gh pr create` (or stop if create already failed)
 - Leave `active_draft_pr` null
 - Do **not** pick a second find — the day's stamp is already burned
-- Skip review / fixer / ping
+- Do not launch any later stage or ping a nonexistent draft
 - Alert the human (the same notify channel as the ping, carrying the reason and no PR URL) — a day that ends without a draft is never log-only
 - If a worktree was created for this attempt, clean it up (keep any branch it created)
 
@@ -47,9 +58,9 @@ Whether the find keeps its place depends on who failed, because the next tidy dr
 
 | Failure | Find status | Why |
 | --- | --- | --- |
-| `fail` fixture, agent non-zero, no commits produced, commits or PR copy that name the runner | `deferred` | The attempt reached a verdict on this find |
+| `fail` fixture, agent non-zero, missing plan, or no draft produced | `deferred` | The attempt reached the selected find but did not complete |
 | `too_large` | `too_large` | A correct result (see [shared-seam](shared-seam.md)) |
-| push fail, `gh pr create` fail, no PR URL, no base to work from | `open` | The network or the remote failed, not the find — deferring it would drop a find that was never judged |
+| No base to work from | `open` | The remote failed before the find was judged |
 
 ## Forbidden
 

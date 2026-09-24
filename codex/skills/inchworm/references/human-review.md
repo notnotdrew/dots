@@ -1,6 +1,7 @@
 # Human `inchworm review`
 
-Operator command. Not the daily-run Standard `pr-review` → fixer → ping pipeline. It does not auto-ready the draft.
+Operator command. It follows the execution skill's completed draft-PR workflow
+and does not auto-ready the draft.
 
 ## Command
 
@@ -34,4 +35,6 @@ Then it discusses. Only the implement branch may be force-pushed; never `develop
 
 ## Distinct from daily run
 
-Daily `inchworm run` still does one Standard `pr-review`, at most one fixer, squash, ping, then `wt remove --no-delete-branch`. `review` is the human sitting down with an already-open draft.
+Daily `inchworm run` delegates the complete draft-PR workflow to
+`executing-draft-pr-plans`, then records the draft, pings, and removes the
+checkout. `review` is the human sitting down with that already-open draft.

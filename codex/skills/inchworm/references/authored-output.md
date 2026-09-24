@@ -14,24 +14,17 @@ The date suffix does real work: it keeps a rerun on its own branch, and it is ho
 
 ## Commits
 
-The implementer writes its own commit with the **writing-git-commits** skill: imperative subject under 72 characters, body only when the diff cannot explain itself.
+The agent following **`executing-draft-pr-plans`** owns the commit history. Each
+plan step is one coherent commit containing its production and test changes.
+Review fixes are folded into their originating commits before the final
+force-with-lease push.
 
-Coordinator fallbacks, used when the agent leaves work uncommitted:
-
-- Subject — the find's title, sentence-cased, no trailing period
-- Body — the find's summary, then `Context: <evidence>` when evidence exists
-
-If any commit message on the branch names the runner, the coordinator resets the branch onto its base and re-commits once with that fallback message. Nothing has been pushed at that point, so the rewrite is safe.
-
-After a fixer pass the coordinator squashes unconditionally: the branch already carries the implement commit, plus whatever the fixer committed, plus whatever it left uncommitted, and none of that bookkeeping is a history a reviewer asked for. Implement and fix collapse into one commit. The message is the pre-fix implement commit's subject and body when that commit is present and does not name the runner as a word; otherwise the find fallback (title / summary / evidence) when that is clean. If neither is publishable, the coordinator restores the branch to the SHA from before the fixer started, does not push, and the fixer fails — a dirty replacement commit must not remain as local HEAD. See [review-fix-boundary](review-fix-boundary.md).
+The handoff requires imperative, human commit subjects and prohibits mentions
+of prompts, agents, automation, orchestration, or the scheduling tool.
 
 ## Pull requests
 
-The implementer writes two gitignored files in the worktree:
-
-- `.inchworm/pr/title.txt` — one line, plain English, no ticket ids or prefixes
-- `.inchworm/pr/body.md` — why the change was made, with the issue or error link from the find's evidence; follows the repo's PR template when it has one
-
-Both are reviewed with the **writing-for-humans** skill. The coordinator reads them, drops any line naming the runner, deletes them before committing leftovers, and passes the result to `gh pr create --title … --body-file …`.
-
-Fallbacks when the agent writes nothing usable: title from the find's title, body from summary plus `Context: <evidence>`.
+The same execution agent opens the draft PR using the repository template and
+the generic skill's normal PR-copy rules. The coordinator does not rewrite or
+recreate that PR; it discovers the URL by the exact branch after execution
+returns.

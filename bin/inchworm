@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 5 coordinator: discover → implement → draft PR → Standard review → optional fix → ping → LaunchAgent
+# Coordinator: discover → plan → execute draft PR → record → ping → LaunchAgent
 #
 # Usage:
 #   inchworm init
@@ -44,7 +44,7 @@ Usage: inchworm <init|run|now|status|review|launchd-setup>
 
   init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
   run            Gated: weekday create window, same-day, and draft gate, then core
-  now            Core only: preflight + stamp + discover + implement + draft PR + review/fix/ping
+  now            Core only: preflight + stamp + discover + plan + execute draft PR + ping
   status         Show registered repos, last_run_date, create window, draft gate
   review         List open drafts, switch Worktrunk, launch a discuss agent
   launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
@@ -447,6 +447,15 @@ gh_pr_list_json() {
   )
 }
 
+find_draft_for_branch() {
+  local repo_path=$1
+  local branch_name=$2
+  local json
+
+  json=$(gh_pr_list_json "$repo_path") || return 1
+  printf '%s' "$json" | ruby_yaml find_draft_by_head "$branch_name"
+}
+
 # Blocking = an open draft of ours: the PR we recorded, or a branch we would have
 # created. Both are confirmed against the live PR list, never trusted on their own.
 find_blocking_draft() {
@@ -716,6 +725,8 @@ cleanup_implement_worktree() {
 # Scratch dir for agent-written PR copy. Sits under the already-gitignored
 # .inchworm/ path so the draft never becomes part of the commit.
 PR_DRAFT_DIR=".inchworm/pr"
+PLAN_PATH=".inchworm/plan.md"
+PLAN_RESULT_PATH=".inchworm/plan-result"
 
 # Anything a human sees — branch, commit, PR — is written as the author's own
 # work. This is the guard against the runner naming itself in that copy.
@@ -786,6 +797,62 @@ implement_fixture_success() {
   printf 'implement fixture\n' >"${worktree_path}/implement-fixture.txt"
   git -C "$worktree_path" add implement-fixture.txt
   commit_with_message "$worktree_path" "$subject" ""
+}
+
+# Plan a selected find in a fresh agent context. A successful planning pass
+# writes the plan only; the next agent owns execution.
+plan_with_agent() {
+  local worktree_path=$1
+  local find_title=$2
+  local find_summary=$3
+  local find_evidence=$4
+  local guidance=${5:-}
+  local agent_bin="${INCHWORM_AGENT:-agent}"
+  local prompt
+
+  rm -f "${worktree_path}/${PLAN_PATH}" "${worktree_path}/${PLAN_RESULT_PATH}"
+  mkdir -p "${worktree_path}/$(dirname "$PLAN_PATH")"
+
+  prompt="Follow the writing-simple-plans skill for this goal: ${find_title}"
+  if [[ -n "${find_summary//[[:space:]]/}" ]]; then
+    prompt+=$'\n\n'"Why it matters: ${find_summary}"
+  fi
+  if [[ -n "${find_evidence//[[:space:]]/}" ]]; then
+    prompt+=$'\n'"Context: ${find_evidence}"
+  fi
+  prompt+=$'\n\n'"Write the resulting plan to ${PLAN_PATH}. The whole plan must fit one thin, behavior-preserving pull request."
+  prompt+=$'\n\n'"Do not plan a change that makes other callers inherit new retry, reporting, discard, or fail-loud policy. If the safe change first requires moving that policy seam, this is not a thin pull request."
+  prompt+=$'\n\n'"If the problem is inside unused or dead code, plan its deletion when that deletion is thin. Do not plan a small repair inside code that should be removed."
+  prompt+=$'\n\n'"If no compliant thin plan exists, do not write ${PLAN_PATH}; write not_thin to ${PLAN_RESULT_PATH} instead."
+  prompt+=$'\n\n'"Do not implement the plan."
+  prompt+=$(append_repo_guidance_block "$guidance")
+
+  (
+    cd "$worktree_path" || exit 1
+    "$agent_bin" -p "$prompt"
+  )
+}
+
+# Execute the plan in a second fresh context. This agent owns the complete
+# generic draft-PR workflow: implementation, verification, commits, draft PR,
+# Standard review, fixes, and the final force-with-lease update.
+execute_plan_with_agent() {
+  local worktree_path=$1
+  local base_branch=$2
+  local guidance=${3:-}
+  local agent_bin="${INCHWORM_AGENT:-agent}"
+  local prompt
+
+  prompt="Follow the executing-draft-pr-plans skill using ${PLAN_PATH}."
+  prompt+=$'\n\n'"Work on the current branch and use ${base_branch} as the pull request base. Complete the skill through opening and reviewing the draft pull request, including justified fixes and the final force-with-lease push. Do not mark the pull request ready and do not merge it."
+  prompt+=$'\n\n'"Preserve the plan's Done when and Not doing boundaries. Do not widen shared retry, reporting, discard, or fail-loud policy."
+  prompt+=$'\n\n'"Write commits and pull-request copy as the engineer making the change. Never mention prompts, agents, automation, orchestration, or the tool that scheduled the work."
+  prompt+=$(append_repo_guidance_block "$guidance")
+
+  (
+    cd "$worktree_path" || exit 1
+    "$agent_bin" -p "$prompt"
+  )
 }
 
 # Real implementer (Done-when): agent in worktree, never --yolo/--force/--trust.
@@ -1340,8 +1407,8 @@ run_review_fix_ping() {
   cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
 }
 
-# After discover selected a find: implement → push → draft PR or mark deferred/too_large.
-# On draft success: Standard review → optional fix → ping. Never picks a second find.
+# After discover selects a find, live runs delegate planning and complete draft-PR
+# execution to two fresh agents. Fixtures retain the deterministic legacy path.
 run_implement_and_pr() {
   local repo_path=$1
   local repo_yml=$2
@@ -1383,27 +1450,50 @@ run_implement_and_pr() {
           "could not base worktree on $IMPLEMENT_BASE_REMOTE_REF" "$branch_name"
         return 0
       fi
-      if ! implement_with_agent "$worktree_path" "$find_title" "$find_summary" \
+      if ! plan_with_agent "$worktree_path" "$find_title" "$find_summary" \
         "$find_evidence" "$guidance"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "agent exited non-zero" "$branch_name"
+          "planning agent exited non-zero" "$branch_name"
         return 0
       fi
-      pr_title=$(read_agent_pr_title "$worktree_path" || printf '')
-      pr_body=$(read_agent_pr_body "$worktree_path" || printf '')
-      rm -rf "${worktree_path:?}/${PR_DRAFT_DIR}"
-      commit_leftover_changes "$worktree_path" "$commit_subject" "$commit_body"
-      base_ref="$IMPLEMENT_BASE_REMOTE_REF"
-      if ! sanitize_branch_commits "$worktree_path" "$base_ref" "$commit_subject" "$commit_body"; then
+
+      if [[ ! -s "${worktree_path}/${PLAN_PATH}" ]]; then
+        if [[ "$(cat "${worktree_path}/${PLAN_RESULT_PATH}" 2>/dev/null || true)" == "not_thin" ]]; then
+          ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" too_large
+          printf 'inchworm: plan not thin — find F-%s marked too_large (no PR)\n' "$find_id"
+          cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
+          return 0
+        fi
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "could not rewrite commits that name the runner" "$branch_name"
+          "planning agent produced no plan" "$branch_name"
         return 0
       fi
-      if ! branch_has_commits "$worktree_path" "$base_ref"; then
+
+      if ! execute_plan_with_agent "$worktree_path" "$IMPLEMENT_BASE_BRANCH" "$guidance"; then
+        pr_url=$(find_draft_for_branch "$repo_path" "$branch_name" || printf '')
+        if [[ -z "$pr_url" ]]; then
+          defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+            "draft-PR execution agent exited non-zero" "$branch_name"
+          return 0
+        fi
+        printf 'inchworm: draft-PR execution agent exited non-zero after opening %s\n' \
+          "$pr_url" >&2
+      else
+        pr_url=$(find_draft_for_branch "$repo_path" "$branch_name" || printf '')
+      fi
+
+      if [[ -z "$pr_url" ]]; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "no commits produced (nothing to open a PR from)" "$branch_name"
+          "draft-PR execution produced no open draft" "$branch_name"
         return 0
       fi
+
+      ruby_yaml set_state "$repo_yml" "active_draft_pr" "$pr_url"
+      ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
+      printf 'inchworm: completed draft PR %s\n' "$pr_url"
+      ping_draft_pr "$pr_url"
+      cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
+      return 0
       ;;
     fail|*)
       if [[ "$fixture" != "fail" ]]; then

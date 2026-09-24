@@ -20,11 +20,12 @@
 #                               it unless a test exported it on purpose.
 #                               Production reads .inchworm.yml branch_prefix,
 #                               then git user.name.
-#   INCHWORM_IMPLEMENT_FIXTURE — Phase 3 implementer stub (no live agent required):
-#                               success   — worktree + implement branch ready for draft PR
+#   INCHWORM_IMPLEMENT_FIXTURE — deterministic completed-workflow stub:
+#                               success   — worktree + tiny commit, then fixture PR/review path
 #                               fail      — implement fails; mark find deferred; no PR
 #                               too_large — implement fails; mark find too_large; no PR
-#                               Unset in production → real implementer process.
+#                               Unset in production → fresh planning agent followed by
+#                               a fresh executing-draft-pr-plans agent.
 #   INCHWORM_PR_REVIEW        — path to Standard pr-review launcher
 #                               (default: bin/pr-review sibling or PATH). Tests set a mock.
 #   INCHWORM_REVIEW_FIXTURE   — none | advisory | blocking
@@ -49,7 +50,7 @@
 #                               distinguishable from a ping.
 #
 # Repo config (.inchworm.yml):
-#   guidance — optional plain text injected into scout / implementer / fixer prompts
+#   guidance — optional plain text injected into scout / planner / executor prompts
 #              (file is gitignored; guidance is not read from the worktree)
 # Finds path:
 #   Dir:  $INCHWORM_DATA_DIR/<path-hash>/
@@ -122,13 +123,14 @@
 #      then Phase 5 tidy (drop deferred/too_large; cap open at 20)
 #   5. Pick highest-ranked eligible open find (lowest rank wins); else print none
 #   6. If none: stop — no implement, no worktree, no `gh pr create`
-#   7. If selected: implementer process in a Worktrunk checkout on branch
+#   7. If selected: create a Worktrunk checkout on branch
 #      <branch_prefix>/<slug>-<YYYYMMDD> — the prefix names the human, never the runner
 #      Checkout path: <repo>.<branch with / replaced by -> (wt switch, not git worktree add)
 #      If that path already exists (stale empty dir), clobber/recreate and still succeed
-#   8. On implement success: coordinator `gh pr create --draft`, record
-#      state.active_draft_pr to the PR URL, mark find in_pr, print PR URL / opened draft
-#   9. On implement failure (fail|too_large): mark deferred|too_large, no PR,
+#   8. Live: fresh writing-simple-plans agent, then a separate
+#      executing-draft-pr-plans agent that implements through draft review.
+#      Fixture success keeps the deterministic coordinator PR/review path below.
+#   9. On failure (fail|too_large): mark deferred|too_large, no PR,
 #      active_draft_pr stays null, do not pick a second find (stamp already burned);
 #      skip review / fixer / ping; clean up any worktree created on live fail paths
 #  10. After successful draft PR: run full Standard pr-review once (reuse launcher;
@@ -424,6 +426,11 @@ done
 # Draft gate contract: CLI should invoke approximately:
 #   gh pr list --author @me --state open --json number,url,isDraft,headRefName
 if [ "\$pr_cmd" = "list" ]; then
+  if [ -f "${mock_path}.created-branch" ]; then
+    branch=\$(cat "${mock_path}.created-branch")
+    printf '[{"number":99,"url":"https://example.test/pr/99","isDraft":true,"headRefName":"%s"}]\n' "\$branch"
+    exit 0
+  fi
   case "$mode" in
     none|create_fails)
       printf '%s\n' '[]'
@@ -475,6 +482,7 @@ if [ "\$pr_cmd" = "create" ]; then
     printf '%s\n' 'GraphQL: something went wrong (createPullRequest)' >&2
     exit 1
   fi
+  git branch --show-current >"${mock_path}.created-branch"
   printf '%s\n' 'https://example.test/pr/99'
   exit 0
 fi
@@ -679,6 +687,62 @@ printf '%s\n' "agent \$*" >>"$TEST_ROOT/agent-invocations.log"
 printf '%s\n' "implemented by agent" >"./agent-work.txt"
 printf '%s\n' "Implemented the find; verification skipped. No PR opened."
 exit 0
+EOF
+  chmod +x "$agent_path"
+}
+
+# Live two-stage agent: planning writes only a plan; execution owns the branch,
+# draft PR, and Standard review before returning to the coordinator.
+write_plan_and_execute_agent() {
+  agent_path=$1
+  cat >"$agent_path" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "agent \$*" >>"$TEST_ROOT/agent-invocations.log"
+case "\$*" in
+  *"smell scout"* )
+    if [ -n "\${PLAN_EXECUTE_SCOUT_ID:-}" ]; then
+      printf '[{"id":"%s","source":"smell","title":"Guidance smell","summary":"pick me","rank":1,"status":"open"}]\n' \
+        "\$PLAN_EXECUTE_SCOUT_ID"
+    else
+      printf '%s\n' '[]'
+    fi
+    ;;
+  *"lint scout"*|*"errors scout"*|*"backlog scout"*|*"slow scout"*)
+    printf '%s\n' '[]'
+    ;;
+  *"writing-simple-plans"*)
+    mkdir -p .inchworm
+    if [ "\${PLAN_RESULT_NOT_THIN:-}" = "1" ]; then
+      printf '%s\n' not_thin >.inchworm/plan-result
+      exit 0
+    fi
+    cat >.inchworm/plan.md <<'PLAN'
+# Selected cleanup is complete
+
+## Done when
+The selected cleanup is implemented and verified.
+
+## Not doing
+No adjacent refactors.
+
+## Steps
+1. Make and verify the selected cleanup.
+PLAN
+    ;;
+  *"executing-draft-pr-plans"*)
+    printf '%s\n' "implemented by execution skill" >execution-work.txt
+    git add execution-work.txt
+    git commit -q -m "Complete selected cleanup"
+    git push -u origin HEAD >/dev/null
+    printf '%s\n' "The selected cleanup is now complete." >"\${TMPDIR:-/tmp}/inchworm-test-pr-body"
+    pr_url=\$("\$INCHWORM_GH" pr create --draft --base main \
+      --title "Complete selected cleanup" \
+      --body-file "\${TMPDIR:-/tmp}/inchworm-test-pr-body")
+    INCHWORM_REVIEW_ARTIFACT_DIR="\$INCHWORM_REVIEW_ARTIFACT_DIR" \
+      "\$INCHWORM_PR_REVIEW" --mode standard "\$pr_url"
+    ;;
+esac
 EOF
   chmod +x "$agent_path"
 }
@@ -1304,6 +1368,7 @@ setup_eligible_run_env() {
   write_mock_notify "$mock_notify"
   mkdir -p "$data_dir" "$fixture_dir"
   rm -f "$TEST_ROOT/gh-pr-title.txt" "$TEST_ROOT/gh-pr-body.txt"
+  rm -f "$TEST_ROOT/gh-created-branch.txt"
   : >"$TEST_ROOT/agent-invocations.log"
   : >"$TEST_ROOT/gh-invocations.log"
   : >"$TEST_ROOT/pr-review-invocations.log"
@@ -2448,9 +2513,9 @@ test_run_live_scouts_tolerate_prose_stdout() {
 }
 
 test_run_repo_guidance_injected_into_agent_prompts() {
-  # .inchworm.yml guidance is plain text for agents (scouts + implementer).
+  # .inchworm.yml guidance is plain text for agents (scouts + planner + executor).
   # Injected into prompts because .inchworm.yml is gitignored (absent from worktrees).
-  test_name="repo guidance from .inchworm.yml is injected into scout and implementer prompts"
+  test_name="repo guidance from .inchworm.yml is injected into scout, planner, and executor prompts"
   now="2026-08-18T10:00:00"
   setup_eligible_run_env "guidance"
   guidance_marker="use honeybadger; do not touch hubspot sync"
@@ -2463,26 +2528,7 @@ state:
   active_draft_pr: null
 EOF
   live_agent="$TEST_ROOT/run-guidance-agent"
-  write_uncommitted_work_agent "$live_agent"
-  # No scout fixtures → live scouts; no implement fixture → live implementer.
-  # Seed one smell candidate via live agent (write_live_scout_agent pattern) but
-  # keep implementer side-effect from write_uncommitted_work_agent.
-  cat >"$live_agent" <<EOF
-#!/usr/bin/env bash
-printf '%s\n' "agent \$*" >>"$TEST_ROOT/agent-invocations.log"
-prompt="\$*"
-if printf '%s' "\$prompt" | grep -qi 'smell scout'; then
-  printf '%s\n' '[{"id":"guidance-smell","source":"smell","title":"Guidance smell","summary":"pick me","rank":1,"status":"open"}]'
-elif printf '%s' "\$prompt" | grep -qiE 'lint scout|errors scout|backlog scout|slow scout'; then
-  printf '%s\n' '[]'
-elif printf '%s' "\$prompt" | grep -qi 'Work item:'; then
-  printf '%s\n' "implemented by agent" >"./agent-work.txt"
-  printf '%s\n' "Implemented the find."
-  exit 0
-fi
-exit 0
-EOF
-  chmod +x "$live_agent"
+  write_plan_and_execute_agent "$live_agent"
 
   out_file="$TEST_ROOT/run-guidance-out.txt"
   (
@@ -2493,8 +2539,11 @@ EOF
     unset INCHWORM_SCOUT_FIXTURE_DIR 2>/dev/null || true
     unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
     export INCHWORM_AGENT="$live_agent"
+    export PLAN_EXECUTE_SCOUT_ID=guidance-smell
     export INCHWORM_PR_REVIEW="$mock_pr_review"
     export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_REVIEW_ARTIFACT_DIR
+    INCHWORM_REVIEW_ARTIFACT_DIR=$(review_dir_for "$data_dir" "$repo_dir")
     export INCHWORM_NOTIFY="$mock_notify"
     run_inchworm run
   ) >"$out_file" 2>&1
@@ -2516,12 +2565,13 @@ EOF
       ' "$TEST_ROOT/agent-invocations.log"
     )
     scout_hits=$(printf '%s\n' "$flattened" | grep -ci 'smell scout' || true)
-    impl_hits=$(printf '%s\n' "$flattened" | grep -ci 'Work item:' || true)
+    plan_hits=$(printf '%s\n' "$flattened" | grep -ci 'writing-simple-plans' || true)
+    execute_hits=$(printf '%s\n' "$flattened" | grep -ci 'executing-draft-pr-plans' || true)
     if [ "${scout_hits:-0}" -lt 1 ]; then
       problems="${problems}expected smell scout invocation"$'\n'
     fi
-    if [ "${impl_hits:-0}" -lt 1 ]; then
-      problems="${problems}expected implementer invocation"$'\n'
+    if [ "${plan_hits:-0}" -lt 1 ] || [ "${execute_hits:-0}" -lt 1 ]; then
+      problems="${problems}expected planner and executor invocations"$'\n'
     fi
     if ! printf '%s\n' "$flattened" | grep -Fq "$guidance_marker"; then
       problems="${problems}expected guidance text in agent prompts"$'\n'
@@ -2529,14 +2579,14 @@ EOF
     if ! printf '%s\n' "$flattened" | grep -F 'smell scout' | grep -Fq "$guidance_marker"; then
       problems="${problems}expected guidance on smell scout prompt"$'\n'
     fi
-    if ! printf '%s\n' "$flattened" | grep -F 'Work item:' | grep -Fq "$guidance_marker"; then
-      problems="${problems}expected guidance on implementer prompt"$'\n'
+    if ! printf '%s\n' "$flattened" | grep -F 'writing-simple-plans' | grep -Fq "$guidance_marker"; then
+      problems="${problems}expected guidance on planner prompt"$'\n'
     fi
     if ! printf '%s\n' "$flattened" | grep -F 'smell scout' | grep -qiE 'dead code'; then
       problems="${problems}expected dead-code instruction on smell scout prompt"$'\n'
     fi
-    if ! printf '%s\n' "$flattened" | grep -F 'Work item:' | grep -qiE 'dead code|nibble'; then
-      problems="${problems}expected dead-code / nibble instruction on implementer prompt"$'\n'
+    if ! printf '%s\n' "$flattened" | grep -F 'writing-simple-plans' | grep -qiE 'dead code|nibble'; then
+      problems="${problems}expected dead-code / nibble instruction on planner prompt"$'\n'
     fi
   fi
 
@@ -2614,8 +2664,123 @@ test_run_live_implement_commits_agent_work() {
   pass "$test_name"
 }
 
+test_run_live_delegates_plan_then_complete_draft_pr_execution() {
+  test_name="live run delegates planning, then lets execution finish the draft PR"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "plan-execute"
+  live_agent="$TEST_ROOT/run-plan-execute-agent"
+  write_plan_and_execute_agent "$live_agent"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"plan-execute","source":"smell","title":"Complete selected cleanup","summary":"Keep orchestration context small.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-plan-execute-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_REVIEW_ARTIFACT_DIR
+    INCHWORM_REVIEW_ARTIFACT_DIR=$(review_dir_for "$data_dir" "$repo_dir")
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -q 'writing-simple-plans' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}expected a planning agent invocation"$'\n'
+  fi
+  if ! grep -q 'executing-draft-pr-plans' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}expected a separate execution agent invocation"$'\n'
+  fi
+  if [ "$(grep -c 'pr create' "$TEST_ROOT/gh-invocations.log" || true)" -ne 1 ]; then
+    problems="${problems}execution must open exactly one draft PR"$'\n'
+  fi
+  if ! assert_pr_review_once "$TEST_ROOT/pr-review-invocations.log"; then
+    problems="${problems}execution must run Standard review exactly once"$'\n'
+  fi
+  if [ "$draft_cache" != "https://example.test/pr/99" ]; then
+    problems="${problems}expected active_draft_pr set, got: $draft_cache"$'\n'
+  fi
+  if [ -f "$finds_md" ] && ! grep -A30 'plan-execute' "$finds_md" | grep -qiE 'status:[[:space:]]*in_pr'; then
+    problems="${problems}selected find must be in_pr after execution opens the draft"$'\n'
+  fi
+  if ! assert_notify_once_with_pr_url "$TEST_ROOT/notify-invocations.log" "https://example.test/pr/99"; then
+    problems="${problems}expected one coordinator ping after completed execution"$'\n'
+  fi
+  if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent argv must not include --yolo/--force/--trust"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "agent log:" "$(cat "$TEST_ROOT/agent-invocations.log" 2>/dev/null || true)" \
+      "gh log:" "$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_live_not_thin_plan_stops_before_execution() {
+  test_name="live not-thin plan marks too_large without launching execution"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "plan-not-thin"
+  live_agent="$TEST_ROOT/run-plan-not-thin-agent"
+  write_plan_and_execute_agent "$live_agent"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"plan-not-thin","source":"smell","title":"Move shared policy","summary":"The safe change needs a separate seam first.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-plan-not-thin-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export PLAN_RESULT_NOT_THIN=1
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -A30 'plan-not-thin' "$finds_md" | grep -qiE 'status:[[:space:]]*too_large'; then
+    problems="${problems}planning verdict must mark the find too_large"$'\n'
+  fi
+  if grep -q 'executing-draft-pr-plans' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}not-thin plan must not launch execution"$'\n'
+  fi
+  if grep -q 'pr create' "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}not-thin plan must not open a PR"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "agent log:" "$(cat "$TEST_ROOT/agent-invocations.log" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
 test_run_live_implement_no_changes_defers_without_pr() {
-  test_name="live implementer that changes nothing defers without push or draft PR"
+  test_name="live planning agent that writes no plan defers without a draft PR"
   now="2026-08-18T10:00:00"
   setup_eligible_run_env "live-noop"
   write_smell_candidates_json "$fixture_dir" \
@@ -5462,14 +5627,10 @@ run_test test_run_discover_parses_utf8_finds_under_c_locale
 run_test test_run_live_scouts_all_five_sources
 run_test test_run_live_scouts_tolerate_prose_stdout
 run_test test_run_repo_guidance_injected_into_agent_prompts
-run_test test_run_live_implement_commits_agent_work
+run_test test_run_live_delegates_plan_then_complete_draft_pr_execution
+run_test test_run_live_not_thin_plan_stops_before_execution
 run_test test_run_live_implement_no_changes_defers_without_pr
 run_test test_run_authors_branch_and_pr_from_find
-run_test test_run_uses_agent_authored_pr_copy
-run_test test_run_rewrites_commit_that_names_the_runner
-run_test test_run_keeps_commit_that_only_names_the_draft_path
-run_test test_run_defers_when_rewrite_fallback_also_names_the_runner
-run_test test_run_defers_when_sanitize_reset_fails
 run_test test_run_branch_prefix_falls_back_to_git_identity
 run_test test_run_recorded_draft_blocks_after_branch_rename
 run_test test_run_hand_cut_draft_does_not_block
@@ -5487,10 +5648,6 @@ run_test test_run_review_advisory_skips_fixer_and_pings
 run_test test_run_review_blocking_fix_success_pings
 run_test test_run_review_blocking_fix_fail_still_pings
 run_test test_run_fixer_work_lands_on_the_implement_branch
-run_test test_run_fixer_rewrite_pushes_authored_history
-run_test test_run_fixer_preserves_clean_implementer_message
-run_test test_run_path_mention_survives_fixer_squash
-run_test test_run_dirty_fix_history_is_not_pushed
 run_test test_inchworm_skill_and_references_exist
 run_test test_status_shows_repo_window_and_draft
 run_test test_launchd_plist_and_install_notes

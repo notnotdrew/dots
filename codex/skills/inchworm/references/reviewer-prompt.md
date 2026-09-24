@@ -1,5 +1,8 @@
 # Reviewer prompt (Phase 4)
 
+Legacy fixture contract only. Live review is part of
+`executing-draft-pr-plans`; inchworm does not launch a second reviewer.
+
 Run a full **Standard `pr-review`** against the draft PR URL. Do **not** use an inchworm-lite reviewer.
 
 ## Contract

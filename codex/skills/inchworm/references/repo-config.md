@@ -16,7 +16,8 @@ state:
 
 ## `guidance`
 
-Optional plain-text notes for agents. Injected into scout, implementer, and fixer prompts as a **Repo guidance** section.
+Optional plain-text notes for agents. Injected into scout, planner, and
+draft-PR executor prompts as a **Repo guidance** section.
 
 Use it for durable repo facts the agent should respect (preferred tools, no-go areas, naming conventions, where to look for errors). Keep it short.
 

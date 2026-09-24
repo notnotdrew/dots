@@ -1,5 +1,9 @@
 # Implementer prompt (Phase 3)
 
+Legacy fixture contract only. Live runs use a planning agent followed by an
+agent that follows `executing-draft-pr-plans`; see
+[implement-boundary](implement-boundary.md).
+
 The **implementer** works only on the selected find, inside the coordinator-created **Worktrunk** checkout.
 
 ## Inputs

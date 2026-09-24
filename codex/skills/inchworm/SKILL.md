@@ -1,6 +1,6 @@
 ---
 name: inchworm
-description: Coordinator-first daily create-window runner for inchworm finds (scouts → curator → pick → implementer → draft PR → reviewer → fixer → ping). Use when running inchworm, curating finds.md, or picking the next open find.
+description: Coordinator-first daily create-window runner for inchworm finds (scouts → curator → pick → plan → execute draft PR → ping). Use when running inchworm, curating finds.md, or picking the next open find.
 ---
 
 # Inchworm
@@ -11,7 +11,30 @@ Coordinator skill for the inchworm daily create-window runner (Phase 5).
 
 When a find is not an easy change, inchworm's job is to notice that. The destination is Kent Beck's sequence: make the change easy (caution: this may be hard), then make the easy change — one thin, behavior-preserving PR per day until the original find *is* the easy change. Today's runner cannot park the original and pick only the next extract slice (identity would collapse them; tidy drops `too_large`; pick has no "blocked on"), so the stop is `too_large`. This paragraph is not permission to extract and ship policy in one sitting, to keep a seam-move find in the open backlog, or to spend the day on a leftover-write cleanup inside a region the tree already marked provisional.
 
-## Phase 5 scope (discover → implement → draft PR → review → fix → ping → schedule)
+## Keep the coordinator small
+
+Run `inchworm run` or `inchworm now`; do not reproduce the pipeline in the
+current agent session. The shell process owns orchestration and durable state.
+Each scout, planner, and executor starts in a fresh agent context and returns
+through files or GitHub state. The coordinator keeps only the selected find,
+branch, plan result, and draft PR URL.
+
+After a find is selected, compose existing generic skills:
+
+1. A fresh agent follows **`writing-simple-plans`** and writes the plan. It does
+   not implement.
+2. If the result cannot fit one thin, behavior-preserving PR, stop as
+   `too_large`.
+3. A second fresh agent follows **`executing-draft-pr-plans`**. That skill owns
+   implementation, verification, commits, opening the draft PR, Standard
+   review, folding fixes, and the final force-with-lease push.
+4. The coordinator discovers the draft by its exact branch, records it, pings,
+   and removes the checkout.
+
+The reused skills remain generic. Inchworm-specific policy is supplied in each
+handoff; it is not added to those skills.
+
+## Scope (discover → plan → execute draft PR → ping → schedule)
 
 LaunchAgent ticks call gated `inchworm run`. `inchworm now` is the same core without the weekday / create-window / same-day / blocking-draft gates.
 
@@ -24,12 +47,13 @@ On an eligible `inchworm run`:
 5. Curator merges candidates into `finds.md`, then tidies (drop `deferred`/`too_large`; cap open at 20)
 6. Pick the highest-priority open find (lowest rank)
 7. If none: **stop** — no implementer, no worktree, no `gh pr create`
-8. If selected: run the **implementer** in a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on the freshly fetched trunk
-9. On success: **push** the branch — the first push, `git push -u origin HEAD`, never forced — then coordinator `gh pr create --draft --base <base_branch>`, set `state.active_draft_pr` to the PR URL, mark find `in_pr`
-10. On implement failure: no PR, **no second pick** (stamp already burned), skip review / fixer / ping, and alert the human. The find is marked `deferred` (or `too_large`) only when the attempt actually judged *it*; when the network, `gh`, or the remote is what failed, the find stays `open` so the next day can pick it up again — the next tidy drops `deferred`
-11. After successful draft PR: run full **Standard `pr-review`** once (not lite) → map verified blockers → optional one **fixer** pass → squash implement + fix into one authored commit and update the draft branch with `git push --force-with-lease` → **ping** immediately; then `wt remove --no-delete-branch` the implement checkout (keep the branch)
+8. If selected: create a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on the freshly fetched trunk
+9. Run a fresh planning agent with `writing-simple-plans`. No thin plan means `too_large`; do not launch execution.
+10. Run a fresh execution agent with `executing-draft-pr-plans`. It completes the generic workflow through draft PR and Standard review.
+11. On success, discover the open draft by exact branch, set `state.active_draft_pr`, mark the find `in_pr`, **ping** immediately, then `wt remove --no-delete-branch` the checkout (keep the branch).
+12. On failure: no second pick (stamp already burned), alert the human, and clean up the checkout. A planning verdict can mark the find `too_large`; other attempts are `deferred`.
 
-Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement branch is ever force-pushed, and only with `--force-with-lease` — never `develop` or `main`. No review↔fix loop. No auto-ready / merge.
+Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement branch is ever force-pushed, and only with `--force-with-lease` — never `develop` or `main`. No auto-ready / merge.
 
 ## Everything a reviewer sees is the author's own work
 
@@ -44,10 +68,9 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Scout** — propose candidates (see [scout-prompts](references/scout-prompts.md))
 - **Curator** — merge/dedupe into durable `finds.md` (see [curator-prompt](references/curator-prompt.md))
 - **Pick** — choose one open find or report none (see [discover-boundary](references/discover-boundary.md))
-- **Implementer** — code the selected find in a Worktrunk checkout (see [implementer-prompt](references/implementer-prompt.md)); smallest change preserves other callers' semantics, so unbounded shared retry/report/fail-loud policy is `too_large` (see [shared-seam](references/shared-seam.md)), as is a nibble inside provisional code
-- **Coordinator** — push branch, draft PR, state updates, then review → fix → ping (see [implement-boundary](references/implement-boundary.md), [review-fix-boundary](references/review-fix-boundary.md))
-- **Reviewer** — full Standard `pr-review` (see [reviewer-prompt](references/reviewer-prompt.md))
-- **Fixer** — one pass on verified blockers only (see [fixer-prompt](references/fixer-prompt.md))
+- **Planner** — fresh agent following `writing-simple-plans`; produces only a thin plan or a not-thin result
+- **Executor** — fresh agent following `executing-draft-pr-plans`; owns the complete draft PR workflow
+- **Coordinator** — owns checkout, state mapping, ping, and cleanup (see [implement-boundary](references/implement-boundary.md))
 - **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep and an adequacy check (did the change go far enough, or is it a nibble in dead code?) (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop
 
 ## References
@@ -60,10 +83,6 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - [scout-prompts](references/scout-prompts.md)
 - [curator-prompt](references/curator-prompt.md)
 - [discover-boundary](references/discover-boundary.md)
-- [implementer-prompt](references/implementer-prompt.md)
 - [implement-boundary](references/implement-boundary.md)
-- [reviewer-prompt](references/reviewer-prompt.md)
-- [fixer-prompt](references/fixer-prompt.md)
-- [review-fix-boundary](references/review-fix-boundary.md)
 - [human-review](references/human-review.md)
 - [launchd-install](references/launchd-install.md)

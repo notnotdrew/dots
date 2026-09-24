@@ -191,6 +191,15 @@ when "list_matching_drafts"
     puts [number, url.empty? ? "PR##{number}" : url, head].join("\t")
   end
 
+when "find_draft_by_head"
+  # find_draft_by_head <head>; reads gh JSON from stdin and prints the exact
+  # branch's draft URL. Malformed JSON or a ready PR produces no output.
+  head = ARGV.fetch(1)
+  draft = parse_gh_pr_list($stdin.read).find do |pr|
+    pr.is_a?(Hash) && pr["isDraft"] == true && pr["headRefName"].to_s == head
+  end
+  puts draft["url"].to_s if draft && !draft["url"].to_s.empty?
+
 when "parse_now"
   # Print: date weekday hour minute  (weekday: 1=Mon .. 7=Sun)
   now = ARGV.fetch(1)
