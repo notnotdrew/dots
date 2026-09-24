@@ -21,7 +21,7 @@ implement time, so fixture repos without a remote still run.
 ## Allowed
 
 - Ensure finds dir / write `finds.md`
-- Run scouts (fixtures via `INCHWORM_SCOUT_FIXTURE_DIR`, or live agent for smell / lint / errors / backlog)
+- Run scouts (fixtures via `INCHWORM_SCOUT_FIXTURE_DIR`, or live agent for smell / lint / errors / backlog / slow; slow uses `pup` against Datadog APM)
 - Curator merge, dedupe, and tidy (drop deferred/too_large; cap open at 20; keep in_pr)
 - Pick lowest-rank `status: open` find
 - Print selected id + title, or a clear none signal

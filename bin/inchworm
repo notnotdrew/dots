@@ -22,6 +22,9 @@ readonly YAML_HELPER
 readonly FINDS_HELPER
 readonly REVIEW_HELPER
 
+SCOUT_SOURCES=(smell lint errors backlog slow)
+readonly SCOUT_SOURCES
+
 CONFIG_DIR="${INCHWORM_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/inchworm}"
 CONFIG_FILE="${CONFIG_DIR}/config.yml"
 DATA_DIR="${INCHWORM_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm}"
@@ -168,6 +171,10 @@ scout_prompt_for() {
       role_blurb="Pull small, already-agreed backlog items that are ready to implement as a thin PR."
       evidence_blurb="Put the issue's URL or key in evidence, e.g. the Linear ticket the work came from."
       ;;
+    slow)
+      role_blurb="Use the pup CLI against Datadog APM to find slow resources or endpoints with a clear, bounded optimization. Inspect pup help before choosing commands. Start with a short explicit time window and narrow service/environment filters; aggregate resources first, then inspect only a few representative traces. Skip candidates that need an unbounded refactor, product redesign, broad instrumentation project, or a code path you cannot identify."
+      evidence_blurb="Put an openable Datadog URL in evidence for the APM resource or representative trace. Include the service, resource/endpoint, environment, query window, and observed latency in the summary so a reviewer can verify the signal. Prefer pup over other Datadog interfaces."
+      ;;
     *)
       role_blurb="Propose small, concrete, rankable finds."
       ;;
@@ -184,6 +191,8 @@ Write your answer as a JSON array to the file ${out_file} — nothing else belon
 id (slug without F- prefix), source ("${source}"), title, summary, rank (integer, lower is better), status ("open" or "new"); optional evidence (string).
 
 Write title and summary for a person, not a machine: the title reads like a commit subject, and the summary says why the change is worth making. ${evidence_blurb}
+
+Do not edit finds.md or implement any candidate. Your only output is the candidate JSON.
 
 If the problem sits inside unused or otherwise dead code, the find is to delete that code — not to repair a tiny spot in it. Emit the deletion when it is still a thin PR. If deletion is a product or API question, skip the candidate; do not propose a nibble of its internals.
 EOF
@@ -227,7 +236,7 @@ run_live_scout() {
   fi
 }
 
-# Discover: scouts (fixtures or live smell/lint/errors/backlog) → curator merge → pick.
+# Discover: scouts (fixtures or live sources in SCOUT_SOURCES) → curator merge → pick.
 discover_pipeline() {
   local repo_path=$1
   local scout_dir
@@ -241,7 +250,7 @@ discover_pipeline() {
     scout_dir=$(mktemp -d "${TMPDIR:-/tmp}/inchworm-scouts.XXXXXX")
     cleanup_scout_dir=1
     guidance=$(load_repo_guidance "${repo_path}/.inchworm.yml")
-    for source in smell lint errors backlog; do
+    for source in "${SCOUT_SOURCES[@]}"; do
       run_live_scout "$repo_path" "$source" "${scout_dir}/${source}.json" "$guidance"
     done
   fi

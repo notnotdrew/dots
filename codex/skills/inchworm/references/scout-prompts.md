@@ -8,6 +8,7 @@ Sources:
 - **lint** — optional; lint / static analysis leftovers
 - **errors** — optional; recurring runtime / CI errors
 - **backlog** — optional; small documented TODOs ready for a thin PR
+- **slow** — optional; slow Datadog APM resources/endpoints with a bounded optimization
 
 ## Shared contract
 
@@ -46,3 +47,11 @@ Do not propose a find whose patch is “add this status, exception, or error cla
 You are the backlog scout. Pull small, already-agreed backlog items that are ready to implement later. Emit `source: backlog`, with the Linear issue URL or key in `evidence`.
 
 Do not pull a nested cleanup under an unresolved "remove this API / check usage then delete" item. The agreed deletion of an unused helper still is.
+
+## Slow scout
+
+You are the slow scout. Use the `pup` CLI against Datadog APM to find slow resources or endpoints with a clear, bounded optimization. Emit `source: slow`.
+
+Inspect the installed `pup` command help before choosing commands. Use a short, explicit time window and narrow service/environment filters. Aggregate APM resources first, then inspect only a few representative traces. Prefer a few candidates supported by stable latency or volume evidence over a long list of isolated slow traces.
+
+Put an openable Datadog APM resource or trace URL in `evidence`. In `summary`, name the service, resource/endpoint, environment, query window, observed latency, and the bounded code-level opportunity. Skip a candidate when you cannot map the resource to code or when the likely work is an unbounded refactor, product redesign, or broad instrumentation project. Prefer no candidate to a vague “investigate performance” find.

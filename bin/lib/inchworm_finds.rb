@@ -13,7 +13,7 @@ require "fileutils"
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
 
-SCOUT_SOURCES = %w[smell lint errors backlog].freeze
+SCOUT_SOURCES = %w[smell lint errors backlog slow].freeze
 
 SOURCE_PREFIX_RE = /\A(?:#{SCOUT_SOURCES.join('|')})-/.freeze
 ISSUE_KEY_RE = /\b([A-Z]{2,6}-\d+)\b/.freeze

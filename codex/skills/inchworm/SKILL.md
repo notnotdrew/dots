@@ -20,7 +20,7 @@ On an eligible `inchworm run`:
 1. Preflight before spending anything: `wt`, `origin`, a successful `git fetch origin --prune`, a resolvable trunk (`origin/<base_branch>`, default `main`). A failure here is a day that never started — no stamp, no scouts, no find touched, alert the human, and the next tick in the window retries (see [discover-boundary](references/discover-boundary.md))
 2. Stamp `last_run_date` (burns the day; no second pick same day)
 3. Ensure the finds directory for the repo path hash
-4. Run scouts (smell, lint, errors, backlog — fixtures when `INCHWORM_SCOUT_FIXTURE_DIR` is set; otherwise live `INCHWORM_AGENT` per source)
+4. Run scouts (smell, lint, errors, backlog, slow — fixtures when `INCHWORM_SCOUT_FIXTURE_DIR` is set; otherwise live `INCHWORM_AGENT` per source; the slow scout uses `pup` against Datadog APM)
 5. Curator merges candidates into `finds.md`, then tidies (drop `deferred`/`too_large`; cap open at 20)
 6. Pick the highest-priority open find (lowest rank)
 7. If none: **stop** — no implementer, no worktree, no `gh pr create`

@@ -13,9 +13,9 @@
 #                               tests MUST set this under TEST_ROOT
 #   INCHWORM_SCOUT_FIXTURE_DIR — if set, load scout candidate JSON from this dir
 #                               (test stub). Filenames: smell.json, lint.json,
-#                               errors.json, backlog.json. When unset, live agent
-#                               scouts run for all four sources (smell, lint,
-#                               errors, backlog) via INCHWORM_AGENT.
+#                               errors.json, backlog.json, slow.json. When unset,
+#                               live agent scouts run for all five sources (smell,
+#                               lint, errors, backlog, slow) via INCHWORM_AGENT.
 #   INCHWORM_BRANCH_PREFIX    — overrides yaml/git identity. The harness unsets
 #                               it unless a test exported it on purpose.
 #                               Production reads .inchworm.yml branch_prefix,
@@ -91,7 +91,7 @@
 #   After fixer (or after review if no blockers): ping immediately (decision #7 v1)
 #
 # Candidate schema (scout JSON arrays). Each object MUST include at least:
-#   id (string slug), source (lint|errors|backlog|smell), title, summary,
+#   id (string slug), source (lint|errors|backlog|smell|slow), title, summary,
 #   rank (int, lower = higher priority; 1 best), status (new → "open");
 #   optional evidence (string).
 #
@@ -116,7 +116,7 @@
 # Eligible `inchworm run` pipeline (create-window gates pass):
 #   1. Stamp state.last_run_date first (burns the day; no second pick same day)
 #   2. Ensure finds dir for repo path hash under INCHWORM_DATA_DIR
-#   3. Run scouts: smell, lint, errors, backlog (fixtures when
+#   3. Run scouts: smell, lint, errors, backlog, slow (fixtures when
 #      INCHWORM_SCOUT_FIXTURE_DIR set; else live INCHWORM_AGENT per source)
 #   4. Curator merge into finds.md (scout candidates + existing; dedupe by id)
 #      then Phase 5 tidy (drop deferred/too_large; cap open at 20)
@@ -851,7 +851,7 @@ write_file_writing_scout_agent() {
 #!/usr/bin/env bash
 printf '%s\n' "agent \$*" >>"$TEST_ROOT/agent-invocations.log"
 prompt="\$*"
-out_path=\$(printf '%s' "\$prompt" | grep -oE '/[^[:space:]]*/(smell|lint|errors|backlog)\.json' | head -n 1)
+out_path=\$(printf '%s' "\$prompt" | grep -oE '/[^[:space:]]*/(smell|lint|errors|backlog|slow)\.json' | head -n 1)
 source_name=""
 if printf '%s' "\$prompt" | grep -qi 'smell scout'; then
   source_name=smell
@@ -861,6 +861,8 @@ elif printf '%s' "\$prompt" | grep -qi 'errors scout'; then
   source_name=errors
 elif printf '%s' "\$prompt" | grep -qi 'backlog scout'; then
   source_name=backlog
+elif printf '%s' "\$prompt" | grep -qi 'slow scout'; then
+  source_name=slow
 fi
 if [ -n "\$source_name" ] && [ -n "\$out_path" ]; then
   printf '%s\n' "[{\"id\":\"file-\$source_name\",\"source\":\"\$source_name\",\"title\":\"File \$source_name find\",\"summary\":\"written to file\",\"rank\":1,\"status\":\"open\"}]" >"\$out_path"
@@ -886,6 +888,8 @@ elif printf '%s' "\$prompt" | grep -qi 'errors scout'; then
   printf '%s\n' '[{"id":"live-errors","source":"errors","title":"Live errors find","summary":"from errors scout","rank":3,"status":"open"}]'
 elif printf '%s' "\$prompt" | grep -qi 'backlog scout'; then
   printf '%s\n' '[{"id":"live-backlog","source":"backlog","title":"Live backlog find","summary":"from backlog scout","rank":4,"status":"open"}]'
+elif printf '%s' "\$prompt" | grep -qi 'slow scout'; then
+  printf '%s\n' '[{"id":"live-slow","source":"slow","title":"Reduce slow exports endpoint queries","summary":"The exports endpoint spends most of its latency in one bounded query.","evidence":"https://app.datadoghq.com/apm/resource/example","rank":5,"status":"open"}]'
 else
   # Implementer / fixer / other agent calls: succeed with no scout JSON.
   exit 0
@@ -2306,8 +2310,8 @@ EOF
   pass "$test_name"
 }
 
-test_run_live_scouts_all_four_sources() {
-  test_name="eligible run without scout fixtures invokes smell/lint/errors/backlog agents"
+test_run_live_scouts_all_five_sources() {
+  test_name="eligible run without scout fixtures invokes smell/lint/errors/backlog/slow agents"
   now="2026-08-18T10:00:00"
   implement_fixture=success
   setup_eligible_run_env "live-scouts"
@@ -2346,19 +2350,32 @@ test_run_live_scouts_all_four_sources() {
   if [ ! -f "$finds_md" ]; then
     problems="${problems}expected finds.md from live scouts: $finds_md"$'\n'
   else
-    for id in live-smell live-lint live-errors live-backlog; do
+    for id in live-smell live-lint live-errors live-backlog live-slow; do
       if ! grep -q "$id" "$finds_md"; then
         problems="${problems}finds.md missing candidate $id"$'\n'
       fi
     done
   fi
-  for source in smell lint errors backlog; do
+  for source in smell lint errors backlog slow; do
     if ! grep -qi "${source} scout" "$TEST_ROOT/agent-invocations.log"; then
       problems="${problems}expected live ${source} scout agent invocation"$'\n'
     fi
   done
   if ! grep -qiE 'dead code' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}scout prompts must tell agents not to patch dead code"$'\n'
+  fi
+  slow_prompt=$(grep -i -A 30 'slow scout' "$TEST_ROOT/agent-invocations.log" || true)
+  if ! printf '%s' "$slow_prompt" | grep -qiE '\bpup\b'; then
+    problems="${problems}slow scout prompt must prefer pup for Datadog"$'\n'
+  fi
+  if ! printf '%s' "$slow_prompt" | grep -qiE 'Datadog.*(URL|link)|URL.*Datadog'; then
+    problems="${problems}slow scout prompt must require openable Datadog evidence"$'\n'
+  fi
+  if ! printf '%s' "$slow_prompt" | grep -qiE 'thin|bounded|unbounded'; then
+    problems="${problems}slow scout prompt must keep optimization candidates thin"$'\n'
+  fi
+  if ! printf '%s' "$slow_prompt" | grep -qiE 'Do not edit.*finds\.md'; then
+    problems="${problems}scout prompts must forbid finds.md edits"$'\n'
   fi
   if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}scout agent argv must not include --yolo/--force/--trust"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
@@ -2412,7 +2429,7 @@ test_run_live_scouts_tolerate_prose_stdout() {
   if [ ! -f "$finds_md" ]; then
     problems="${problems}expected finds.md: $finds_md"$'\n'
   else
-    for id in file-smell file-lint file-errors file-backlog; do
+    for id in file-smell file-lint file-errors file-backlog file-slow; do
       if ! grep -q "$id" "$finds_md"; then
         problems="${problems}finds.md missing candidate $id"$'\n'
       fi
@@ -2456,7 +2473,7 @@ printf '%s\n' "agent \$*" >>"$TEST_ROOT/agent-invocations.log"
 prompt="\$*"
 if printf '%s' "\$prompt" | grep -qi 'smell scout'; then
   printf '%s\n' '[{"id":"guidance-smell","source":"smell","title":"Guidance smell","summary":"pick me","rank":1,"status":"open"}]'
-elif printf '%s' "\$prompt" | grep -qiE 'lint scout|errors scout|backlog scout'; then
+elif printf '%s' "\$prompt" | grep -qiE 'lint scout|errors scout|backlog scout|slow scout'; then
   printf '%s\n' '[]'
 elif printf '%s' "\$prompt" | grep -qi 'Work item:'; then
   printf '%s\n' "implemented by agent" >"./agent-work.txt"
@@ -4357,8 +4374,8 @@ test_inchworm_skill_and_references_exist() {
           problems="${problems}skill/references must mention: $term"$'\n'
         fi
       done
-      if ! printf '%s' "$blob" | grep -qiE 'lint|errors|backlog|smell'; then
-        problems="${problems}references must mention scout sources (lint|errors|backlog|smell)"$'\n'
+      if ! printf '%s' "$blob" | grep -qiE 'lint|errors|backlog|smell|slow'; then
+        problems="${problems}references must mention scout sources (lint|errors|backlog|smell|slow)"$'\n'
       fi
       if ! printf '%s' "$blob" | grep -qE 'branch_prefix'; then
         problems="${problems}skill/references must document the branch_prefix naming"$'\n'
@@ -5442,7 +5459,7 @@ run_test test_run_implement_too_large_marks_without_pr
 run_test test_finds_path_hash_isolates_repos
 run_test test_run_pick_none_when_no_open_finds
 run_test test_run_discover_parses_utf8_finds_under_c_locale
-run_test test_run_live_scouts_all_four_sources
+run_test test_run_live_scouts_all_five_sources
 run_test test_run_live_scouts_tolerate_prose_stdout
 run_test test_run_repo_guidance_injected_into_agent_prompts
 run_test test_run_live_implement_commits_agent_work
