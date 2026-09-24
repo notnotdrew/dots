@@ -14,7 +14,7 @@ This is the default “how do we get there” skill. It is not a review, not a g
 1. Take what the user gave. Read the repo for what is true now.
 2. Ask only if a load-bearing fact is missing. One short ask.
 3. Write `plan.md` with Now, Done when, Not doing, and ordered Steps.
-4. Check grain: each step is one isolated decision, not a layer and not a tiny chore.
+4. Check grain: each step is one meaningful slice a reviewer could read in the log, not a tiny chore.
 5. Loop `simplify-code` on the implementation that `plan.md` describes. Fresh subagent each pass. Stop when that subagent says the plan is already simple enough, or (rarely) when a rewrite is not desirable.
 
 If the user named a path, write there. Otherwise write `plan.md` in the workspace root.
@@ -60,11 +60,11 @@ No code in the plan. No RED recipes. No phase theater. Name files only when the 
 
 ## Grain
 
-Each step is one isolated decision that could land as a commit (or a small PR) and leave the system coherent.
+Each step is one isolated decision that could land as a commit (or a small PR) and leave the system coherent. Thin slices are the default when they are meaningful: they tell the story to reviewers, one beat per commit.
 
-- Too small: you would not open a PR for it alone (`add types`, then `add function`, then `add test` as three steps).
-- Too big: a reviewer would say this is three decisions.
-- Sequence by dependency of decisions, not by layer (models → services → UI) unless that *is* the isolated decision.
+- Too small: a chore you would not name in a commit message (`add types`, then `add function`, then `add test`).
+- Too big: a reviewer would say this is three decisions, or the log would hide a beat (domain object, job, trigger bundled as “the feature”).
+- Sequence by dependency of decisions. Layers are fine when the layer *is* the beat.
 - After each step the system is still habitable: working, or at least not more broken in a way later steps must unwind.
 
 If a step hides two decisions, split it. If two adjacent steps are the same decision, merge them.
@@ -154,7 +154,7 @@ Each iteration:
 
 - End state first; steps exist to reach it.
 - Ask once, then write. Do not stall for nice-to-have context.
-- Prefer fewer, clearer steps over a complete-looking document.
+- Prefer a short list of story-shaped steps over a complete-looking document. Prefer a thin meaningful slice over bundling beats so the list looks smaller.
 - After writing `plan.md`, run the `simplify-code` loop.
 - If the user asked for TDD, stop and use `planning-tdd` instead of smuggling cycles into this template.
 - Do not execute the plan unless the user asks.
