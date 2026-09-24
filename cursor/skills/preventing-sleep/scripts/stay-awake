@@ -3,10 +3,17 @@ set -euo pipefail
 
 # Keep macOS from idle-sleeping so a long task can keep running.
 # Usage: stay-awake enable|disable|status
+#
+# caffeinate runs under launchd rather than as a child of this script: a
+# backgrounded child is killed when the calling shell or agent session goes
+# away, which silently ended stay-awake after a few seconds.
 
 readonly STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/stay-awake"
-readonly PID_FILE="${STATE_DIR}/caffeinate.pid"
-readonly SCRIPT_NAME="$(basename "$0")"
+readonly PLIST="${STATE_DIR}/stay-awake.plist"
+readonly LABEL="local.stay-awake"
+SCRIPT_NAME="$(basename "$0")"
+DOMAIN="gui/$(id -u)"
+readonly SCRIPT_NAME DOMAIN
 
 die() {
   echo "${SCRIPT_NAME}: error: $*" >&2
@@ -23,62 +30,82 @@ Usage: ${SCRIPT_NAME} enable|disable|status
 EOF
 }
 
-pid_is_caffeinate() {
-  local pid="$1"
-  [[ -n "${pid}" ]] || return 1
-  kill -0 "${pid}" 2>/dev/null || return 1
-  ps -p "${pid}" -o comm= 2>/dev/null | grep -q '^caffeinate$'
+is_loaded() {
+  launchctl print "${DOMAIN}/${LABEL}" >/dev/null 2>&1
 }
 
-read_pid() {
-  if [[ -f "${PID_FILE}" ]]; then
-    tr -d '[:space:]' <"${PID_FILE}"
+# Empty when the job is not loaded; launchctl's not-found status must not
+# escape through pipefail into a caller's command substitution.
+job_pid() {
+  launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null |
+    awk '/^[[:space:]]*pid = /{print $3; exit}' || true
+}
+
+write_plist() {
+  mkdir -p "${STATE_DIR}"
+  # -d display, -i idle, -m disk, -s system (AC power)
+  cat >"${PLIST}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-dims</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>
+EOF
+}
+
+# launchd leaves the job loaded but pidless for ~10s while it throttles a
+# KeepAlive relaunch.
+describe_job() {
+  local pid
+  pid="$(job_pid)"
+  if [[ -n "${pid}" ]]; then
+    echo "caffeinate pid ${pid}"
+  else
+    echo "caffeinate restarting"
   fi
 }
 
 cmd_status() {
-  local pid
-  pid="$(read_pid)"
-  if pid_is_caffeinate "${pid}"; then
-    echo "stay-awake: on (caffeinate pid ${pid})"
-    return 0
+  if ! is_loaded; then
+    echo "stay-awake: off"
+    return 1
   fi
-  echo "stay-awake: off"
-  return 1
+  echo "stay-awake: on ($(describe_job))"
 }
 
 cmd_enable() {
-  mkdir -p "${STATE_DIR}"
-  local pid
-  pid="$(read_pid)"
-  if pid_is_caffeinate "${pid}"; then
-    echo "stay-awake: already on (caffeinate pid ${pid})"
+  if is_loaded; then
+    echo "stay-awake: already on ($(describe_job))"
     return 0
   fi
-  rm -f "${PID_FILE}"
-  # -d display, -i idle, -m disk, -s system (AC power), -u user activity
-  caffeinate -dimsu >/dev/null 2>&1 &
-  pid="$!"
-  echo "${pid}" >"${PID_FILE}"
-  if ! pid_is_caffeinate "${pid}"; then
-    rm -f "${PID_FILE}"
-    die "failed to start caffeinate"
-  fi
+  write_plist
+  launchctl bootstrap "${DOMAIN}" "${PLIST}" ||
+    die "failed to load ${LABEL}"
+  local pid
+  pid="$(job_pid)"
+  [[ -n "${pid}" ]] || die "loaded ${LABEL} but caffeinate is not running"
   echo "stay-awake: on (caffeinate pid ${pid})"
 }
 
 cmd_disable() {
-  local pid
-  pid="$(read_pid)"
-  if pid_is_caffeinate "${pid}"; then
-    kill "${pid}"
-    wait "${pid}" 2>/dev/null || true
-    rm -f "${PID_FILE}"
-    echo "stay-awake: off"
+  if ! is_loaded; then
+    rm -f "${PLIST}"
+    echo "stay-awake: already off"
     return 0
   fi
-  rm -f "${PID_FILE}"
-  echo "stay-awake: already off"
+  launchctl bootout "${DOMAIN}/${LABEL}" || die "failed to unload ${LABEL}"
+  rm -f "${PLIST}"
+  echo "stay-awake: off"
 }
 
 main() {

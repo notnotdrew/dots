@@ -20,7 +20,11 @@ scripts/stay-awake disable
 scripts/stay-awake status
 ```
 
-`enable` starts `caffeinate -dimsu` in the background and stores its pid. `disable` kills that process. Display sleep, idle sleep, disk sleep, and AC system sleep are asserted until disable.
+`enable` loads a launchd agent (`local.stay-awake`) that runs `caffeinate -dims`. `disable` unloads it. Display sleep, idle sleep, disk sleep, and AC system sleep are asserted until disable.
+
+launchd owns the process so it outlives the shell and agent session that started it. A plain backgrounded `caffeinate` does not: it is killed with the calling command's process group, which used to end stay-awake about five seconds after `enable`. The agent is bootstrapped from the state dir rather than `~/Library/LaunchAgents`, so it does not come back after a logout or reboot.
+
+Verify with `pmset -g assertions | grep caffeinate` if a sleep is reported despite `status` saying on.
 
 ## Agent steps
 
