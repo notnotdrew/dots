@@ -4,6 +4,10 @@
 
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
+# ScreenSteps: the app API key is in config/honeybadger.yml. Booting
+# RAILS_ENV=staging on a laptop still reports unless this is false.
+export HONEYBADGER_REPORT_DATA=false
+
 export DOTS_PATH="$HOME/dots"
 export EDITOR="vim"
 export KEYTIMEOUT=1 # Quicker switch between insert/command
