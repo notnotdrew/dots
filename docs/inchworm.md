@@ -1,11 +1,11 @@
 # Inchworm
 
-One small change per weekday. It opens a draft PR and then leaves me alone.
+One small change per weekday. It opens a draft PR and then stops.
 
-## Why I built it
+## Why it exists
 
 - Small cleanups never earn a ticket, so they sit in the repo for years.
-- An agent can do one a day and it costs me no attention.
+- An agent can do one a day without needing attention.
 - Every PR has to be small and leave behavior alone. That cap is the point.
 
 > Make the change easy, then make the easy change. —Kent Beck
@@ -14,7 +14,7 @@ One small change per weekday. It opens a draft PR and then leaves me alone.
 - If a find needs a refactor first, it marks the find `too_large` and quits for the day.
 - Lots of days it makes nothing. Good. The other option is a 600-line PR nobody reads.
 - The scary day is the one where it thinks something big is small. So far it stops.
-- Doing the refactor as its own daily PR is the part I haven't built.
+- Doing the refactor as its own daily PR is not built yet.
 
 ## How a day runs
 
@@ -28,16 +28,16 @@ One small change per weekday. It opens a draft PR and then leaves me alone.
 4. **Implement.** A Worktrunk checkout, dated branch off the freshly fetched trunk.
 5. **Open the PR.** Draft, against the trunk the repo names in `base_branch`.
 6. **Review.** One review pass, one fix pass for real blockers, squashed into one commit.
-7. **Tell me.** A notification with the link.
+7. **Notify.** A notification with the link.
 
-Two things I got wrong the first time:
+Two early mistakes:
 
-- Stamp the date before writing any code. Otherwise a crash tries again on a different find and I get two PRs.
+- Stamp the date before writing any code. Otherwise a crash tries again on a different find and produces two PRs.
 - Keep the tool's name out of the branch, the commit, and the PR title. The body ends with one line linking here: Picked and implemented by inchworm.
 
 ## Things it won't do
 
-- Merge, or mark a draft ready. I do that.
+- Merge, or mark a draft ready. A human does that.
 - Open a second draft while one is still out.
 - Loop review against fix. One pass each.
 - Pass `--yolo`, `--force`, or `--trust` to any agent.
@@ -45,4 +45,4 @@ Two things I got wrong the first time:
 
 ---
 
-Vibe-coded over a few evenings. Runs on my laptop against a couple of repos.
+Built over a few evenings. Runs on a laptop against a couple of repos.
