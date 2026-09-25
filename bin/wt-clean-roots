@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Prune merged worktrunk worktrees in ~/dots, ~/dots-private, and every main
-# git checkout under ~/dev. Linked worktrees (`.git` file) are skipped; `wt`
-# run from the main checkout already sees them. Checkouts open in a Herdr
-# workspace are locked for the run so a midday prune cannot pull one out from
-# under live work.
+# Daily cleanup: prune merged worktrunk worktrees, then prrr --clean.
+# Walks ~/dots, ~/dots-private, and every main git checkout under ~/dev.
+# Linked worktrees (`.git` file) are skipped; `wt` run from the main checkout
+# already sees them. Checkouts open in a Herdr workspace are locked for the
+# run so a midday prune cannot pull one out from under live work. prrr --clean
+# runs while those locks are still held, because it force-removes epoch
+# worktrees for closed/merged PRs.
 #
-#   wt-clean-roots            prune (wt step prune --foreground)
-#   wt-clean-roots --dry-run  preview
+#   wt-clean-roots            prune, then prrr --clean
+#   wt-clean-roots --dry-run  preview prune only (prrr has no dry-run)
 #   wt-clean-roots --list     print main checkouts, do not prune
 #   wt-clean-roots --install  write and load the daily LaunchAgent
 set -euo pipefail
@@ -27,11 +29,11 @@ usage() {
 Usage: $SCRIPT_NAME [--dry-run|--list|--install] [--] [root ...]
 
 Walk each root for main git checkouts (directory named .git) and run
-\`wt step prune --foreground\` there. Default roots: ~/dots, ~/dots-private,
-~/dev. Checkouts Herdr has open are locked for the duration so prune leaves
-them alone.
+\`wt step prune --foreground\` there, then \`prrr --clean\`. Default roots:
+~/dots, ~/dots-private, ~/dev. Checkouts Herdr has open are locked for the
+duration so prune and prrr leave them alone.
 
-  --dry-run   pass --dry-run to prune
+  --dry-run   pass --dry-run to prune; skip prrr (it has no preview)
   --list      print checkouts only
   --install   generate ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist and load it
               (daily 12:00)
@@ -195,6 +197,11 @@ prune_one() {
   command wt -C "$repo" step prune --foreground "$@"
 }
 
+run_prrr_clean() {
+  printf '== prrr --clean\n'
+  command prrr --clean
+}
+
 mode=run
 roots=()
 prune_args=()
@@ -257,6 +264,9 @@ if [[ "$mode" == list ]]; then
 fi
 
 command -v wt >/dev/null 2>&1 || die "wt not on PATH"
+if [[ ${#prune_args[@]} -eq 0 ]]; then
+  command -v prrr >/dev/null 2>&1 || die "prrr not on PATH"
+fi
 
 failed=0
 if [[ ${#checkouts[@]} -eq 0 ]]; then
@@ -274,5 +284,14 @@ for repo in "${checkouts[@]}"; do
     failed=1
   fi
 done
+
+if [[ ${#prune_args[@]} -eq 0 ]]; then
+  if ! run_prrr_clean; then
+    printf '%s: prrr --clean failed\n' "$SCRIPT_NAME" >&2
+    failed=1
+  fi
+else
+  printf '== prrr --clean (skipped, dry-run)\n'
+fi
 
 exit "$failed"
