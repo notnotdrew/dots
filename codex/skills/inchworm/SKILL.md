@@ -57,7 +57,7 @@ Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement br
 
 ## Everything a reviewer sees is the author's own work
 
-Branch names, commit messages, and PR copy carry no trace of the runner. See [authored-output](references/authored-output.md) — that boundary is not optional.
+Branch names, commit messages, and PR titles carry no trace of the runner. The one allowed PR-body mention is the footer in [authored-output](references/authored-output.md) — that boundary is not optional.
 
 ## Schedule (LaunchAgent)
 

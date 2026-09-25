@@ -728,8 +728,9 @@ PR_DRAFT_DIR=".inchworm/pr"
 PLAN_PATH=".inchworm/plan.md"
 PLAN_RESULT_PATH=".inchworm/plan-result"
 
-# Anything a human sees — branch, commit, PR — is written as the author's own
-# work. This is the guard against the runner naming itself in that copy.
+# Anything a human sees — branch, commit, PR title — is written as the author's
+# own work. The draft body may end with PR_FOOTER, and only that. This is the
+# guard against the runner naming itself in that copy.
 # The name only leaks when it reads as a word. Path components are exempt: a
 # leading `.` or `/` does not count (`.inchworm/pr`, `bin/inchworm`). A name
 # that *starts* the string still counts (`inchworm/…` as a branch). Plain
@@ -738,6 +739,20 @@ TOOL_NAME_RE='(^|[^[:alnum:]_./])inchworm([^[:alnum:]_]|$)'
 
 mentions_tool_name() {
   printf '%s' "$1" | grep -qiE "$TOOL_NAME_RE"
+}
+
+# The one allowed PR-body mention. Appended after the name check, so the
+# agent's own title and body still must not name the runner.
+PR_FOOTER='Picked and implemented by [inchworm](https://github.com/notnotdrew/dots/blob/main/docs/inchworm.md).'
+
+append_pr_footer() {
+  local body=$1
+
+  if [[ -z "${body//[[:space:]]/}" ]]; then
+    printf '%s' "$PR_FOOTER"
+    return
+  fi
+  printf '%s\n\n%s' "$body" "$PR_FOOTER"
 }
 
 # Trim, drop a leading markdown heading marker, cap at a reviewable length.
@@ -1517,6 +1532,7 @@ run_implement_and_pr() {
       "PR title or body would name the runner" "$branch_name"
     return 0
   fi
+  pr_body=$(append_pr_footer "$pr_body")
 
   if ! push_implement_branch "$worktree_path" "$fixture"; then
     fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \

@@ -143,11 +143,13 @@
 #      .inchworm/worktrees/; branch MAY remain
 #
 # Authored output (branch, commits, PR title/body):
-#   Never name the runner. Branch = <prefix>/<slug>-<YYYYMMDD>; commits are Tim Pope
-#   style from the implementer (coordinator falls back to the find's title/summary);
-#   PR title/body come from the agent's gitignored .inchworm/pr/{title.txt,body.md},
-#   with lines naming the runner dropped. A commit message that names the runner is
-#   rewritten by resetting onto the base and committing once (nothing pushed yet).
+#   Never name the runner in the branch, the commit, or the PR title.
+#   Branch = <prefix>/<slug>-<YYYYMMDD>; commits are Tim Pope
+#   style from the implementer (coordinator falls back to the find's title/summary).
+#   A body that names the runner is deferred. After that check, the coordinator
+#   appends one footer; that body plus the footer is what gets opened.
+#   A commit message that names the runner is rewritten by resetting onto the
+#   base and committing once (nothing pushed yet).
 #
 # Agent rules: fixtures / local curator+pick+implement+review+fix fixtures. If agent
 # argv is recorded, never allow --yolo, --force, or --trust.
@@ -1221,6 +1223,9 @@ first_implement_branch() {
 # slash is excluded the same way. `inchworm/…` at the start of a branch name
 # still matches. Plain grep -w would still trip on those paths.
 TOOL_NAME_WORD_RE='(^|[^[:alnum:]_./])inchworm([^[:alnum:]_]|$)'
+
+# The one PR-body mention the coordinator may add, and only after the name check.
+PR_FOOTER='Picked and implemented by [inchworm](https://github.com/notnotdrew/dots/blob/main/docs/inchworm.md).'
 
 # The runner never names itself where a reviewer can see it.
 assert_no_tool_name_in_branch_commits() {
@@ -2832,9 +2837,10 @@ test_run_live_implement_no_changes_defers_without_pr() {
 # --- Authored output: branch, commit message, PR copy ------------------------
 
 test_run_authors_branch_and_pr_from_find() {
-  # With no agent copy to work from, the branch, commit, and PR still read as
-  # something a person wrote, and carry the find's reason for the change.
-  test_name="branch, commit, and PR are authored for humans and never name the runner"
+  # With no agent copy to work from, the branch, commit, and PR title still read
+  # as something a person wrote. The body keeps the find's reason and ends with
+  # the one allowed footer.
+  test_name="branch, commit, and PR title stay free of the runner, and the body ends with the footer"
   now="2026-08-18T10:00:00"
   implement_fixture=success
   setup_eligible_run_env "authored"
@@ -2889,13 +2895,80 @@ test_run_authors_branch_and_pr_from_find() {
   if ! printf '%s' "$pr_body" | grep -Fq "$fault_url"; then
     problems="${problems}PR body must link the evidence a reviewer can open"$'\n'
   fi
-  if printf '%s\n%s' "$pr_title" "$pr_body" | grep -qi 'inchworm'; then
-    problems="${problems}PR title/body must not name the runner"$'\n'
+  case "$pr_body" in
+    *"$PR_FOOTER") ;;
+    *)
+      problems="${problems}PR body must end with the footer"$'\n'
+      ;;
+  esac
+  body_without_footer=${pr_body%"$PR_FOOTER"}
+  if printf '%s' "$pr_title" | grep -qiE "$TOOL_NAME_WORD_RE"; then
+    problems="${problems}PR title must not name the runner"$'\n'
+  fi
+  if printf '%s' "$body_without_footer" | grep -qiE "$TOOL_NAME_WORD_RE"; then
+    problems="${problems}PR body besides the footer must not name the runner"$'\n'
   fi
 
   if [ -n "$problems" ]; then
     fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
       "pr title:" "$pr_title" "pr body:" "$pr_body"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_defers_when_pr_body_names_the_runner() {
+  # The footer is added after the check. A body that already names the runner
+  # never becomes a draft, footer included.
+  test_name="PR body that names the runner is deferred before the footer is appended"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "dirty-pr-body"
+
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"export-retries","source":"errors","title":"Stop retrying exports that already failed","summary":"Drafted by inchworm on the daily run.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-dirty-pr-body-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  pr_body=$(cat "$TEST_ROOT/gh-pr-body.txt" 2>/dev/null || true)
+  problems=""
+
+  if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}must not open a draft when the body names the runner"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if [ -n "$pr_body" ]; then
+    problems="${problems}must not send a PR body when the copy names the runner, got: $pr_body"$'\n'
+  fi
+  if [ "$draft_cache" != "null" ]; then
+    problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
+  fi
+  if [ ! -f "$finds_md" ]; then
+    problems="${problems}missing finds.md"$'\n'
+  elif ! grep -A30 'export-retries' "$finds_md" | grep -qiE 'status:[[:space:]]*deferred'; then
+    problems="${problems}find export-retries must be deferred"$'\n'
+  fi
+  if ! grep -q 'would name the runner' "$out_file"; then
+    problems="${problems}expected the deferral to say the title or body would name the runner"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
     return
   fi
   pass "$test_name"
@@ -5631,6 +5704,7 @@ run_test test_run_live_delegates_plan_then_complete_draft_pr_execution
 run_test test_run_live_not_thin_plan_stops_before_execution
 run_test test_run_live_implement_no_changes_defers_without_pr
 run_test test_run_authors_branch_and_pr_from_find
+run_test test_run_defers_when_pr_body_names_the_runner
 run_test test_run_branch_prefix_falls_back_to_git_identity
 run_test test_run_recorded_draft_blocks_after_branch_rename
 run_test test_run_hand_cut_draft_does_not_block
