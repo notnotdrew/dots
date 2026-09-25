@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Prune merged worktrunk worktrees in ~/dots, ~/dots-private, and every main
+# git checkout under ~/dev. Linked worktrees (`.git` file) are skipped; `wt`
+# run from the main checkout already sees them. Checkouts open in a Herdr
+# workspace are locked for the run so a midday prune cannot pull one out from
+# under live work.
+#
+#   wt-clean-roots            prune (wt step prune --foreground)
+#   wt-clean-roots --dry-run  preview
+#   wt-clean-roots --list     print main checkouts, do not prune
+#   wt-clean-roots --install  write and load the daily LaunchAgent
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "$0")"
+LAUNCHD_LABEL="com.drew.wt-clean"
+LAUNCHD_PLIST="${WT_CLEAN_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist}"
+HERDR="${HERDR_BIN_PATH:-herdr}"
+
+die() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME [--dry-run|--list|--install] [--] [root ...]
+
+Walk each root for main git checkouts (directory named .git) and run
+\`wt step prune --foreground\` there. Default roots: ~/dots, ~/dots-private,
+~/dev. Checkouts Herdr has open are locked for the duration so prune leaves
+them alone.
+
+  --dry-run   pass --dry-run to prune
+  --list      print checkouts only
+  --install   generate ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist and load it
+              (daily 12:00)
+EOF
+}
+
+default_roots() {
+  printf '%s\n' "${HOME}/dots" "${HOME}/dots-private" "${HOME}/dev"
+}
+
+# Main clones only. Stop at the first .git: nested copies (vim plugins,
+# Cursor plugin caches) are not worktrunk roots, and linked worktrees
+# (`.git` file) must not be descended into either.
+collect_from() {
+  local dir=$1 child
+  if [[ -d "${dir}/.git" ]]; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  if [[ -e "${dir}/.git" ]]; then
+    return 0
+  fi
+  for child in "${dir}"/*; do
+    [[ -d "$child" ]] || continue
+    collect_from "$child"
+  done
+}
+
+list_main_checkouts() {
+  local root
+  shopt -s nullglob
+  for root in "$@"; do
+    [[ -d "$root" ]] || continue
+    collect_from "$root" | sort
+  done
+}
+
+resolve_launchd_template() {
+  local candidate dir
+  if [[ -n "${WT_CLEAN_LAUNCHD_TEMPLATE:-}" && -f "${WT_CLEAN_LAUNCHD_TEMPLATE}" ]]; then
+    printf '%s\n' "$WT_CLEAN_LAUNCHD_TEMPLATE"
+    return 0
+  fi
+  for candidate in \
+    "${SCRIPT_DIR}/../launchd/${LAUNCHD_LABEL}.plist.template" \
+    "${HOME}/dots/launchd/${LAUNCHD_LABEL}.plist.template"
+  do
+    if [[ -f "$candidate" ]]; then
+      dir="$(CDPATH= cd "$(dirname "$candidate")" && pwd)"
+      printf '%s/%s\n' "$dir" "$(basename "$candidate")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+launchd_path() {
+  printf '%s' "/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+write_launchd_plist() {
+  local template=$1
+  local dest=$2
+  local script=$3
+  local agent_path tmp
+  agent_path="$(launchd_path)"
+  mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/wt-clean-plist.XXXXXX")"
+  sed \
+    -e "s|@HOME@|${HOME}|g" \
+    -e "s|@PATH@|${agent_path}|g" \
+    -e "s|@SCRIPT@|${script}|g" \
+    "$template" >"$tmp"
+  mv "$tmp" "$dest"
+}
+
+reload_launchd_agent() {
+  local plist=$1
+  local uid
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/${LAUNCHD_LABEL}" 2>/dev/null || true
+  if [[ -L "$plist" ]]; then
+    rm -f "$plist"
+  fi
+  launchctl bootstrap "gui/${uid}" "$plist"
+}
+
+cmd_install() {
+  local template script
+  script="${HOME}/bin/${SCRIPT_NAME}"
+  [[ -x "$script" ]] || die "missing executable $script (symlink ~/bin from dots)"
+  if ! template="$(resolve_launchd_template)"; then
+    die "missing launchd plist template (expected launchd/${LAUNCHD_LABEL}.plist.template)"
+  fi
+  write_launchd_plist "$template" "$LAUNCHD_PLIST" "$script"
+  reload_launchd_agent "$LAUNCHD_PLIST"
+  printf 'loaded %s (daily 12:00)\n' "$LAUNCHD_LABEL"
+  printf 'logs: %s/Library/Logs/wt-clean.out.log\n' "$HOME"
+}
+
+# Marks locks this script owns. Locks Drew set himself have another reason
+# and are never touched.
+LOCK_REASON="wt-clean-roots: open in Herdr"
+locked_worktrees=()
+
+unlock_open_checkouts() {
+  local checkout
+  for checkout in "${locked_worktrees[@]+"${locked_worktrees[@]}"}"; do
+    git -C "$checkout" worktree unlock "$checkout" >/dev/null 2>&1 || true
+  done
+  locked_worktrees=()
+}
+
+# A run killed outright (no trap, e.g. SIGKILL) leaves its locks behind, and a
+# locked worktree is never pruned again. Drop the ones that are no longer open.
+release_stale_locks() {
+  local open=$1
+  local repo line worktree
+
+  for repo in "${checkouts[@]}"; do
+    worktree=""
+    while IFS= read -r line; do
+      case "$line" in
+        "worktree "*)
+          worktree="${line#worktree }"
+          ;;
+        "locked ${LOCK_REASON}")
+          grep -qxF "$worktree" <<<"$open" && continue
+          git -C "$repo" worktree unlock "$worktree" >/dev/null 2>&1 || true
+          ;;
+      esac
+    done < <(git -C "$repo" worktree list --porcelain 2>/dev/null)
+  done
+}
+
+# Prune skips locked worktrees, so a lock is how a checkout open in a Herdr
+# workspace survives a run that happens while Drew is working in it.
+lock_open_checkouts() {
+  local open checkout
+  command -v "$HERDR" >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || die "jq is required to read Herdr workspaces"
+
+  open="$("$HERDR" workspace list 2>/dev/null |
+    jq -r '.result.workspaces[].worktree.checkout_path // empty')" ||
+    die "herdr is installed but not answering; refusing to prune worktrees it may have open"
+
+  release_stale_locks "$open"
+
+  while IFS= read -r checkout; do
+    [[ -n "$checkout" ]] || continue
+    [[ -d "$checkout" ]] || continue
+    git -C "$checkout" worktree lock --reason "$LOCK_REASON" "$checkout" >/dev/null 2>&1 || continue
+    locked_worktrees+=("$checkout")
+  done <<<"$open"
+}
+
+prune_one() {
+  local repo=$1
+  shift
+  printf '== %s\n' "$repo"
+  command wt -C "$repo" step prune --foreground "$@"
+}
+
+mode=run
+roots=()
+prune_args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --dry-run)
+      prune_args+=(--dry-run)
+      shift
+      ;;
+    --list)
+      mode=list
+      shift
+      ;;
+    --install)
+      mode=install
+      shift
+      ;;
+    --)
+      shift
+      roots+=("$@")
+      break
+      ;;
+    -*)
+      die "unknown option: $1"
+      ;;
+    *)
+      roots+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ "$mode" == install ]]; then
+  cmd_install
+  exit 0
+fi
+
+if [[ ${#roots[@]} -eq 0 ]]; then
+  while IFS= read -r root; do
+    roots+=("$root")
+  done < <(default_roots)
+fi
+
+checkouts=()
+while IFS= read -r repo; do
+  [[ -n "$repo" ]] || continue
+  checkouts+=("$repo")
+done < <(list_main_checkouts "${roots[@]}")
+
+if [[ "$mode" == list ]]; then
+  if [[ ${#checkouts[@]} -gt 0 ]]; then
+    printf '%s\n' "${checkouts[@]}"
+  fi
+  exit 0
+fi
+
+command -v wt >/dev/null 2>&1 || die "wt not on PATH"
+
+failed=0
+if [[ ${#checkouts[@]} -eq 0 ]]; then
+  printf '%s: no main checkouts under: %s\n' "$SCRIPT_NAME" "${roots[*]}" >&2
+  exit 1
+fi
+
+trap 'unlock_open_checkouts; exit 1' HUP INT TERM PIPE
+trap unlock_open_checkouts EXIT
+lock_open_checkouts
+
+for repo in "${checkouts[@]}"; do
+  if ! prune_one "$repo" "${prune_args[@]+"${prune_args[@]}"}"; then
+    printf '%s: prune failed: %s\n' "$SCRIPT_NAME" "$repo" >&2
+    failed=1
+  fi
+done
+
+exit "$failed"

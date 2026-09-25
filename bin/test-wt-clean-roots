@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Fixture tests for wt-clean-roots: checkout discovery and the Herdr lock guard.
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLEAN="${SCRIPT_DIR}/wt-clean-roots"
+failures=0
+
+assert_eq() {
+  local name=$1 expected=$2 actual=$3
+  if [[ "$actual" == "$expected" ]]; then
+    printf 'ok  %s\n' "$name"
+  else
+    printf 'not ok  %s\nexpected:\n%s\nactual:\n%s\n' "$name" "$expected" "$actual"
+    failures=1
+  fi
+}
+
+# Resolved path: git reports worktrees under /private/var, not the /var symlink.
+tmpdir="$(CDPATH= cd "$(mktemp -d "${TMPDIR:-/tmp}/test-wt-clean-roots.XXXXXX")" && pwd -P)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+mkdir -p \
+  "$tmpdir/dots/.git" \
+  "$tmpdir/dots/vim/plugged/ale/.git" \
+  "$tmpdir/dots-private/.git" \
+  "$tmpdir/dev/screensteps/live/.git" \
+  "$tmpdir/dev/screensteps/live.linked" \
+  "$tmpdir/dev/nested/proj/.git" \
+  "$tmpdir/dev/not-a-repo"
+
+printf 'gitdir: %s\n' "$tmpdir/dev/screensteps/live/.git" \
+  >"$tmpdir/dev/screensteps/live.linked/.git"
+
+actual="$("$CLEAN" --list -- "$tmpdir/dots" "$tmpdir/dots-private" "$tmpdir/dev")"
+expected="$tmpdir/dots
+$tmpdir/dots-private
+$tmpdir/dev/nested/proj
+$tmpdir/dev/screensteps/live"
+
+assert_eq 'lists main checkouts, skips worktrees and nested clones' "$expected" "$actual"
+
+missing="$("$CLEAN" --list -- "$tmpdir/missing" || true)"
+assert_eq 'skips missing roots' "" "$missing"
+
+# Real repo with two worktrees, one of them "open in Herdr". Stubs for herdr
+# and wt stand in for the server and the prune; the stub wt records which
+# worktrees are locked at the moment prune would run.
+guard="$tmpdir/guard"
+mkdir -p "$guard/bin"
+git init --quiet "$guard/repo"
+git -C "$guard/repo" -c user.email=test@example.com -c user.name=test \
+  commit --quiet --allow-empty -m init
+git -C "$guard/repo" worktree add --quiet -b open-branch "$guard/repo.open"
+git -C "$guard/repo" worktree add --quiet -b idle-branch "$guard/repo.idle"
+
+cat >"$guard/bin/herdr" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' '{"result":{"workspaces":[{"worktree":{"checkout_path":"$guard/repo.open"}}]}}'
+EOF
+
+cat >"$guard/bin/wt" <<EOF
+#!/usr/bin/env bash
+git -C "$guard/repo" worktree list --porcelain >"$guard/locks-during-run"
+EOF
+
+chmod +x "$guard/bin/herdr" "$guard/bin/wt"
+
+locked_paths() {
+  awk '/^worktree /{worktree=$2} /^locked/{print worktree}' "$1"
+}
+
+PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/herdr" "$CLEAN" -- "$guard" >/dev/null
+
+assert_eq 'locks the checkout Herdr has open while prune runs' \
+  "$guard/repo.open" "$(locked_paths "$guard/locks-during-run")"
+
+git -C "$guard/repo" worktree list --porcelain >"$guard/locks-after-run"
+assert_eq 'unlocks it again afterwards' "" "$(locked_paths "$guard/locks-after-run")"
+
+if PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/missing-herdr" \
+  "$CLEAN" -- "$guard" >/dev/null 2>&1; then
+  prune_ran=yes
+else
+  prune_ran=no
+fi
+assert_eq 'prunes when herdr is not installed' yes "$prune_ran"
+
+printf '#!/usr/bin/env bash\nexit 1\n' >"$guard/bin/herdr-down"
+chmod +x "$guard/bin/herdr-down"
+rm -f "$guard/locks-during-run"
+
+if PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/herdr-down" \
+  "$CLEAN" -- "$guard" >/dev/null 2>&1; then
+  prune_ran=yes
+else
+  prune_ran=no
+fi
+assert_eq 'refuses to prune when herdr is installed but not answering' no "$prune_ran"
+assert_eq 'and runs no prune in that case' 'absent' \
+  "$([[ -e "$guard/locks-during-run" ]] && echo present || echo absent)"
+
+# A killed run leaves its own lock behind on a worktree nobody has open, while
+# a lock Drew set by hand means hands off.
+git -C "$guard/repo" worktree lock \
+  --reason 'wt-clean-roots: open in Herdr' "$guard/repo.idle"
+git -C "$guard/repo" worktree lock --reason 'mine, leave it' "$guard/repo.open"
+
+PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/herdr" "$CLEAN" -- "$guard" >/dev/null
+
+assert_eq 'releases a stale lock from a killed run' \
+  "$guard/repo.open" "$(locked_paths "$guard/locks-during-run")"
+
+git -C "$guard/repo" worktree list --porcelain >"$guard/locks-after-stale"
+assert_eq 'leaves a lock set by hand alone' \
+  "$guard/repo.open" "$(locked_paths "$guard/locks-after-stale")"
+
+if [[ "$failures" -ne 0 ]]; then
+  exit 1
+fi
+printf 'all tests passed\n'
