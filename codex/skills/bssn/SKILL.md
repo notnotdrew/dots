@@ -88,7 +88,7 @@ Use this shape. Keep each bullet one thought plus an anchor.
 
 - `path:line` — [over-invest or under-invest]. appropriate bar: [sketch / core]. habitability: [what makes change hard or easy].
 
-## say
+## recommendation
 
 [keep / slim toward today / raise the bar on this path / do not pave the left-hand trail]
 [one line: smallest move that restores BSSN, or “nothing to take away”]
@@ -134,7 +134,7 @@ not BSSN. missing **for Now** and **Simple**. **Best** is fine on the tests; the
 
 - `pom.xml:41` — JSON library plus transitive deps for what is nine pairs of one-line methods. delete the library and the nine types still marshal.
 
-## say
+## recommendation
 
 slim toward today. nine explicit codecs, tests on those nine, no format SPI. a tenth type is an obvious copy, not a reason to invent a framework.
 ```
