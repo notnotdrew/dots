@@ -2,7 +2,7 @@
 
 Use this workflow for an initial Standard review only. The coordinator owns checkout decisions, scope, readiness, reviewer handoffs, the candidate ledger, canonical artifact content, publication, and owned-checkout cleanup.
 
-Apply [review-contracts.md](../references/review-contracts.md), gather evidence with [context-gathering.md](../references/context-gathering.md), select reviewers with [reviewer-orchestration.md](../references/reviewer-orchestration.md), synthesize findings with [finding-synthesis.md](../references/finding-synthesis.md), and compile verdicts with [perfect-principles.md](../references/perfect-principles.md). Compile the exact shapes in [context-brief.md](../templates/context-brief.md), [findings-ledger.md](../templates/findings-ledger.md), and [perfect-review.md](../templates/perfect-review.md).
+Apply [review-contracts.md](../references/review-contracts.md) and isolate gathering, planning, discovery, and synthesis with [isolated-jobs.md](../references/isolated-jobs.md). Select reviewers with [reviewer-orchestration.md](../references/reviewer-orchestration.md), synthesize findings with [finding-synthesis.md](../references/finding-synthesis.md), and compile verdicts with [perfect-principles.md](../references/perfect-principles.md). Compile the exact shapes in [context-brief.md](../templates/context-brief.md), [findings-ledger.md](../templates/findings-ledger.md), and [perfect-review.md](../templates/perfect-review.md). Do not open `context-gathering.md` or `language-skill-mapping.md` in this coordinator session.
 
 This file is the initial Standard route and the shared coordinator-stage definition. For an initial Deep review, apply the substitutions in [deep-review.md](deep-review.md). For an existing series, full rebuild, or single-finding revision, use [incremental-review.md](incremental-review.md), which reuses these stages while owning epochs, inheritance, amendments, recovery, and replacement publication. Do not introduce those update mechanics into this initial route. A Standard review may recommend a later Deep review, but it must not switch modes.
 
@@ -11,7 +11,7 @@ This file is the initial Standard route and the shared coordinator-stage definit
 - Keep GitHub, Linear, Git, repository inspection, and all reviewers read-only.
 - Never post a GitHub review or comment, update Linear, mutate the PR, or edit the reviewed checkout.
 - Only the coordinator assigns stable finding IDs, changes ledger dispositions, derives PERFECT verdicts, writes canonical artifacts, publishes them, or removes an owned checkout.
-- Focused and synthesis reviewers must not delegate, mutate artifacts, or return a final recommendation.
+- The gatherer, Deep planner, focused reviewers, and synthesis reviewer must not delegate, mutate canonical artifacts, or return a final recommendation.
 - Use the same resolved PR identity, `ObservedHead`, mode, mode-selection provenance, readiness, and coverage records in all three artifacts.
 - Preserve every unmatched-language limitation and every unexecuted, unavailable, pending, skipped, or failing check. Never convert any of them into passing or reviewed evidence.
 - Do not overwrite, merge with, or partially repair an existing review series in this route. Hand it to the incremental workflow.
@@ -107,26 +107,17 @@ Record checkout ownership separately from readiness. Setup failure does not gran
 
 ## 3. Gather The Context Brief
 
-From `REVIEW_DIR`, follow `context-gathering.md` completely:
+Create `WORK_DIR` under `SERIES_PARENT` as defined in `isolated-jobs.md`. Launch exactly one context gatherer with that file's handoff. Wait for `GathererResult` and `WORK_DIR/context-brief.md`.
 
-1. Gather the expanded GitHub metadata, full GitHub patch, check output and exit status, and changed paths.
-2. Resolve the observed base object and actual merge-base. Compare the merge-base-to-observed-head local diff with the GitHub patch.
-3. Read every changed source file in full, subject to the documented exclusions.
-4. Trace changed behavior only through immediate callers, entry points, models, schemas, persistence state, interfaces, one-hop dependencies, and changed or neighboring tests.
-5. Use bounded repository search and relevant recent Git history to answer concrete review questions.
-6. Detect and consult identifiable associated Linear issues through an available authenticated integration, read-only. Record ambiguity or inaccessibility rather than guessing.
-7. Re-query the PR head after gathering and do not combine evidence from different heads.
-8. Record concrete size, security, data, boundary, failure, evidence-quality, reviewability, and release-state signals.
+Read the brief and the return contract. Do not gather GitHub, Git, repository, test, or Linear evidence in this session. Do not read changed source files in full. Do not load stack skill bodies. Reopen a named path only when a readiness field in the brief is incomplete.
 
-Load every matching installed stack skill identified by `language-skill-mapping.md`. For changed languages with no mapping, record the files or language, available general capability, evidence examined, affected coverage, and materiality. Continue with general engineering judgment only when the technology remains reviewable.
+Require the returned `ObservedHead` to match the handoff. Preserve `MatchedStackSkills` for later reviewer handoffs. Preserve `UnmatchedLanguages` and unexecuted, unavailable, pending, skipped, or failing checks as coverage or known gaps. If gathering fails or reports a material limitation, keep the partial brief when present and continue to readiness.
 
-Record checks observed on GitHub separately from tests or checks executed during this run. For each relevant check not executed, record its name, observed state, why it was not run, affected behavior or coverage, and materiality. Preserve failing conclusions exactly.
-
-Populate a complete in-memory context brief before reviewer selection. It must already include identity, intent, current and desired state, observed revisions, relationships, tests and execution status, Linear evidence, risk signals, initial coverage targets, and known gaps.
+The brief on disk is the working context brief. Later stages update it in `WORK_DIR`; they do not reconstruct it from coordinator tool output.
 
 ## 4. Assess Initial Readiness
 
-Apply the readiness gate in `review-contracts.md` after context gathering and before finding discovery. Append the initial decision and reasons to `ReadinessHistory`.
+Apply the readiness gate in `review-contracts.md` to the gatherer's brief after gathering returns and before finding discovery. Write the initial decision and reasons into `Readiness` and `ReadinessHistory` on that working brief.
 
 Readiness is `ready` only when Standard can defensibly review changed behavior and its immediate boundaries with the available intent, required evidence, stable scope, supported technology, and reviewer capability.
 
@@ -144,7 +135,7 @@ Missing optional evidence is a named gap, not automatically a failure. Unsupport
 When initial readiness fails:
 
 1. Launch no focused or synthesis reviewer.
-2. Build a partial but truthful context brief from gathered evidence.
+2. Keep the gatherer's partial brief when present, or write a truthful stub from the gatherer return if the brief file is missing. Fill readiness metadata on the working brief.
 3. Build an empty terminal findings ledger containing `No findings.`, readiness metadata, `UnresolvedMaterialDecisions`, and coverage.
 4. Build a final PERFECT artifact with `UnableToReview`, not `Recommendation`.
 5. If no review occurred, add coverage affecting all six evaluable principles with `State: unable-to-review` and `Material: yes`; derive all six verdicts as `UNREVIEWED` and Taste as `N/A`.
@@ -164,7 +155,7 @@ Before launch:
 - enumerate each changed or relationship-affected cross-subsystem behavior;
 - assign each boundary one primary owner and name both sides and the invariant;
 - ensure unmatched-language and check-execution gaps remain represented; and
-- create the complete bounded handoff required by `reviewer-orchestration.md`.
+- create the complete bounded handoff required by `reviewer-orchestration.md`, including `MatchedStackSkills` from the gatherer.
 
 Launch independent focused reviewers concurrently in one batch only when their assignments are self-contained, their scopes and boundary ownership are explicit, they read the same immutable observed head, and no assignment depends on another's output. Sequence dependent assignments. Concurrency does not justify duplicate reviewers or Deep-style intentional overlap.
 
@@ -195,7 +186,7 @@ For renewed `UNABLE TO REVIEW`, retain all gathered evidence and provenance, ens
 
 ## 7. Run Bounded Synthesis
 
-When candidates exist and readiness permits synthesis, launch exactly one synthesis reviewer after discovery completes. Give it only the bounded packet defined in `finding-synthesis.md`: compact relevant context, complete candidate records, verification reasons, directly available scope, permitted evidence, exclusions, and known gaps.
+When candidates exist and readiness permits synthesis, launch exactly one synthesis reviewer after discovery completes. Give it only the bounded packet defined in `finding-synthesis.md`: the working brief path, compact relevant context, complete candidate records, verification reasons, directly available scope, permitted evidence, exclusions, and known gaps. Do not paste gatherer or reviewer transcripts.
 
 The synthesis reviewer must:
 
@@ -247,7 +238,9 @@ Create `SERIES_PARENT`, but keep `SERIES_DIR` absent. Create a uniquely named te
 <SERIES_PARENT>/.pr-<PR_NUMBER>.standard-review-staging.<unique-suffix>
 ```
 
-Write exactly these files into staging:
+Copy the working `context-brief.md` from `WORK_DIR` into staging after applying final readiness, coverage, and identity fields. Write `findings-ledger.md` and `perfect-review.md` from the ledger and compilation results. Do not reconstruct the brief from coordinator tool output.
+
+Staging must contain exactly:
 
 ```text
 context-brief.md
@@ -255,7 +248,7 @@ findings-ledger.md
 perfect-review.md
 ```
 
-Do not write raw output, logs, markers, backups, epochs, or temporary fragments into the staging directory. Before validation, require that the staging directory contains exactly those three regular files and no other entry.
+Do not write raw output, logs, markers, backups, epochs, `WORK_DIR` contents other than the brief, or temporary fragments into the staging directory. Before validation, require that the staging directory contains exactly those three regular files and no other entry.
 
 ## 9. Validate And Publish The Initial Review
 
@@ -294,6 +287,8 @@ wt remove --yes --foreground "$REVIEW_DIR"
 ```
 
 Never remove a checkout unless `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` and it is the disposable epoch checkout for this review. Never remove the user's PR branch worktree. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits cleanup of a directly owned epoch checkout.
+
+After successful publication, remove `WORK_DIR`. On any earlier failure, leave `WORK_DIR` in place.
 
 Return:
 

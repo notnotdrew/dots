@@ -63,30 +63,30 @@ The selected workflow owns the complete procedure. Do not replace it with an inl
 
 ## Shared Workflow Boundaries
 
-Every route reuses the contracts and Standard coordinator stages for readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, epochs, inheritance, amendments, and recoverable replacement while preserving those shared boundaries.
+Every route reuses the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, epochs, inheritance, amendments, and recoverable replacement while preserving those shared boundaries.
 
 Standard may recommend a later Deep review but must complete under Standard guarantees or return `UNABLE TO REVIEW`. Deep must independently verify every retained actionable finding. Incremental review revalidates changed and dependency-affected scope, preserves unaffected history, and performs a full rebuild only when explicitly requested or when broad invalidation makes inheritance unsafe.
 
-## Required Contracts And Procedures
+## Role Loading
 
-- [review-contracts.md](references/review-contracts.md) defines mode guarantees, readiness, coverage, finding identity, persistence, and outcome derivation.
-- [context-gathering.md](references/context-gathering.md) defines GitHub, Git, repository, test, relationship, history, and Linear evidence.
-- [reviewer-orchestration.md](references/reviewer-orchestration.md) defines risk-selected reviewer scopes, cross-boundary ownership, handoffs, returns, and concurrency.
-- [finding-synthesis.md](references/finding-synthesis.md) defines candidate ingestion, semantic deduplication, selective verification, disagreement handling, and normalized ledger updates.
-- [perfect-principles.md](references/perfect-principles.md) defines ordered PERFECT evaluation and ledger-aware compilation.
-- [language-skill-mapping.md](references/language-skill-mapping.md) selects relevant installed stack skills from changed files.
+The coordinator executes the selected workflow in this session. Isolated jobs run in fresh agents and return through files. Follow [isolated-jobs.md](references/isolated-jobs.md). Do not open gatherer-only files or stack skill bodies in the coordinator session.
 
-Use the canonical shapes without creating a fourth handoff artifact:
+Coordinator loads:
 
-- [context-brief.md](templates/context-brief.md)
-- [findings-ledger.md](templates/findings-ledger.md)
-- [perfect-review.md](templates/perfect-review.md)
+- [review-contracts.md](references/review-contracts.md)
+- [isolated-jobs.md](references/isolated-jobs.md)
+- [reviewer-orchestration.md](references/reviewer-orchestration.md)
+- [finding-synthesis.md](references/finding-synthesis.md)
+- [perfect-principles.md](references/perfect-principles.md) when compiling
+- [context-brief.md](templates/context-brief.md), [findings-ledger.md](templates/findings-ledger.md), and [perfect-review.md](templates/perfect-review.md) when writing staging
+
+Gatherer loads [context-gathering.md](references/context-gathering.md) and [language-skill-mapping.md](references/language-skill-mapping.md) for path matching only. Focused reviewers load only the stack skills named in their handoff.
 
 Validate the staged artifact directory with [validate-review-artifacts](scripts/validate-review-artifacts) before publication.
 
 ## Ownership And Safety
 
-The coordinator alone owns mode and route selection, readiness, reviewer scope, cross-boundary ownership, stable finding IDs, canonical artifact writes, final compilation, publication, and checkout cleanup. Focused and synthesis reviewers return evidence and normalized proposals; they do not mutate canonical artifacts, derive the recommendation, expand scope, or delegate.
+The coordinator alone owns mode and route selection, readiness, reviewer scope, cross-boundary ownership, stable finding IDs, canonical artifact writes, final compilation, publication, and checkout cleanup. The gatherer, Deep planner, focused reviewers, and synthesis reviewer return evidence and bounded proposals; they do not mutate canonical artifacts, derive the recommendation, expand scope, or delegate.
 
 The launcher resolves a disposable epoch checkout (`pr-<number>-R<epochOrdinal>`) before invoking this skill and exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD`. Prefer that checkout. Never switch to or mutate the user's PR branch worktree. Treat any non-epoch checkout and every reused checkout not created by this invocation as pre-existing and preserve it. Remove only a disposable epoch checkout this invocation created (`PR_REVIEW_CHECKOUT_CREATED=yes` or a checkout this workflow itself created), and only after valid artifacts are published.
 
@@ -100,6 +100,6 @@ Keep GitHub, Linear, PR state, Git history, and the reviewed checkout read-only.
 - Focus on changed behavior and its immediate callers, models, tests, history, and boundaries.
 - Do not expand into unrelated refactoring requests.
 - Skip generated files, lockfiles, binary assets, and prose-only files as primary review targets unless changed behavior depends on them.
-- Load only stack skills that match changed files; preserve unmatched-language limitations as coverage gaps.
+- Focused reviewers load only stack skills named in their handoff; preserve unmatched-language limitations as coverage gaps.
 - Prefer specific bug reports to vague discomfort.
 - Preserve unexecuted, unavailable, pending, skipped, and failing checks as explicit evidence or coverage gaps.

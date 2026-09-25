@@ -1,6 +1,6 @@
 # Reviewer Orchestration
 
-Use this procedure only after the coordinator has gathered the Standard context brief and assessed the review as ready. Focused reviewers discover candidates within bounded assignments; they do not own readiness, canonical artifacts, synthesis, or the final PERFECT recommendation.
+Use this procedure only after the coordinator has the Standard context brief on disk and assessed the review as ready. Focused reviewers discover candidates within bounded assignments; they do not own readiness, canonical artifacts, synthesis, or the final PERFECT recommendation.
 
 ## Selection Rubric
 
@@ -70,6 +70,7 @@ ChangedScope: <changed files, symbols, and behavior in scope>
 RelationshipAffectedScope: <immediate callers, models, tests, history, and boundaries in scope>
 CrossBoundaryOwnership: <owned boundaries and invariants, or none>
 Focus: <general changed behavior or selected specialized concerns>
+MatchedStackSkills: <installed skill names from the gatherer, or none>
 ExplicitExclusions: <unrelated areas and excluded concerns>
 EvidenceRequirements: <files, commands, checks, history, or external evidence to examine>
 ReturnContract: <CandidateFinding[] and CoverageGap[] shapes below>
@@ -79,7 +80,7 @@ ArtifactMutation: prohibited
 Recommendation: prohibited
 ```
 
-The observed head is immutable run evidence. If the reviewer discovers that the checkout or evidence does not match it, the reviewer stops and escalates the mismatch. Reviewers may inspect read-only evidence within the assignment, but must not edit code, canonical artifacts, coverage records, or ledger dispositions.
+The observed head is immutable run evidence. If the reviewer discovers that the checkout or evidence does not match it, the reviewer stops and escalates the mismatch. Reviewers may inspect read-only evidence within the assignment, but must not edit code, canonical artifacts, coverage records, or ledger dispositions. Load only the stack skills named in `MatchedStackSkills`. Do not load unlisted stack skills, `context-gathering.md`, or coordinator workflows.
 
 ## Reviewer Return Contract
 
@@ -144,6 +145,8 @@ Use `EscalateReadiness: yes` when the limitation materially undermines the revie
 
 The coordinator exclusively:
 
+- launches the isolated gatherer and Deep planner, then reads their files;
+- copies `MatchedStackSkills` into focused-reviewer handoffs;
 - selects, combines, and bounds reviewer assignments;
 - assigns cross-boundary ownership and tracks promised coverage;
 - launches reviewers and handles permitted retries;

@@ -2,7 +2,7 @@
 
 Use this workflow when the resolved GitHub PR already has a canonical review series, when `--full-rebuild` is explicitly selected, or when `--finding F<positive-integer>` requests one finding revision. Incremental review updates the same three canonical files; it never creates per-epoch or per-finding canonical artifacts.
 
-Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, epochs, inheritance, invalidation, amendments, and update publication.
+Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md), including isolated gathering from [isolated-jobs.md](../references/isolated-jobs.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, epochs, inheritance, invalidation, amendments, and update publication.
 
 Keep GitHub, Linear, the PR, Git history, and the review checkout read-only. Never post a review or comment, change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, or let a reviewer mutate canonical artifacts. Artifact-series writes and removal of a disposable epoch checkout created by this invocation remain coordinator-only operations.
 
@@ -64,7 +64,9 @@ Record the full current head and actual merge-base for the current or new epoch 
 
 If Section 2 selected a same-head no-op, return that result without gathering or publication.
 
-Compare the previous epoch's observed head and scope with the current observation. Use the previous artifact evidence as an index, not as proof that current behavior is unchanged. Inspect:
+Launch Standard's isolated context gatherer against `REVIEW_DIR` for the current head. Create `WORK_DIR` first as in `isolated-jobs.md`. Pass `PriorReview` with the prior observed head and the canonical `context-brief.md` path. Do not gather current-head evidence or read changed source files in the coordinator session.
+
+Compare the previous epoch's observed head and scope with the gatherer's current brief. Use the previous artifact evidence as an index, not as proof that current behavior is unchanged. Inspect through the brief and the named comparison the gatherer recorded:
 
 - the previous-head-to-current-head content change when the objects have a usable ancestry relationship;
 - the prior and current merge-base-to-head patches when history was rewritten;
@@ -76,7 +78,7 @@ Record whether the update is additive, corrective, superseding, a rebase or hist
 
 ## 4. Build Changed And Dependency-Affected Scope
 
-Create an affected-scope map before inheritance:
+Create an affected-scope map from the gatherer brief and prior artifacts before inheritance. Do not re-trace callers in the coordinator session.
 
 ```text
 AffectedScope:
@@ -111,7 +113,7 @@ A full rebuild reruns the selected mode's complete context, readiness, discovery
 For a normal incremental run:
 
 1. retain explicitly inherited context and findings;
-2. regather direct and dependency-affected context under the selected mode;
+2. use the current-head gatherer brief for direct and dependency-affected context under the selected mode;
 3. invalidate stale evidence before relying on it;
 4. revalidate every prior finding affected by the update; if a terminal dismissed or superseded claim becomes actionable again, preserve it and create a new linked ID rather than reviving it;
 5. select focused reviewers for newly relevant or changed risks;
@@ -207,7 +209,7 @@ After a successful restoration, validate the restored destination before removin
 
 Only when all three replacements and destination validation succeed may the coordinator remove the marker, then the staging and backup directories. Successful marker removal commits the validated publication; retry and report any failure to remove the now-nonauthoritative sibling directories, but never apply them without a marker. An unrelated or unrecognized entry is never deleted.
 
-Do not clean up a disposable epoch checkout created by this invocation until publication succeeds. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and report its ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, apply Standard's checkout rule: remove only a disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree.
+Do not clean up a disposable epoch checkout created by this invocation until publication succeeds. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and `WORK_DIR` and report their ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, apply Standard's checkout rule: remove only a disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree. Also remove `WORK_DIR`.
 
 ## 11. Return
 

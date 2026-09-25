@@ -105,6 +105,7 @@ Do not require a reproduced runtime failure when static evidence proves the beha
 The coordinator gives one synthesis reviewer:
 
 - PR identity, selected Standard mode, and observed head;
+- the absolute working context-brief path, not gatherer transcripts or a pasted patch;
 - the compact intent, readiness, risk, relationship, coverage, and known-gap sections needed to judge the candidates;
 - the complete candidate-ledger records, including IDs, provenance, evidence references, and retained raw-output references;
 - explicit changed and relationship-affected scope available for verification;

@@ -1,8 +1,10 @@
 # Standard Review Context Gathering
 
-Use this procedure only for an initial Standard review. Gather enough evidence to review changed behavior and its immediate boundaries without performing Deep planning, broad architecture discovery, or incremental-review inheritance.
+Use this procedure only from the isolated context-gatherer job. Gather enough evidence to review changed behavior and its immediate boundaries without performing Deep planning, broad architecture discovery, or incremental-review inheritance.
 
-The coordinator owns this stage and writes its results into `context-brief.md`. Keep external systems read-only: do not post GitHub or Linear comments, submit a review, change issue state, or mutate the PR. A targeted Git fetch is allowed only when required to resolve observed revisions locally.
+Write `context-brief.md` into the handed-off `WorkDirectory`. Do not write canonical series files, staging, backups, or the review checkout. Keep external systems read-only: do not post GitHub or Linear comments, submit a review, change issue state, or mutate the PR. A targeted Git fetch is allowed only when required to resolve observed revisions locally.
+
+Match changed paths with [language-skill-mapping.md](language-skill-mapping.md) and record skill names plus unmatched languages. Do not load stack skill bodies. Do not launch reviewers, assess final readiness, or derive a recommendation.
 
 ## Resolve PR Identity Before Gathering Evidence
 
@@ -164,7 +166,7 @@ Before finding discovery, assess the inputs defined by `review-contracts.md`:
 - the changed technologies can be reviewed with available skills and general engineering capability;
 - no other material capability limit prevents a defensible recommendation.
 
-Populate `ReadinessHistory` with the initial decision and reasons. For `UNABLE TO REVIEW`, populate `Blocker`, `GatheredEvidence`, `AffectedCoverage`, and concrete `Remediation`. Missing optional evidence remains a named gap unless it materially prevents judgment.
+Leave `Readiness` and `ReadinessHistory` for the coordinator. Fill `GatheredEvidence`, `Known Gaps`, and initial unreviewed coverage targets so the coordinator can apply the readiness gate. For a material limitation, populate `Blocker`, `GatheredEvidence`, `AffectedCoverage`, and concrete `Remediation` on the return contract as well. Missing optional evidence remains a named gap unless it materially prevents judgment.
 
 Preserve these limitations explicitly:
 
@@ -186,4 +188,4 @@ This procedure does not:
 - detect, inherit, invalidate, or amend an existing review series;
 - create epochs, preserve cross-epoch identity, perform a full rebuild, or revise one prior finding.
 
-Those responsibilities belong to later Standard workflow stages or the deferred Deep and incremental phase. This file produces only bounded Standard context, readiness inputs, risk signals, and explicit gaps.
+Those responsibilities belong to later Standard workflow stages or the deferred Deep and incremental phase. This file produces only bounded Standard context, readiness inputs, risk signals, and explicit gaps. Final readiness remains a coordinator decision.

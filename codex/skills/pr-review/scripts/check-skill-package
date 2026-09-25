@@ -95,6 +95,18 @@ awk '
 ' "$skill_file" || exit 1
 
 awk '
+    /Do not open gatherer-only files/ {
+        isolation_rule = 1
+    }
+    END {
+        if (!isolation_rule) {
+            print "check-skill-package: SKILL.md must keep gatherer files out of the coordinator session" > "/dev/stderr"
+            exit 1
+        }
+    }
+' "$skill_file" || exit 1
+
+awk '
     /^[^[:space:]#][^:]*:/ {
         top_level_count++
         if ($0 != "interface:") {

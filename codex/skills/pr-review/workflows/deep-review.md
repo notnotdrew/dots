@@ -10,7 +10,7 @@ Run the ten Standard stages in order with only the substitutions below:
 
 1. **Resolve invocation, identity, and initial artifact path:** require `Mode: Deep` and `ModeSelection: explicit`. Retain Standard's PR identity, absent-series, collision, and canonical-path rules. Reject an omitted or defaulted Deep selection.
 2. **Resolve checkout ownership:** use Standard's disposable epoch-checkout selection (`pr-<PR_NUMBER>-R1` for an initial Deep review), observed-head check, ownership recording, and preservation rules unchanged. Never mutate the user's PR branch worktree.
-3. **Gather the context brief:** complete Standard's context-gathering procedure first, then run the Deep planning and broader-context pass below.
+3. **Gather the context brief:** complete Standard's isolated gatherer first, then launch the Deep planner in `isolated-jobs.md` against that working brief.
 4. **Assess initial readiness:** apply the shared readiness gate against the Deep guarantee, including the planned broader context and independent verification capability.
 5. **Select and launch focused reviewers:** begin with Standard's risk-selected assignments, then add only the justified overlap defined below.
 6. **Build the candidate ledger and renew readiness:** use Standard's ingestion, deterministic ID assignment, coverage accounting, and renewed-readiness rules unchanged.
@@ -23,7 +23,7 @@ When a Standard instruction excludes Deep-only behavior, this file's explicit su
 
 ## Deep Planning And Broader Context
 
-After the complete Standard context brief exists, perform a planning pass before reviewer selection. The coordinator records a concrete coverage plan that identifies:
+After the Standard gatherer has written a complete working brief, launch exactly one Deep planner as defined in `isolated-jobs.md`. The planner records a concrete coverage plan that identifies:
 
 - changed and relationship-affected subsystems, their responsibilities, and relevant architectural boundaries;
 - broader caller, consumer, model, schema, persistence, event, queue, API, and external-service relationships needed to judge the change;
@@ -34,9 +34,9 @@ After the complete Standard context brief exists, perform a planning pass before
 - decisive evidence expected for independent verification; and
 - known context, technology, evidence, or capability gaps and their materiality.
 
-Use the Standard evidence as the starting point. Broaden repository search and history only along named subsystem, architecture, relationship, or risk questions from the plan. Record the evidence and stopping point for each question. Do not perform unbounded repository archaeology or treat volume of context as coverage.
+The planner uses the Standard brief as the starting point. It broadens repository search and history only along named subsystem, architecture, relationship, or risk questions from the plan, records the evidence and stopping point for each question, and writes the `Deep Plan` section into the working brief. Do not perform that search in the coordinator session. Do not perform unbounded repository archaeology or treat volume of context as coverage.
 
-Re-query the PR head after broader gathering. Do not combine evidence from different heads. If the head cannot be stabilized, or required broader context is inaccessible, apply the readiness contract rather than falling back silently to Standard depth.
+The planner re-queries the PR head after broader gathering. Do not combine evidence from different heads. If the head cannot be stabilized, or required broader context is inaccessible, apply the readiness contract rather than falling back silently to Standard depth. The coordinator assesses Deep readiness from the updated brief; it does not rerun Standard gathering.
 
 ## Deep Readiness
 
