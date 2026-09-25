@@ -1,0 +1,14 @@
+---
+description: Never commit or push agent working docs such as plan.md.
+alwaysApply: true
+---
+
+# Never commit agent working docs
+
+Never commit or push markdown an agent wrote as its own working doc: a plan, a scratchpad, or anything in that family. The usual file is `plan.md` in the repo root. A different name still counts when the file is that kind of doc, including one that sits outside the root.
+
+Project docs that belong in the repo, such as `README.md` or `AGENTS.md`, are separate. Commit those.
+
+Do not stage the working docs, including with `git add -A` or `git add .`. Leave them untracked.
+
+Writing or editing them locally is fine. Leave them out of commits and pushes even when Drew asks to include them.
