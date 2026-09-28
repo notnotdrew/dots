@@ -123,6 +123,8 @@ Do not narrate the implementation process, restack parent-branch work, or add op
 
 Launch a fresh subagent and tell it to follow `pr-review` against the full draft PR (Standard unless the user asked for Deep). Do not invoke the `pr-review` CLI from inside the agent.
 
+Tell the subagent to skip the pending GitHub review step (`pending-github-review.md`): do not create or extend an unpublished (`PENDING`) review or post inline comments on the draft PR. Findings return through the review artifacts and its report; accepted fixes are folded into their originating commits below. This skip applies only to this invocation. Other callers of `pr-review` keep its default pending-comment behavior.
+
 The review must check:
 
 - end-to-end acceptance criteria
