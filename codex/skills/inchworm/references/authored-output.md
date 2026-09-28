@@ -1,10 +1,10 @@
 # Authored output
 
-Branches, commits, and pull requests are the author's own work. A reviewer opening the PR should see a change someone made, with a reason. The runner names itself in one place: the last line of a draft the coordinator opens.
+Branches, commits, and pull requests are the author's own work. A reviewer opening the PR should see a change someone made, with a reason. The runner names itself in one place: the last line of the draft.
 
 The name `inchworm` never appears as a word in a branch name, a commit message, or a PR title. Bare `inchworm`, `inchworm:`, and `by inchworm` count; path-shaped mentions do not (`.inchworm/…`, `.inchworm.yml`, `bin/inchworm`, `…/inchworm` as a path component). `inchworm/…` at the start of a branch name still counts. The check excludes `.` and `/` on the preceding character; it is not `grep -w`. Console logs may say `inchworm:`.
 
-The one allowed PR-body mention is this footer. The coordinator appends it after the agent's title and body pass that check, and before `gh pr create`. A body that names the runner still defers. The same body with this footer appended is what gets opened. The agent's own copy must not include the line:
+The one allowed PR-body mention is this footer. The coordinator appends it after the agent's title and body pass that check. When the coordinator opens the draft, that happens before `gh pr create`. When the execution agent opens the draft, the coordinator reads the open pull request and appends the same line with `gh pr edit` before it records or pings. A body that already ends with the line is left alone. A title or body that names the runner still defers; if that draft is already open, the coordinator closes it and does not add the footer. The agent's own copy must not include the line:
 
 ```
 Picked and implemented by [inchworm](https://github.com/notnotdrew/dots/blob/main/docs/inchworm.md).
@@ -31,10 +31,10 @@ of prompts, agents, automation, orchestration, or the scheduling tool.
 ## Pull requests
 
 The same execution agent opens the draft PR using the repository template and
-the generic skill's normal PR-copy rules. The coordinator does not rewrite or
-recreate that PR; it discovers the URL by the exact branch after execution
-returns.
+the generic skill's normal PR-copy rules. The coordinator discovers the URL by
+the exact branch after execution returns, then appends the footer. It does not
+recreate the pull request or change the title.
 
-When the coordinator opens the draft itself, the body ends with the footer
-above. That line is the one allowed PR-body mention. The title still must not
-name the runner.
+When the coordinator opens the draft itself, it appends the footer before
+`gh pr create`. Either way the body ends with the footer above. That line is
+the one allowed PR-body mention. The title still must not name the runner.

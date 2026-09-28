@@ -147,7 +147,10 @@
 #   Branch = <prefix>/<slug>-<YYYYMMDD>; commits are Tim Pope
 #   style from the implementer (coordinator falls back to the find's title/summary).
 #   A body that names the runner is deferred. After that check, the coordinator
-#   appends one footer; that body plus the footer is what gets opened.
+#   appends one footer. The fixture path does that before gh pr create. The live
+#   path reads the draft the agent opened and appends the same line with
+#   gh pr edit, unless the body already ends with it. A live draft whose title
+#   or body names the runner is closed, and the find is deferred.
 #   A commit message that names the runner is rewritten by resetting onto the
 #   base and committing once (nothing pushed yet).
 #
@@ -489,6 +492,34 @@ if [ "\$pr_cmd" = "create" ]; then
   exit 0
 fi
 
+# Live path: the coordinator reads the agent-opened draft, then appends the footer.
+if [ "\$pr_cmd" = "view" ]; then
+  ruby -rjson -e '
+    title_path, body_path = ARGV
+    title = File.file?(title_path) ? File.read(title_path) : ""
+    body = File.file?(body_path) ? File.read(body_path) : ""
+    title = title.sub(/\n\z/, "")
+    puts JSON.generate("title" => title, "body" => body)
+  ' "${TEST_ROOT}/gh-pr-title.txt" "${TEST_ROOT}/gh-pr-body.txt"
+  exit 0
+fi
+
+if [ "\$pr_cmd" = "edit" ]; then
+  prev=""
+  for arg in "\$@"; do
+    case "\$prev" in
+      --body-file) cat "\$arg" >"${TEST_ROOT}/gh-pr-body.txt" ;;
+      --body) printf '%s\n' "\$arg" >"${TEST_ROOT}/gh-pr-body.txt" ;;
+    esac
+    prev="\$arg"
+  done
+  exit 0
+fi
+
+if [ "\$pr_cmd" = "close" ]; then
+  exit 0
+fi
+
 # Other gh subcommands: empty/minimal success.
 printf '%s\n' '[]'
 exit 0
@@ -737,9 +768,11 @@ PLAN
     git add execution-work.txt
     git commit -q -m "Complete selected cleanup"
     git push -u origin HEAD >/dev/null
-    printf '%s\n' "The selected cleanup is now complete." >"\${TMPDIR:-/tmp}/inchworm-test-pr-body"
+    title="\${PLAN_EXECUTE_PR_TITLE:-Complete selected cleanup}"
+    body="\${PLAN_EXECUTE_PR_BODY:-The selected cleanup is now complete.}"
+    printf '%s\n' "\$body" >"\${TMPDIR:-/tmp}/inchworm-test-pr-body"
     pr_url=\$("\$INCHWORM_GH" pr create --draft --base main \
-      --title "Complete selected cleanup" \
+      --title "\$title" \
       --body-file "\${TMPDIR:-/tmp}/inchworm-test-pr-body")
     INCHWORM_REVIEW_ARTIFACT_DIR="\$INCHWORM_REVIEW_ARTIFACT_DIR" \
       "\$INCHWORM_PR_REVIEW" --mode standard "\$pr_url"
@@ -2732,6 +2765,188 @@ test_run_live_delegates_plan_then_complete_draft_pr_execution() {
     fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
       "agent log:" "$(cat "$TEST_ROOT/agent-invocations.log" 2>/dev/null || true)" \
       "gh log:" "$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_live_draft_body_ends_with_footer() {
+  test_name="live draft body ends with the footer the coordinator appends"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "live-footer"
+  live_agent="$TEST_ROOT/run-live-footer-agent"
+  write_plan_and_execute_agent "$live_agent"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"live-footer","source":"smell","title":"Complete selected cleanup","summary":"Keep orchestration context small.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-live-footer-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_REVIEW_ARTIFACT_DIR
+    INCHWORM_REVIEW_ARTIFACT_DIR=$(review_dir_for "$data_dir" "$repo_dir")
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  pr_body=$(cat "$TEST_ROOT/gh-pr-body.txt" 2>/dev/null || true)
+  body_without_footer=${pr_body%"$PR_FOOTER"}
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [ "$(grep -c 'pr edit' "$TEST_ROOT/gh-invocations.log" || true)" -ne 1 ]; then
+    problems="${problems}expected one gh pr edit to append the footer"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  case "$pr_body" in
+    *"$PR_FOOTER") ;;
+    *)
+      problems="${problems}PR body must end with the footer"$'\n'
+      ;;
+  esac
+  if [ "$(printf '%s' "$pr_body" | grep -F -c "$PR_FOOTER" || true)" -ne 1 ]; then
+    problems="${problems}PR body must contain the footer once"$'\n'
+  fi
+  if ! printf '%s' "$pr_body" | grep -Fq "The selected cleanup is now complete."; then
+    problems="${problems}PR body must keep the agent's copy"$'\n'
+  fi
+  if printf '%s' "$body_without_footer" | grep -qiE "$TOOL_NAME_WORD_RE"; then
+    problems="${problems}PR body besides the footer must not name the runner"$'\n'
+  fi
+  if [ "$draft_cache" != "https://example.test/pr/99" ]; then
+    problems="${problems}expected active_draft_pr set, got: $draft_cache"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "pr body:" "$pr_body"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_live_draft_keeps_existing_footer() {
+  test_name="live draft that already ends with the footer is not edited again"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "live-footer-once"
+  live_agent="$TEST_ROOT/run-live-footer-once-agent"
+  write_plan_and_execute_agent "$live_agent"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"live-footer-once","source":"smell","title":"Complete selected cleanup","summary":"Keep orchestration context small.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-live-footer-once-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export PLAN_EXECUTE_PR_BODY="$(printf '%s\n\n%s' 'The selected cleanup is now complete.' "$PR_FOOTER")"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_REVIEW_ARTIFACT_DIR
+    INCHWORM_REVIEW_ARTIFACT_DIR=$(review_dir_for "$data_dir" "$repo_dir")
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  pr_body=$(cat "$TEST_ROOT/gh-pr-body.txt" 2>/dev/null || true)
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if grep -q 'pr edit' "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}must not edit a body that already ends with the footer"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if [ "$(printf '%s' "$pr_body" | grep -F -c "$PR_FOOTER" || true)" -ne 1 ]; then
+    problems="${problems}PR body must still contain the footer once, got: $pr_body"$'\n'
+  fi
+  if [ "$draft_cache" != "https://example.test/pr/99" ]; then
+    problems="${problems}expected active_draft_pr set, got: $draft_cache"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "pr body:" "$pr_body"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_live_draft_that_names_the_runner_is_closed() {
+  test_name="live draft whose body names the runner is closed and the find is deferred"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "live-footer-dirty"
+  live_agent="$TEST_ROOT/run-live-footer-dirty-agent"
+  write_plan_and_execute_agent "$live_agent"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"live-footer-dirty","source":"smell","title":"Complete selected cleanup","summary":"Keep orchestration context small.","rank":1,"status":"open"}]'
+
+  out_file="$TEST_ROOT/run-live-footer-dirty-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    unset INCHWORM_IMPLEMENT_FIXTURE 2>/dev/null || true
+    export INCHWORM_AGENT="$live_agent"
+    export PLAN_EXECUTE_PR_BODY="Drafted by inchworm on the daily run."
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_REVIEW_ARTIFACT_DIR
+    INCHWORM_REVIEW_ARTIFACT_DIR=$(review_dir_for "$data_dir" "$repo_dir")
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  draft_cache=$(yaml_get "$repo_dir/.inchworm.yml" "state.active_draft_pr" 2>/dev/null || printf 'ERR')
+  problems=""
+
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -q 'pr close' "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}expected gh pr close for a draft that names the runner"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if grep -q 'pr edit' "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}must not append the footer to a body that names the runner"$'\n'
+  fi
+  if [ "$draft_cache" != "null" ]; then
+    problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
+  fi
+  if [ ! -f "$finds_md" ]; then
+    problems="${problems}missing finds.md"$'\n'
+  elif ! grep -A30 'live-footer-dirty' "$finds_md" | grep -qiE 'status:[[:space:]]*deferred'; then
+    problems="${problems}find live-footer-dirty must be deferred"$'\n'
+  fi
+  if ! grep -q 'would name the runner' "$out_file"; then
+    problems="${problems}expected the deferral to say the title or body would name the runner"$'\n'
+  fi
+  if ! assert_notify_failure "$TEST_ROOT/notify-invocations.log"; then
+    problems="${problems}expected a failure alert, got: $(cat "$TEST_ROOT/notify-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
     return
   fi
   pass "$test_name"
@@ -5701,6 +5916,9 @@ run_test test_run_live_scouts_all_five_sources
 run_test test_run_live_scouts_tolerate_prose_stdout
 run_test test_run_repo_guidance_injected_into_agent_prompts
 run_test test_run_live_delegates_plan_then_complete_draft_pr_execution
+run_test test_run_live_draft_body_ends_with_footer
+run_test test_run_live_draft_keeps_existing_footer
+run_test test_run_live_draft_that_names_the_runner_is_closed
 run_test test_run_live_not_thin_plan_stops_before_execution
 run_test test_run_live_implement_no_changes_defers_without_pr
 run_test test_run_authors_branch_and_pr_from_find

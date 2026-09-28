@@ -32,7 +32,8 @@ planning and execution to fresh agents, then records the resulting draft.
    verification, commits, draft creation, Standard review, fix folding, and the
    final force-with-lease push. It does not ready or merge the PR.
 5. The coordinator queries open PRs for the exact branch and requires a draft
-   URL. It does not repeat any execution or review stage.
+   URL. It appends the footer to that draft. It does not repeat any execution
+   or review stage.
 6. Set `state.active_draft_pr`, mark the find `in_pr`, ping, and remove the
    checkout with `wt remove --no-delete-branch`.
 

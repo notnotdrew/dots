@@ -28,8 +28,8 @@ After a find is selected, compose existing generic skills:
 3. A second fresh agent follows **`executing-draft-pr-plans`**. That skill owns
    implementation, verification, commits, opening the draft PR, Standard
    review, folding fixes, and the final force-with-lease push.
-4. The coordinator discovers the draft by its exact branch, records it, pings,
-   and removes the checkout.
+4. The coordinator discovers the draft by its exact branch, appends the footer,
+   records it, pings, and removes the checkout.
 
 The reused skills remain generic. Inchworm-specific policy is supplied in each
 handoff; it is not added to those skills.
@@ -50,7 +50,7 @@ On an eligible `inchworm run`:
 8. If selected: create a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on the freshly fetched trunk
 9. Run a fresh planning agent with `writing-simple-plans`. No thin plan means `too_large`; do not launch execution.
 10. Run a fresh execution agent with `executing-draft-pr-plans`. It completes the generic workflow through draft PR and Standard review.
-11. On success, discover the open draft by exact branch, set `state.active_draft_pr`, mark the find `in_pr`, **ping** immediately, then `wt remove --no-delete-branch` the checkout (keep the branch).
+11. On success, discover the open draft by exact branch, append the footer, set `state.active_draft_pr`, mark the find `in_pr`, **ping** immediately, then `wt remove --no-delete-branch` the checkout (keep the branch).
 12. On failure: no second pick (stamp already burned), alert the human, and clean up the checkout. A planning verdict can mark the find `too_large`; other attempts are `deferred`.
 
 Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement branch is ever force-pushed, and only with `--force-with-lease` — never `develop` or `main`. No auto-ready / merge.

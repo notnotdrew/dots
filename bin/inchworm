@@ -97,6 +97,16 @@ ruby_helper() {
 }
 
 ruby_yaml() { ruby_helper "$YAML_HELPER" "$@"; }
+
+# mise-aware `ruby`, for one-liners. LaunchAgent's PATH often has no ruby.
+ruby_e() {
+  local mise_bin
+  if mise_bin=$(resolve_mise); then
+    "$mise_bin" exec -- ruby "$@"
+  else
+    ruby "$@"
+  fi
+}
 ruby_finds() { ruby_helper "$FINDS_HELPER" "$@"; }
 ruby_review() { ruby_helper "$REVIEW_HELPER" "$@"; }
 
@@ -753,6 +763,84 @@ append_pr_footer() {
     return
   fi
   printf '%s\n\n%s' "$body" "$PR_FOOTER"
+}
+
+# True when the last non-empty line is the footer, so a second pass does not
+# stack another copy.
+body_ends_with_footer() {
+  local body=$1
+  local last
+  last=$(printf '%s\n' "$body" | sed -e 's/[[:space:]]*$//' | awk 'NF { line = $0 } END { printf "%s", line }')
+  [[ "$last" == "$PR_FOOTER" ]]
+}
+
+# Body with one trailing footer line, and the blank lines above it, removed.
+# The name check runs on this so the footer itself is not a leak.
+strip_trailing_pr_footer() {
+  local body=$1
+  if ! body_ends_with_footer "$body"; then
+    printf '%s' "$body"
+    return 0
+  fi
+  printf '%s\n' "$body" | awk -v footer="$PR_FOOTER" '
+    { lines[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
+      if (last > 0) {
+        trimmed = lines[last]
+        sub(/[[:space:]]+$/, "", trimmed)
+        if (trimmed == footer) last--
+      }
+      while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
+      for (i = 1; i <= last; i++) print lines[i]
+    }
+  '
+}
+
+# The execution agent opens the draft. Read its title and body, refuse a copy
+# that names the runner, and otherwise append the footer once.
+# 0: body ends with the footer. 1: title or body names the runner. 2: gh failed.
+ensure_discovered_draft_footer() {
+  local worktree_path=$1
+  local pr_url=$2
+  local json title body checked body_file
+
+  json=$(
+    cd "$worktree_path" || exit 1
+    "$GH_BIN" pr view "$pr_url" --json title,body
+  ) || return 2
+
+  title=$(printf '%s' "$json" | ruby_e -rjson -e 'j=JSON.parse(STDIN.read); print j["title"].to_s') || return 2
+  body=$(printf '%s' "$json" | ruby_e -rjson -e 'j=JSON.parse(STDIN.read); b=j["body"]; print(b.nil? ? "" : b)') || return 2
+  checked=$(strip_trailing_pr_footer "$body")
+  if mentions_tool_name "$title" || mentions_tool_name "$checked"; then
+    return 1
+  fi
+  if body_ends_with_footer "$body"; then
+    return 0
+  fi
+
+  body_file=$(mktemp "${TMPDIR:-/tmp}/inchworm-pr-body.XXXXXX")
+  printf '%s\n' "$(append_pr_footer "$body")" >"$body_file"
+  if ! (
+    cd "$worktree_path" || exit 1
+    "$GH_BIN" pr edit "$pr_url" --body-file "$body_file"
+  ); then
+    rm -f "$body_file"
+    return 2
+  fi
+  rm -f "$body_file"
+  return 0
+}
+
+close_draft_pr() {
+  local worktree_path=$1
+  local pr_url=$2
+  (
+    cd "$worktree_path" || exit 1
+    "$GH_BIN" pr close "$pr_url"
+  )
 }
 
 # Trim, drop a leading markdown heading marker, cap at a reviewable length.
@@ -1433,7 +1521,7 @@ run_implement_and_pr() {
   local fixture="${INCHWORM_IMPLEMENT_FIXTURE:-}"
   local ymd branch_name branch_prefix worktree_path pr_url base_ref guidance
   local find_summary find_evidence commit_subject commit_body
-  local pr_title="" pr_body="" pr_body_file
+  local pr_title="" pr_body="" pr_body_file footer_rc
 
   ymd=$(yyyymmdd_from_today "$today")
   branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
@@ -1502,6 +1590,25 @@ run_implement_and_pr() {
           "draft-PR execution produced no open draft" "$branch_name"
         return 0
       fi
+
+      footer_rc=0
+      ensure_discovered_draft_footer "$worktree_path" "$pr_url" || footer_rc=$?
+      case "$footer_rc" in
+        0) ;;
+        1)
+          close_draft_pr "$worktree_path" "$pr_url" || \
+            printf 'inchworm: could not close draft that names the runner: %s\n' "$pr_url" >&2
+          defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+            "PR title or body would name the runner" "$branch_name"
+          return 0
+          ;;
+        *)
+          printf 'inchworm: could not append the PR footer on %s\n' "$pr_url" >&2
+          fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+            "could not append the PR footer" "$branch_name"
+          return 0
+          ;;
+      esac
 
       ruby_yaml set_state "$repo_yml" "active_draft_pr" "$pr_url"
       ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
