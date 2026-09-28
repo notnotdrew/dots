@@ -29,6 +29,8 @@ skill bodies.
 | Deep planner | the Standard brief on disk, Deep planning rules in `workflows/deep-review.md` |
 | Focused reviewer | its handoff, `reviewer-orchestration.md` return contract, named stack skills only |
 | Synthesis reviewer | `finding-synthesis.md`, `perfect-principles.md`, the working brief path, candidate records |
+| Comment verifier | its handoff, the named checkout paths, `pending-github-review.md` verify contract only |
+| Comment readability | its handoff, `use-conversational-language` reviewer-comment rules, `pending-github-review.md` readability contract only |
 
 ## Working Directory
 
@@ -135,8 +137,18 @@ Keep the existing bounded reviewer and synthesis jobs. Each focused reviewer loa
 only the stack skills named in its handoff. Synthesis receives the working brief
 path and candidate records, not gatherer transcripts.
 
+## Pending-Review Comment Jobs
+
+After canonical artifacts publish, the coordinator may launch comment verifier and
+comment readability jobs per [pending-github-review.md](pending-github-review.md).
+Each candidate comment gets its own verifier, then a separate readability agent.
+Those jobs write only under `WORK_DIR` (or return structured text to the
+coordinator). They must not call GitHub write APIs, submit a review, edit the
+checkout, or touch canonical artifacts. The coordinator alone posts the
+unpublished pending review.
+
 ## Coordinator Remains The Decision Maker
 
 Isolated jobs do not choose mode or route, assess final readiness, assign `Fnn`
-IDs, derive PERFECT verdicts, publish artifacts, or remove a checkout. The
-coordinator still does those from the files on disk.
+IDs, derive PERFECT verdicts, publish artifacts, draft the pending GitHub review,
+or remove a checkout. The coordinator still does those from the files on disk.

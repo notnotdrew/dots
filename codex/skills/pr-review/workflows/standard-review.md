@@ -1,6 +1,6 @@
 # Initial Standard Review Workflow
 
-Use this workflow for an initial Standard review only. The coordinator owns checkout decisions, scope, readiness, reviewer handoffs, the candidate ledger, canonical artifact content, publication, and owned-checkout cleanup.
+Use this workflow for an initial Standard review only. The coordinator owns checkout decisions, scope, readiness, reviewer handoffs, the candidate ledger, canonical artifact content, publication, pending GitHub review drafting, and owned-checkout cleanup.
 
 Apply [review-contracts.md](../references/review-contracts.md) and isolate gathering, planning, discovery, and synthesis with [isolated-jobs.md](../references/isolated-jobs.md). Select reviewers with [reviewer-orchestration.md](../references/reviewer-orchestration.md), synthesize findings with [finding-synthesis.md](../references/finding-synthesis.md), and compile verdicts with [perfect-principles.md](../references/perfect-principles.md). Compile the exact shapes in [context-brief.md](../templates/context-brief.md), [findings-ledger.md](../templates/findings-ledger.md), and [perfect-review.md](../templates/perfect-review.md). Do not open `context-gathering.md` or `language-skill-mapping.md` in this coordinator session.
 
@@ -8,10 +8,10 @@ This file is the initial Standard route and the shared coordinator-stage definit
 
 ## Coordinator Invariants
 
-- Keep GitHub, Linear, Git, repository inspection, and all reviewers read-only.
-- Never post a GitHub review or comment, update Linear, mutate the PR, or edit the reviewed checkout.
-- Only the coordinator assigns stable finding IDs, changes ledger dispositions, derives PERFECT verdicts, writes canonical artifacts, publishes them, or removes an owned checkout.
-- The gatherer, Deep planner, focused reviewers, and synthesis reviewer must not delegate, mutate canonical artifacts, or return a final recommendation.
+- Keep Linear, Git, repository inspection, and all reviewers read-only except for the pending GitHub review step below.
+- Never update Linear, mutate PR metadata, edit the reviewed checkout, reply on existing threads, or post issue comments. Never submit or publish a GitHub review unless Drew explicitly asks in a later turn.
+- Only the coordinator assigns stable finding IDs, changes ledger dispositions, derives PERFECT verdicts, writes canonical artifacts, publishes them, drafts the pending GitHub review, or removes an owned checkout.
+- The gatherer, Deep planner, focused reviewers, synthesis reviewer, comment verifier, and comment readability agent must not delegate, mutate canonical artifacts, call GitHub write APIs, or return a final recommendation.
 - Use the same resolved PR identity, `ObservedHead`, mode, mode-selection provenance, readiness, and coverage records in all three artifacts.
 - Preserve every unmatched-language limitation and every unexecuted, unavailable, pending, skipped, or failing check. Never convert any of them into passing or reviewed evidence.
 - Do not overwrite, merge with, or partially repair an existing review series in this route. Hand it to the incremental workflow.
@@ -141,7 +141,7 @@ When initial readiness fails:
 5. If no review occurred, add coverage affecting all six evaluable principles with `State: unable-to-review` and `Material: yes`; derive all six verdicts as `UNREVIEWED` and Taste as `N/A`.
 6. Continue to staging, validation, and initial publication. A readiness failure is a review outcome, not a publication failure.
 
-Do not clean up an owned checkout until these three artifacts have been published successfully.
+Do not clean up an owned checkout until these three artifacts have been published successfully and the pending GitHub review step has finished or been skipped.
 
 ## 5. Select And Launch Focused Reviewers
 
@@ -272,9 +272,17 @@ After the rename:
 
 Never replace an existing canonical file. A publication collision or post-publication validation failure is a blocker requiring manual inspection; do not improvise an update or cleanup protocol.
 
-## 10. Cleanup And Return
+## 10. Draft Pending GitHub Review
 
-Only after successful publication, remove the checkout when:
+After successful artifact publication, follow [pending-github-review.md](../references/pending-github-review.md) before checkout cleanup.
+
+Select only comments worth making from the published ledger and `perfect-review.md`. For each selected comment, verify with an isolated subagent (run code when claiming a regression or similar code issue), require pre-existing issues to be flagged as such, then have an independent readability subagent rewrite the body in plain, simple, clear language. Create or extend an unpublished (`PENDING`) GitHub review with those inline comments. Leave the review body empty unless a one-line closer is needed; never rehash the comments there. Never submit or publish the review.
+
+Skip this step when there are no surviving comments, when readiness published `UNABLE TO REVIEW` with no comment candidates, or when this invocation is otherwise barred by that reference. A GitHub draft failure after successful artifact publication is reported but does not roll back the series.
+
+## 11. Cleanup And Return
+
+Only after successful publication and after the pending GitHub review step has finished or been skipped, remove the checkout when:
 
 ```text
 CHECKOUT_CREATED_BY_THIS_INVOCATION = yes
@@ -286,9 +294,9 @@ Use:
 wt remove --yes --foreground "$REVIEW_DIR"
 ```
 
-Never remove a checkout unless `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` and it is the disposable epoch checkout for this review. Never remove the user's PR branch worktree. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits cleanup of a directly owned epoch checkout.
+Never remove a checkout unless `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` and it is the disposable epoch checkout for this review. Never remove the user's PR branch worktree. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits the pending-review step and cleanup of a directly owned epoch checkout.
 
-After successful publication, remove `WORK_DIR`. On any earlier failure, leave `WORK_DIR` in place.
+After successful publication and the pending-review step, remove `WORK_DIR`. On any earlier failure, leave `WORK_DIR` in place.
 
 Return:
 
@@ -296,5 +304,6 @@ Return:
 - the absolute canonical artifact directory and the three filenames;
 - the observed head, epoch checkout branch, and Standard mode-selection provenance;
 - material coverage and verification gaps, including unmatched languages and unexecuted checks;
-- whether a later Deep review is recommended, without claiming it ran; and
+- whether a later Deep review is recommended, without claiming it ran;
+- pending GitHub review status (skipped, drafted unpublished with review id and comments, or failed), noting that it was not published; and
 - checkout cleanup status, distinguishing removed owned epoch checkout from preserved checkout.

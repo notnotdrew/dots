@@ -4,7 +4,7 @@ Use this workflow when the resolved GitHub PR already has a canonical review ser
 
 Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md), including isolated gathering from [isolated-jobs.md](../references/isolated-jobs.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, epochs, inheritance, invalidation, amendments, and update publication.
 
-Keep GitHub, Linear, the PR, Git history, and the review checkout read-only. Never post a review or comment, change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, or let a reviewer mutate canonical artifacts. Artifact-series writes and removal of a disposable epoch checkout created by this invocation remain coordinator-only operations.
+Keep Linear, PR metadata, Git history, and the review checkout read-only. Never change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, reply on existing threads, post issue comments, or let a reviewer mutate canonical artifacts. After successful artifact publication, the coordinator may draft an unpublished (`PENDING`) GitHub review per Standard's pending-review step; never submit it unless Drew explicitly asks later. Artifact-series writes, that pending draft, and removal of a disposable epoch checkout created by this invocation remain coordinator-only operations.
 
 ## 1. Resolve The Existing Series And Recover First
 
@@ -209,7 +209,7 @@ After a successful restoration, validate the restored destination before removin
 
 Only when all three replacements and destination validation succeed may the coordinator remove the marker, then the staging and backup directories. Successful marker removal commits the validated publication; retry and report any failure to remove the now-nonauthoritative sibling directories, but never apply them without a marker. An unrelated or unrecognized entry is never deleted.
 
-Do not clean up a disposable epoch checkout created by this invocation until publication succeeds. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and `WORK_DIR` and report their ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, apply Standard's checkout rule: remove only a disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree. Also remove `WORK_DIR`.
+Do not clean up a disposable epoch checkout created by this invocation until publication succeeds and Standard's pending GitHub review step has finished or been skipped. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and `WORK_DIR` and report their ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, run Standard's pending unpublished GitHub review step (skip on same-head no-ops). Then apply Standard's checkout rule: remove only a disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree. Also remove `WORK_DIR`.
 
 ## 11. Return
 
@@ -222,5 +222,6 @@ Return:
 - inherited, revalidated, invalidated, and dependency-affected scope;
 - amendments and stable IDs changed in this run;
 - material coverage or verification gaps;
-- whether publication or restoration occurred; and
+- whether publication or restoration occurred;
+- pending GitHub review status (skipped, drafted unpublished with review id and comments, or failed), noting that it was not published; and
 - checkout cleanup status.

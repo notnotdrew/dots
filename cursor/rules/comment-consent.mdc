@@ -10,3 +10,5 @@ Never post comments to GitHub or Linear unless Drew explicitly consents, request
 Drafting in chat or a local file is fine. Do not publish with `gh`, Linear MCP/CLI, or any other tool until he asked.
 
 A plan, review, or “I’ll reply” is not consent. “Post this,” “reply to that comment,” or “comment on the ticket” is.
+
+Standing exception: the `pr-review` skill’s final step may create or extend an unpublished (`PENDING`) GitHub pull-request review with inline comments. That is not consent to submit or publish the review, reply on threads, or post issue/Linear comments. Submitting or publishing still needs an explicit ask (“publish the review”, “submit the review”).

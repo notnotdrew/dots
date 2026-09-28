@@ -63,7 +63,7 @@ The selected workflow owns the complete procedure. Do not replace it with an inl
 
 ## Shared Workflow Boundaries
 
-Every route reuses the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, epochs, inheritance, amendments, and recoverable replacement while preserving those shared boundaries.
+Every route reuses the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, pending GitHub review drafting, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, epochs, inheritance, amendments, and recoverable replacement while preserving those shared boundaries.
 
 Standard may recommend a later Deep review but must complete under Standard guarantees or return `UNABLE TO REVIEW`. Deep must independently verify every retained actionable finding. Incremental review revalidates changed and dependency-affected scope, preserves unaffected history, and performs a full rebuild only when explicitly requested or when broad invalidation makes inheritance unsafe.
 
@@ -78,19 +78,20 @@ Coordinator loads:
 - [reviewer-orchestration.md](references/reviewer-orchestration.md)
 - [finding-synthesis.md](references/finding-synthesis.md)
 - [perfect-principles.md](references/perfect-principles.md) when compiling
+- [pending-github-review.md](references/pending-github-review.md) after successful artifact publication
 - [context-brief.md](templates/context-brief.md), [findings-ledger.md](templates/findings-ledger.md), and [perfect-review.md](templates/perfect-review.md) when writing staging
 
-Gatherer loads [context-gathering.md](references/context-gathering.md) and [language-skill-mapping.md](references/language-skill-mapping.md) for path matching only. Focused reviewers load only the stack skills named in their handoff.
+Gatherer loads [context-gathering.md](references/context-gathering.md) and [language-skill-mapping.md](references/language-skill-mapping.md) for path matching only. Focused reviewers load only the stack skills named in their handoff. Pending-review readability agents load `use-conversational-language` for reviewer-comment wording only.
 
 Validate the staged artifact directory with [validate-review-artifacts](scripts/validate-review-artifacts) before publication.
 
 ## Ownership And Safety
 
-The coordinator alone owns mode and route selection, readiness, reviewer scope, cross-boundary ownership, stable finding IDs, canonical artifact writes, final compilation, publication, and checkout cleanup. The gatherer, Deep planner, focused reviewers, and synthesis reviewer return evidence and bounded proposals; they do not mutate canonical artifacts, derive the recommendation, expand scope, or delegate.
+The coordinator alone owns mode and route selection, readiness, reviewer scope, cross-boundary ownership, stable finding IDs, canonical artifact writes, final compilation, publication, pending GitHub review drafting, and checkout cleanup. The gatherer, Deep planner, focused reviewers, synthesis reviewer, comment verifier, and comment readability agent return evidence and bounded proposals; they do not mutate canonical artifacts, derive the recommendation, expand scope, or delegate.
 
-The launcher resolves a disposable epoch checkout (`pr-<number>-R<epochOrdinal>`) before invoking this skill and exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD`. Prefer that checkout. Never switch to or mutate the user's PR branch worktree. Treat any non-epoch checkout and every reused checkout not created by this invocation as pre-existing and preserve it. Remove only a disposable epoch checkout this invocation created (`PR_REVIEW_CHECKOUT_CREATED=yes` or a checkout this workflow itself created), and only after valid artifacts are published.
+The launcher resolves a disposable epoch checkout (`pr-<number>-R<epochOrdinal>`) before invoking this skill and exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD`. Prefer that checkout. Never switch to or mutate the user's PR branch worktree. Treat any non-epoch checkout and every reused checkout not created by this invocation as pre-existing and preserve it. Remove only a disposable epoch checkout this invocation created (`PR_REVIEW_CHECKOUT_CREATED=yes` or a checkout this workflow itself created), and only after valid artifacts are published and the pending GitHub review step has finished or been skipped.
 
-Keep GitHub, Linear, PR state, Git history, and the reviewed checkout read-only. Do not submit reviews, post comments, change issue state, mutate the pull request, or edit reviewed files.
+Keep Linear, PR metadata, Git history, and the reviewed checkout read-only. Do not change issue state, edit reviewed files, reply on existing threads, or post issue comments. After successful artifact publication, the coordinator may create or extend an unpublished (`PENDING`) GitHub pull-request review per [pending-github-review.md](references/pending-github-review.md). Never submit or otherwise publish that review unless Drew explicitly asks in a later turn.
 
 ## Guidelines
 

@@ -2,11 +2,11 @@
 
 Use this workflow only for an explicitly selected initial Deep review. Deep is an overlay on [standard-review.md](standard-review.md), not a parallel implementation. Apply the shared contracts, references, templates, coordinator ownership, and read-only boundaries linked by Standard.
 
-Keep GitHub, Linear, Git history, PR state, and the review checkout read-only. Reviewers must not delegate, edit canonical artifacts, or derive the final recommendation. Only the coordinator may write review artifacts and remove a checkout created by this invocation.
+Keep Linear, Git history, PR metadata, and the review checkout read-only. Reviewers must not delegate, edit canonical artifacts, or derive the final recommendation. Only the coordinator may write review artifacts, draft the unpublished pending GitHub review after successful publication, and remove a checkout created by this invocation. Never submit that review unless Drew explicitly asks later.
 
 ## Reuse The Standard Stages
 
-Run the ten Standard stages in order with only the substitutions below:
+Run the eleven Standard stages in order with only the substitutions below:
 
 1. **Resolve invocation, identity, and initial artifact path:** require `Mode: Deep` and `ModeSelection: explicit`. Retain Standard's PR identity, absent-series, collision, and canonical-path rules. Reject an omitted or defaulted Deep selection.
 2. **Resolve checkout ownership:** use Standard's disposable epoch-checkout selection (`pr-<PR_NUMBER>-R1` for an initial Deep review), observed-head check, ownership recording, and preservation rules unchanged. Never mutate the user's PR branch worktree.
@@ -17,9 +17,10 @@ Run the ten Standard stages in order with only the substitutions below:
 7. **Run bounded synthesis:** use the same synthesis boundary and normalized return, with independent verification of every finding that could be retained.
 8. **Compile the three artifacts:** use Standard's coverage, verdict, outcome, and exact-three-file compilation rules, recording Deep mode and planning evidence.
 9. **Validate and publish:** use Standard's initial-review staging, validation, absent-destination check, and same-filesystem directory rename unchanged.
-10. **Cleanup and return:** use Standard's ownership-aware cleanup and return contract unchanged, adding Deep planning and independent-verification gaps to the reported gaps.
+10. **Draft pending GitHub review:** use Standard's pending unpublished review step unchanged.
+11. **Cleanup and return:** use Standard's ownership-aware cleanup and return contract unchanged, adding Deep planning and independent-verification gaps to the reported gaps.
 
-When a Standard instruction excludes Deep-only behavior, this file's explicit substitution controls only that behavior. All other Standard requirements remain binding. Do not create a second gathering, ledger, synthesis, compilation, publication, or cleanup path.
+When a Standard instruction excludes Deep-only behavior, this file's explicit substitution controls only that behavior. All other Standard requirements remain binding. Do not create a second gathering, ledger, synthesis, compilation, publication, pending-review, or cleanup path.
 
 ## Deep Planning And Broader Context
 
