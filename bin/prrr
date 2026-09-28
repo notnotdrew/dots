@@ -262,7 +262,7 @@ run_in_pr_workspace() {
   local command=$4
   local workspace_id opened
   local pane_id=""
-  local -a open_args=(--cwd "$clone_dir" --path "$checkout_path" --focus)
+  local -a open_args=(--cwd "$clone_dir" --path "$checkout_path" --no-focus)
   # Falling back to the clone means no epoch checkout survived for this PR, and
   # naming that workspace after the PR would rename the repo's own space.
   local own_workspace=true
@@ -300,7 +300,7 @@ run_in_pr_workspace() {
 
   if [[ -z "$pane_id" ]]; then
     pane_id="$(
-      herdr tab create --workspace "$workspace_id" --cwd "$checkout_path" --focus \
+      herdr tab create --workspace "$workspace_id" --cwd "$checkout_path" --no-focus \
         | jq -r '.result.root_pane.pane_id // empty'
     )" || die "herdr tab create failed in ${workspace_id}"
     [[ -n "$pane_id" ]] || die "herdr tab create returned no pane"
