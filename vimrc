@@ -88,7 +88,7 @@ let g:ale_virtualtext_cursor = 'all' " Virtual text on every flagged line, not j
 let g:ale_ruby_rubocop_executable = 'bundle'
 let g:ale_linters =
   \ {
-  \ 'eruby': ['erblint'],
+  \ 'eruby': ['erblint', 'herb'],
   \ 'ruby': ['rubocop'],
   \ 'vim': ['vint'],
   \ }
