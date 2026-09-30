@@ -44,14 +44,24 @@ The coordinator must not open [context-gathering.md](context-gathering.md) or
 [language-skill-mapping.md](language-skill-mapping.md), and must not load stack
 skill bodies.
 
-| Role | May open or run |
-| --- | --- |
-| Context gatherer | `references/context-gathering.md`; `references/language-skill-mapping.md` for path matching only; `templates/context-brief.md`; `PriorBriefPath` when set; files under `ReviewDirectory`; `scripts/gh-pr-parse` and read-only `gh`, `git`, repository search, and Linear |
-| Deep planner | the Standard brief on disk; Deep planning rules in `workflows/deep-review.md` |
-| Focused reviewer | the stack skill files in `MatchedStackSkills`; the paths and commands in `EvidenceRequirements` |
-| Synthesis reviewer | `references/finding-synthesis.md`; `references/perfect-principles.md`; the working brief; the candidate records; the checkout paths named in its packet |
-| Comment verifier | files under `ReviewDirectory`; the smallest command or test there that tests the claim |
-| Comment readability | the `use-conversational-language` `SKILL.md`, reviewer-comment rules only |
+| Role | May open or run | Model |
+| --- | --- | --- |
+| Context gatherer | `references/context-gathering.md`; `references/language-skill-mapping.md` for path matching only; `templates/context-brief.md`; `PriorBriefPath` when set; files under `ReviewDirectory`; `scripts/gh-pr-parse` and read-only `gh`, `git`, repository search, and Linear | `cursor-grok-4.6-high-fast` |
+| Deep planner | the Standard brief on disk; Deep planning rules in `workflows/deep-review.md` | inherit |
+| Focused reviewer | the stack skill files in `MatchedStackSkills`; the paths and commands in `EvidenceRequirements` | inherit |
+| Synthesis reviewer | `references/finding-synthesis.md`; `references/perfect-principles.md`; the working brief; the candidate records; the checkout paths named in its packet | inherit |
+| Comment verifier | files under `ReviewDirectory`; the smallest command or test there that tests the claim | `cursor-grok-4.6-high-fast` |
+| Comment readability | the `use-conversational-language` `SKILL.md`, reviewer-comment rules only | `cursor-grok-4.6-high-fast` |
+
+## Models
+
+Launch each job with the model in the table. The gatherer, comment verifier, and
+comment readability agent are mechanical: they run named commands, read named
+files, and fill a named shape. They get one fast tool-using model,
+`cursor-grok-4.6-high-fast`, so the review's time goes to reviewing. The Deep
+planner, focused reviewers, and synthesis reviewer make judgment calls and
+inherit the session model. Do not pin a model in `cursor/cli-config.json`;
+this table is the one place model choice lives.
 
 ## Working Directory
 
