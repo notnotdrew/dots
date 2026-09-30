@@ -191,4 +191,4 @@ The synthesis reviewer proposes ledger updates but never mutates the canonical l
 
 ## Phase Boundary
 
-This procedure covers initial Standard synthesis only. Do not add Deep-mode independent verification of every actionable finding, review epochs, inherited or invalidated evidence, cross-epoch identity, amendments, re-review, full rebuild, or single-finding revision here. Those extensions belong to Phase 3 and must reuse this Standard synthesis boundary rather than create a parallel implementation.
+This procedure covers initial Standard synthesis only. Do not add Deep-mode independent verification of every actionable finding, inherited or invalidated evidence, re-review, full rebuild, or single-finding revision here. Those extensions belong to the Deep and incremental workflows and must reuse this Standard synthesis boundary rather than create a parallel implementation.

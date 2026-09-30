@@ -193,4 +193,4 @@ The specialized reviewer remains subject to the same no-self-delegation, no-arti
 
 ## Phase Boundary
 
-This file defines initial Standard discovery orchestration only. Deep planning, intentionally overlapping Deep coverage, independent verification of every retained actionable finding, review epochs, inherited evidence, amendments, incremental re-review, full rebuilds, and single-finding revision remain deferred to Phase 3. Model choice, reviewer counts, token budgets, timeouts, and configurable concurrency are intentionally unspecified.
+This file defines initial Standard discovery orchestration only. Deep planning, intentionally overlapping Deep coverage, independent verification of every retained actionable finding, inherited evidence, incremental re-review, full rebuilds, and single-finding revision belong to the Deep and incremental workflows. Model choice, reviewer counts, token budgets, timeouts, and configurable concurrency are intentionally unspecified.

@@ -1,8 +1,8 @@
 # Incremental Review Workflow
 
-Use this workflow when the resolved GitHub PR already has a canonical review series, when `--full-rebuild` is explicitly selected, or when `--finding F<positive-integer>` requests one finding revision. Incremental review updates the same three canonical files; it never creates per-epoch or per-finding canonical artifacts.
+Use this workflow when the resolved GitHub PR already has a canonical review series, when `--full-rebuild` is explicitly selected, or when `--finding F<positive-integer>` requests one finding revision. Incremental review updates the same three canonical files; it never creates per-run or per-finding canonical artifacts.
 
-Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md), including isolated gathering from [isolated-jobs.md](../references/isolated-jobs.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, epochs, inheritance, invalidation, amendments, and update publication.
+Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md), including isolated gathering from [isolated-jobs.md](../references/isolated-jobs.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, same-head handling, inheritance, and update publication.
 
 Keep Linear, PR metadata, Git history, and the review checkout read-only. Never change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, reply on existing threads, post issue comments, or let a reviewer mutate canonical artifacts. After successful artifact publication, the coordinator may draft an unpublished (`PENDING`) GitHub review per Standard's pending-review step; never submit it unless Drew explicitly asks later. Artifact-series writes, that pending draft, and removal of a disposable epoch checkout created by this invocation remain coordinator-only operations.
 
@@ -29,47 +29,32 @@ If the marker is malformed, the backup is missing or invalid, any restore fails,
 
 After recovery, require the series to contain exactly the three regular canonical files and validate it before use. A partial series, unexpected in-series entry, or invalid artifact set is a blocker; do not repair it by inference. A sibling backup or staging directory without a marker is not recovery authority and must never be applied to the series.
 
-## 2. Normalize Epoch History And Same-Head Requests
+## 2. Decide Whether This Head Needs A Run
 
-The stable series identity remains owner, repository, and PR number. Epochs are ordinal review events; observed SHAs are evidence only. Disposable checkouts are named `pr-<PR_NUMBER>-R<epochOrdinal>` and ground each epoch's `ObservedHead`.
+The stable series identity remains owner, repository, and PR number. `CurrentEpoch` counts runs; observed SHAs are evidence only. The launcher exports `PR_REVIEW_EPOCH` for this run and names the disposable checkout `pr-<PR_NUMBER>-<epoch>`.
 
-Before appending an epoch, compare the current GitHub `headRefOid` to the series' current `ObservedHead` (top-level field, or the current epoch's head once normalized):
+Compare the current GitHub `headRefOid` to the series' `ObservedHead`:
 
-- Same head, readiness already `ready`, and neither `--full-rebuild` nor `--finding`: stop as a no-op. Do not create a checkout, append an epoch, or rewrite artifacts. Report that the current head is already reviewed.
-- Same head and prior readiness `UNABLE TO REVIEW`, without `--full-rebuild`: retry against the current epoch. Reuse or recreate `pr-<PR_NUMBER>-R<current>`; do not append an epoch solely because the previous attempt failed readiness.
-- Same head with `--full-rebuild`: append the next epoch and use checkout `pr-<PR_NUMBER>-R<next>`.
-- Same head with `--finding`: follow Section 8; reuse the current epoch checkout when the head is unchanged.
-- New head: append the next gap-free epoch and use checkout `pr-<PR_NUMBER>-R<next>` at the new SHA.
+- Same head, readiness already `ready`, and neither `--full-rebuild` nor `--finding`: stop as a no-op. Do not create a checkout or rewrite artifacts. Report that the current head is already reviewed.
+- Same head and prior readiness `UNABLE TO REVIEW`, without `--full-rebuild`: retry under the same `CurrentEpoch`. Reuse or recreate its checkout.
+- Same head with `--full-rebuild`: take the next ordinal.
+- Same head with `--finding`: follow Section 8 under the same `CurrentEpoch`.
+- New head: take the next ordinal and a checkout at the new SHA.
 
-An unnormalized initial-review set has no epoch metadata. On its first successful update that requires a new epoch (new head or explicit full rebuild):
-
-1. represent the complete prior initial review as `R1` in all three replacement artifacts;
-2. preserve its recorded mode, selection provenance, revisions, readiness, coverage, findings, dispositions, verdicts, and outcome as the prior judgment; record the R1 revision, finding states, and inheritance in the shared epoch fields;
-3. preserve every existing finding ID exactly; and
-4. append `R2` for the update.
-
-A same-head retry of an unnormalized `UNABLE TO REVIEW` stays unnormalized until a later update requires epoch history; replace the three canonical files in place through the recoverable publication path without inventing `R2`.
-
-Perform normalization only in staged replacements. The existing files remain untouched until recoverable publication.
-
-After normalization, a normal re-review on a new head, targeted update on a new head, rebase review, or explicit full rebuild appends the next gap-free epoch. Each epoch uses the exact shared epoch fields in `review-contracts.md`; current top-level fields and amendments carry the resulting readiness, coverage, ledger, verdict, and outcome changes.
-
-When the series already has epochs, require them to begin at `R1`, increase by one, and agree across all three artifacts. The next epoch is one greater than the current highest epoch. Never derive an epoch number from a SHA or discard an epoch whose recommendation later changed.
+A series written before `CurrentEpoch` existed has none. Treat it as R1 and write `CurrentEpoch` on this run's replacement artifacts. Older `## Review Epochs` and `## Amendments` sections are history; do not extend them, and drop them from the replacement files.
 
 ## 3. Resolve The Current Observation
 
-Resolve the disposable epoch checkout and the current GitHub head through Standard's read-only epoch-checkout process, targeting `pr-<PR_NUMBER>-R<epoch>` for the epoch selected in Section 2. Prefer launcher exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD` when consistent with the selected epoch and head. Use `scripts/resolve-review-checkout --ensure` when a checkout must be created or reused. Never select the user's PR branch worktree.
+Resolve the disposable checkout and the current GitHub head through Standard's read-only epoch-checkout process, targeting `pr-<PR_NUMBER>-<epoch>` for the ordinal selected in Section 2. Prefer launcher exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD` when consistent with the selected ordinal and head. Use `scripts/resolve-review-checkout --ensure` when a checkout must be created or reused. Never select the user's PR branch worktree.
 
-Record the full current head and actual merge-base for the current or new epoch as applicable. Re-query the head after gathering and before staging; do not combine revisions.
+Record the full current head and actual merge-base. Re-query the head after gathering and before staging; do not combine revisions.
 
 If Section 2 selected a same-head no-op, return that result without gathering or publication.
 
-Launch Standard's isolated context gatherer against `REVIEW_DIR` for the current head. Create `WORK_DIR` first as in `isolated-jobs.md`. Pass `PriorReview` with the prior observed head and the canonical `context-brief.md` path. Do not gather current-head evidence or read changed source files in the coordinator session.
+Launch Standard's isolated context gatherer against `REVIEW_DIR` for the current head. Create `WORK_DIR` first as in `isolated-jobs.md`. Pass `PriorReview` with the prior observed head, the canonical `context-brief.md` path, and the comparison the gatherer should run. Do not gather current-head evidence or read changed source files in the coordinator session.
 
-Compare the previous epoch's observed head and scope with the gatherer's current brief. Use the previous artifact evidence as an index, not as proof that current behavior is unchanged. Inspect through the brief and the named comparison the gatherer recorded:
+The gatherer records the relationship in the new brief's `SincePriorHead` and nothing more. Inheritance is yours: read the prior brief as an index of what was examined, the new brief for what changed, and judge from both:
 
-- the previous-head-to-current-head content change when the objects have a usable ancestry relationship;
-- the prior and current merge-base-to-head patches when history was rewritten;
 - changed symbols, contracts, configuration, schemas, migrations, tests, and generated effects;
 - callers, consumers, models, persistence state, and one-hop dependencies affected by those changes; and
 - prior evidence whose command result, external state, line anchor, historical assumption, or test conclusion may no longer hold.
@@ -78,11 +63,11 @@ Record whether the update is additive, corrective, superseding, a rebase or hist
 
 ## 4. Build Changed And Dependency-Affected Scope
 
-Create an affected-scope map from the gatherer brief and prior artifacts before inheritance. Do not re-trace callers in the coordinator session.
+Create an affected-scope map from the two briefs and the prior ledger before inheriting anything. Do not re-trace callers in the coordinator session.
 
 ```text
 AffectedScope:
-  DirectChanges: <files, symbols, contracts, tests, migrations, and behavior changed since the prior epoch>
+  DirectChanges: <files, symbols, contracts, tests, migrations, and behavior changed since the prior head>
   DependencyAffected: <callers, consumers, models, schemas, state, boundaries, tests, and historical assumptions affected transitively>
   PriorEvidenceAffected: <prior context and finding evidence made stale or uncertain>
   Unaffected: <prior context and findings with a recorded reason inheritance remains safe>
@@ -90,14 +75,7 @@ AffectedScope:
 
 Dependency-affected scope includes unchanged code when a changed contract, state shape, authorization rule, failure behavior, ordering guarantee, configuration value, or test oracle changes the meaning of that code. Do not limit re-review to files in the latest patch. Stop relationship tracing at a defensible boundary and record any unresolved material reach as coverage and readiness evidence.
 
-For every prior context item, coverage record, finding, and decisive evidence item, mark exactly one current treatment:
-
-- `inherited`: the underlying behavior and assumptions are unaffected, with the comparison evidence supporting inheritance;
-- `revalidated`: changed or dependency-affected evidence was reopened and remains valid for the current head;
-- `invalidated`: the evidence or conclusion no longer supports current judgment, with the invalidating change named; or
-- `superseded`: a new context statement or finding represents changed behavior, with a resolvable amendment link.
-
-Inheritance must be explicit and evidence-backed. Never copy the previous final recommendation as the current outcome or treat an unchanged line anchor as proof of unchanged behavior.
+Inheritance must be explicit and evidence-backed: carry a prior coverage record or finding forward only with the comparison evidence that says its behavior and assumptions are unaffected. Never copy the previous final recommendation as the current outcome or treat an unchanged line anchor as proof of unchanged behavior.
 
 ## 5. Choose Incremental Or Full Rebuild
 
@@ -108,7 +86,7 @@ Use incremental inheritance by default. Select a full rebuild only when:
 
 If broad invalidation is discovered without an explicit flag, record the reason and perform the required full rebuild rather than pretending inheritance is safe. Do not use full rebuild merely because the head SHA changed or because a narrow update touches a prior finding.
 
-A full rebuild reruns the selected mode's complete context, readiness, discovery, synthesis, and verification stages against the current head. It replaces the current context and ledger view but preserves every earlier epoch, finding record, disposition entry, amendment, prior verdict, and prior outcome in history. Reuse a stable finding ID when the same behavioral claim still exists. Allocate a new ID only for a genuinely new behavioral claim.
+A full rebuild reruns the selected mode's complete context, readiness, discovery, synthesis, and verification stages against the current head. It rewrites the context and coverage but keeps every finding record and its `DispositionHistory`. Reuse a stable finding ID when the same behavioral claim still exists. Allocate a new ID only for a genuinely new behavioral claim.
 
 For a normal incremental run:
 
@@ -120,40 +98,28 @@ For a normal incremental run:
 6. synthesize new candidates together with affected prior findings through the shared synthesis boundary; and
 7. derive current coverage, verdicts, and outcome from the resulting current ledger state.
 
-Explicit Deep mode applies the Deep planning and overlap rules to affected and broadly relevant scope. Before a Deep final compilation, independently verify every finding retained in the current review, including an inherited finding whose prior epoch lacks current, independent evidence.
+Explicit Deep mode applies the Deep planning and overlap rules to affected and broadly relevant scope. Before a Deep final compilation, independently verify every finding retained in the current review, including an inherited finding whose prior run lacks current, independent evidence.
 
 ## 6. Preserve Stable Finding Identity And History
 
-A stable finding ID follows the behavioral claim, not wording, reviewer, line, commit, or epoch.
+A stable finding ID follows the behavioral claim, not wording, reviewer, line, commit, or run.
 
 - Keep the same ID when new evidence confirms, refutes, narrows, broadens without changing identity, or relocates the same claim.
-- Append evidence and disposition history; never rewrite a prior transition.
+- Append to `DispositionHistory` with the run, reason, and evidence; never rewrite an earlier entry.
 - Keep dismissed and superseded records inspectable.
 - Use `DuplicateOf` only for the same semantic claim represented by another record.
-- When changed behavior requires a materially different claim, retain the old record, mark it `superseded`, create a new ID whose `Supersedes` names the old ID, and link both in a `targeted-supersession` amendment.
+- When changed behavior requires a materially different claim, retain the old record, mark it `superseded`, and create a new ID whose `Supersedes` names the old ID.
 - Assign new IDs monotonically after the highest ID ever used in the series. Never recycle an ID.
 
-Every amendment names its epoch, amendment kind, affected stable IDs or context sections, previous state, new state, evidence, and reason. Links must resolve within the stable artifacts. Amendment kinds include:
-
-- `targeted-update`: a bounded PR change revalidates or changes linked context and findings;
-- `rebase`: observed objects or anchors changed while semantic identity was assessed separately;
-- `verification`: new evidence confirms or changes a claim;
-- `disposition`: a finding changes lifecycle state;
-- `targeted-supersession`: changed behavior replaces one claim with another;
-- `coverage`: inherited coverage is revalidated, invalidated, or newly scoped;
-- `recommendation`: current ledger state changes the PERFECT outcome;
-- `full-rebuild`: current context was reconstructed while history was retained; and
-- `single-finding`: one requested finding received a bounded revision.
-
-Record every recommendation change as an amendment linked to the ledger and coverage changes that caused it. Its `EvidenceChange` preserves the previous outcome, new outcome, cause, and reason.
+When the recommendation changes, note the previous outcome and the cause in the `Readiness Summary` of the regenerated `perfect-review.md`.
 
 ## 7. Handle Rebases Without Identity Drift
 
-Treat a rebase or history rewrite as evidence change, not identity change. Append the next epoch with the newly observed head and merge-base. Compare old and new patch behavior using content, symbols, tests, and contracts rather than commit correspondence alone.
+Treat a rebase or history rewrite as evidence change, not identity change. Record the newly observed head and merge-base. Compare old and new patch behavior using content, symbols, tests, and contracts rather than commit correspondence alone.
 
-Revalidate evidence tied to old object IDs, line anchors, blame, or commit topology. Preserve a finding ID when its behavioral claim still applies; dismiss, revalidate, or supersede it only from current evidence. Record a `rebase` amendment describing changed SHAs, semantic comparison, invalidated anchors, and retained identities.
+Revalidate evidence tied to old object IDs, line anchors, blame, or commit topology. Preserve a finding ID when its behavioral claim still applies; dismiss, revalidate, or supersede it only from current evidence, and say in `DispositionHistory` that anchors were revalidated after a rebase.
 
-A pure rebase may inherit semantically unaffected context after that equivalence is evidenced. It must not rename the series, renumber epochs, regenerate finding IDs, or erase prior observed SHAs.
+A pure rebase may inherit semantically unaffected context after that equivalence is evidenced. It must not rename the series or regenerate finding IDs.
 
 ## 8. Revise One Finding
 
@@ -161,21 +127,21 @@ A pure rebase may inherit semantically unaffected context after that equivalence
 
 Load only:
 
-- the target finding and its complete disposition and amendment history;
+- the target finding and its complete `DispositionHistory`;
 - its duplicate and supersession links;
 - context, coverage, source, caller, model, test, history, and external evidence linked to its behavioral claim;
 - the current final-review references to that finding; and
 - enough PR identity and head evidence to establish whether the linked scope changed.
 
-Do not reopen unrelated findings or claim broader review coverage. Reopen decisive evidence under the shared Standard synthesis rules, then append a `verification`, `disposition`, or `supersession` amendment. Preserve the previous claim, disposition, evidence, and reason. Regenerate the entire current `perfect-review.md` from the current ledger and coverage so stale references or outcomes cannot survive.
+Do not reopen unrelated findings or claim broader review coverage. Reopen decisive evidence under the shared Standard synthesis rules, then append the result to the finding's `DispositionHistory`, preserving the previous claim, disposition, evidence, and reason. Regenerate the entire current `perfect-review.md` from the current ledger and coverage so stale references or outcomes cannot survive.
 
-When the PR head equals the current epoch's observed head, append a same-epoch amendment only if the disposition is unchanged. Append the next epoch for a disposition change so the prior and current states remain verifiable; the observed head may be repeated. When the head changed, use single-finding revision only if comparison proves the entire direct and dependency-affected delta is bounded to the target finding's linked scope. Append the next epoch and a `targeted-update` amendment, revalidate that scope, and explicitly inherit unaffected records. If any other material scope changed or the delta cannot be bounded, stop and require a normal incremental review; do not publish a final review that implies the new head was reviewed globally.
+When the head changed, use single-finding revision only if comparison proves the entire direct and dependency-affected delta is bounded to the target finding's linked scope. Revalidate that scope and explicitly inherit unaffected records. If any other material scope changed or the delta cannot be bounded, stop and require a normal incremental review; do not publish a final review that implies the new head was reviewed globally.
 
 If the target is superseded, follow links to current evidence but amend the requested record and linked current record explicitly. Never silently substitute another ID.
 
 ## 9. Compile Staged Replacements
 
-Compile the current state through the shared Standard or Deep rules. All three artifacts must agree on current epoch, observed head, mode, readiness, coverage, stable IDs, amendments, and current outcome. Historical epochs and prior dispositions remain in the same stable files.
+Compile the current state through the shared Standard or Deep rules. All three artifacts must agree on `CurrentEpoch`, observed head, mode, readiness, coverage, and stable IDs. Prior judgments remain in the ledger's `DispositionHistory`.
 
 Choose one unique update suffix and create two sibling directories under `SERIES_PARENT` on the same filesystem:
 
@@ -184,7 +150,7 @@ Choose one unique update suffix and create two sibling directories under `SERIES
 <SERIES_PARENT>/.pr-<PR_NUMBER>.review-staging.<unique-suffix>
 ```
 
-Copy the current three canonical files to the backup directory before writing replacements. Require the backup to contain exactly those three regular files and validate it. Write exactly the three complete replacement files to staging, require no other entry, and validate staging. Do not modify the destination while either set is incomplete or invalid.
+Copy the current three canonical files to the backup directory before writing replacements. Require the backup to contain exactly those three regular files and validate it. Write exactly the three complete replacement files to staging from the templates, require no other entry, and run `scripts/validate-review-artifacts` on staging. If it fails, fix the field it names from the template and rerun; do not open the script to learn the format. Do not modify the destination while either set is incomplete or invalid.
 
 ## 10. Publish With Recoverable Replacement
 
@@ -215,12 +181,12 @@ Do not clean up a disposable epoch checkout created by this invocation until pub
 
 Return:
 
-- current epoch and review kind;
+- `CurrentEpoch` and review kind;
 - current recommendation or concrete `UNABLE TO REVIEW` details;
 - absolute series directory and the three canonical filenames;
 - previous and current observed heads, noting any rebase;
 - inherited, revalidated, invalidated, and dependency-affected scope;
-- amendments and stable IDs changed in this run;
+- stable IDs whose disposition changed in this run;
 - material coverage or verification gaps;
 - whether publication or restoration occurred;
 - pending GitHub review status (skipped, drafted unpublished with review id and comments, or failed), noting that it was not published; and

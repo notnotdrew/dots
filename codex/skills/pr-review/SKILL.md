@@ -47,7 +47,7 @@ Standard is the omitted-mode default. Deep must be selected explicitly and never
 
 Review checkouts are disposable and epoch-scoped: `pr-<number>-R<epochOrdinal>` (for example `pr-7166-R1`). They are created at that epoch's `ObservedHead` and must never mutate the user's PR branch worktree. Canonical review identity remains the artifact series under `~/.cdx-artifacts/pr-reviews/`; checkouts are evidence only.
 
-When the current GitHub head equals the series' current `ObservedHead` and readiness is already `ready`, a default re-review is a no-op. Use `--full-rebuild` or `--finding` to force more work on an unchanged head. A prior `UNABLE TO REVIEW` on the same head may be retried without appending an epoch.
+When the current GitHub head equals the series' current `ObservedHead` and readiness is already `ready`, a default re-review is a no-op. Use `--full-rebuild` or `--finding` to force more work on an unchanged head. A prior `UNABLE TO REVIEW` on the same head may be retried under the same `CurrentEpoch`.
 
 `--finding` requires an existing review series and one existing ID matching `F0*[1-9][0-9]*`. Match by integer so `F1`, `F01`, and `F001` select the same stored record. New IDs display with at least two digits (`F01`); additional digits are allowed, and existing three-digit IDs stay as stored. Use Standard verification depth. It is incompatible with `--mode deep` and `--full-rebuild`. A full rebuild also requires an existing series.
 
@@ -63,7 +63,7 @@ The selected workflow owns the complete procedure. Do not replace it with an inl
 
 ## Shared Workflow Boundaries
 
-Every route reuses the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, pending GitHub review drafting, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, epochs, inheritance, amendments, and recoverable replacement while preserving those shared boundaries.
+Every route reuses the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, pending GitHub review drafting, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, inheritance, and recoverable replacement while preserving those shared boundaries.
 
 Standard may recommend a later Deep review but must complete under Standard guarantees or return `UNABLE TO REVIEW`. Deep must independently verify every retained actionable finding. Incremental review revalidates changed and dependency-affected scope, preserves unaffected history, and performs a full rebuild only when explicitly requested or when broad invalidation makes inheritance unsafe.
 

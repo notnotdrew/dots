@@ -8,13 +8,13 @@
 - Mode: <Standard|Deep>
 - ModeSelection: <default|explicit>
 - ObservedHead: <full-head-commit-sha>
-- CurrentEpoch: <omit-before-normalization|R1|R2|...>
+- CurrentEpoch: <R1|R2|...>
 - Readiness: <ready|UNABLE TO REVIEW>
 - UnresolvedMaterialDecisions: <none|concise unresolved material dispute or Purpose decision>
 
 `ModeSelection` records selection provenance and prevents automatic escalation: Standard permits `default` or `explicit`, while Deep requires `explicit`.
-`UnresolvedMaterialDecisions` is the deterministic input to outcome derivation. With no verified blocker, a non-`none` value requires `NEEDS DISCUSSION`, while `APPROVE` requires `none`; a verified blocker still takes precedence and requires `REQUEST CHANGES`.
-Omit `CurrentEpoch` only for an initial artifact set that has not yet been normalized. Once present, it names the last review-epoch record.
+`UnresolvedMaterialDecisions` feeds the outcome table in `review-contracts.md`.
+`CurrentEpoch` counts review runs on this PR, starting at R1, and matches the other two artifacts.
 
 ## Coverage
 
@@ -73,44 +73,5 @@ Examples of terminal lifecycle states:
 - A semantic duplicate keeps `Disposition: dismissed`, `DuplicateOf: F01`, and merged provenance on the retained finding.
 - A replaced finding keeps `Disposition: superseded`; the replacing finding names it in `Supersedes`.
 
-Across epochs, preserve each ID and append rather than rewrite `DispositionHistory`. `candidate` may transition to any disposition; `verified` may remain verified or become dismissed or superseded; dismissed and superseded records are terminal. A materially different claim gets a new monotonic ID and links the historical record instead of reviving or renaming it.
+Across review runs, keep each ID and append to `DispositionHistory` rather than rewriting it, naming the run (`R2: verified -> dismissed; <reason and evidence>`). Dismissed and superseded records stay in the ledger. A materially different claim gets a new ID, never a reused or renamed one.
 For Deep findings, `DispositionHistory` names the independent verifier, decisive evidence personally reopened for the current head and behavior, result, and confidence limits.
-
-## Review Epochs
-
-Omit this section only for an initial artifact set that has not yet been normalized. Its first update records the prior review as R1 and the update as R2. Repeat the same ordered records in all three artifacts.
-
-### Epoch R1
-
-- Epoch: R1
-- ObservedBase: <full-base-commit-sha>
-- ObservedHead: <full-head-commit-sha>
-- ReviewType: <initial-upgrade|incremental|targeted-update|rebase|full-rebuild|single-finding>
-- InheritsFrom: <initial|none|prior-epoch>
-- InheritedEvidence: <none|explicit context, coverage, findings, and evidence>
-- InvalidatedEvidence: <none|explicit stale or rebuilt evidence>
-- Amendments: <none|comma-separated amendment IDs>
-- FindingIDs: <none|comma-separated stable finding IDs>
-- FindingStates: <none|comma-separated Fnnn=disposition entries>
-
-The current epoch enumerates every ledger finding and its current disposition. Earlier IDs remain in later history and in the ledger even when dismissed or superseded. R1 records the initial upgrade; R2 and later increase by one. Full rebuilds preserve all prior epochs and findings.
-
-## Amendments
-
-Omit this section when no epoch has amendments. Repeat one record per ID linked from an epoch.
-
-### Amendment A001
-
-- ID: A001
-- Epoch: <R2|later-epoch>
-- Type: <targeted-update|targeted-supersession|rebase|verification|disposition|coverage|recommendation|full-rebuild|single-finding>
-- AmendsEpoch: <prior-or-current-epoch>
-- SubjectFinding: <none|stable-finding-ID>
-- HistoricalFinding: <none|same stable finding ID before amendment>
-- ReplacementFinding: <none|new finding that supersedes the historical record>
-- FromDisposition: <none|candidate|verified|dismissed|superseded>
-- ToDisposition: <none|candidate|verified|dismissed|superseded>
-- EvidenceChange: <concrete changed, revalidated, or invalidated evidence>
-
-Every link resolves. `HistoricalFinding` and `SubjectFinding` retain the same ID; use `ReplacementFinding` for a materially different claim. From and to dispositions agree with the named epoch states.
-An amendment may target its own epoch only when `FromDisposition` and `ToDisposition` are identical; append a new epoch for a disposition change. For `Type: recommendation`, use `EvidenceChange` to preserve the previous outcome, new outcome, cause, and reason.

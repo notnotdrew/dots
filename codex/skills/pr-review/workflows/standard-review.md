@@ -4,7 +4,7 @@ Use this workflow for an initial Standard review only. The coordinator owns chec
 
 Apply [review-contracts.md](../references/review-contracts.md) and isolate gathering, planning, discovery, and synthesis with [isolated-jobs.md](../references/isolated-jobs.md). Select reviewers with [reviewer-orchestration.md](../references/reviewer-orchestration.md), synthesize findings with [finding-synthesis.md](../references/finding-synthesis.md), and compile verdicts with [perfect-principles.md](../references/perfect-principles.md). Compile the exact shapes in [context-brief.md](../templates/context-brief.md), [findings-ledger.md](../templates/findings-ledger.md), and [perfect-review.md](../templates/perfect-review.md). Do not open `context-gathering.md` or `language-skill-mapping.md` in this coordinator session.
 
-This file is the initial Standard route and the shared coordinator-stage definition. For an initial Deep review, apply the substitutions in [deep-review.md](deep-review.md). For an existing series, full rebuild, or single-finding revision, use [incremental-review.md](incremental-review.md), which reuses these stages while owning epochs, inheritance, amendments, recovery, and replacement publication. Do not introduce those update mechanics into this initial route. A Standard review may recommend a later Deep review, but it must not switch modes.
+This file is the initial Standard route and the shared coordinator-stage definition. For an initial Deep review, apply the substitutions in [deep-review.md](deep-review.md). For an existing series, full rebuild, or single-finding revision, use [incremental-review.md](incremental-review.md), which reuses these stages while owning inheritance, recovery, and replacement publication. Do not introduce those update mechanics into this initial route. A Standard review may recommend a later Deep review, but it must not switch modes.
 
 ## Coordinator Invariants
 
@@ -258,11 +258,11 @@ Run the validator against staging:
 "<skill-directory>/scripts/validate-review-artifacts" "$STAGING_DIR"
 ```
 
-If validation fails, correct the staged artifacts and rerun validation. Do not publish an invalid set. If the defects cannot be corrected without inventing evidence or violating a contract, report the blocker, leave `SERIES_DIR` untouched, and do not clean up an owned checkout.
+The templates are the format; the validator only confirms the three files agree and the finding IDs line up. If it fails, fix the field it names from the template and rerun. Do not open the script to learn the format. Do not publish an invalid set. If the defects cannot be corrected without inventing evidence or violating a contract, report the blocker, leave `SERIES_DIR` untouched, and do not clean up an owned checkout.
 
 Immediately before publication, require again that `SERIES_DIR` does not exist and staging contains exactly the three validated canonical files. If the destination appeared, stop without overwriting or merging it.
 
-Publish the initial review by renaming the entire same-filesystem staging directory to `SERIES_DIR` in one operation. Do not copy or move the three canonical files one at a time. This initial-only publication relies on an absent destination and directory rename; do not add Phase 3 backup, amendment, or `.publish-in-progress` marker behavior.
+Publish the initial review by renaming the entire same-filesystem staging directory to `SERIES_DIR` in one operation. Do not copy or move the three canonical files one at a time. This initial-only publication relies on an absent destination and directory rename; do not add the incremental workflow's backup or `.publish-in-progress` marker behavior.
 
 After the rename:
 

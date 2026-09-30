@@ -32,28 +32,13 @@ It contains exactly three canonical handoff files:
 
 The owner, repository, and PR number identify the series. `ObservedBase` and `ObservedHead` record the revisions examined as evidence; a commit SHA is never the series or finding identity. Raw reviewer output may be retained elsewhere, but it is not a canonical handoff artifact.
 
-## Review Epochs And Amendments
+## Review Runs
 
-An unnormalized initial artifact set has no epoch metadata. Its first update that requires a new epoch (new head or explicit full rebuild) records that prior review as `R1` with `ReviewType: initial-upgrade` and `InheritsFrom: initial`, then records the update as `R2`. It preserves every prior finding ID and judgment. Later review events are `R3`, `R4`, and so on, without gaps, reuse, or renumbering. All three artifacts carry the same ordered `## Review Epochs` records, top-level `CurrentEpoch`, and current `ObservedHead`.
+Each run on a PR gets the next ordinal, `R1`, `R2`, and so on, recorded as `CurrentEpoch` in all three artifacts. The launcher names the disposable checkout `pr-<PR_NUMBER>-<CurrentEpoch>` and pins it to that run's `ObservedHead`.
 
-Same GitHub head as the series' current `ObservedHead` does not create a new epoch on a default re-review when readiness is already `ready`. A same-head `UNABLE TO REVIEW` retry may replace the current epoch's published artifacts without appending. `--full-rebuild` on an unchanged head appends the next epoch. Disposable checkouts are named `pr-<PR_NUMBER>-R<epochOrdinal>` and must match that epoch's `ObservedHead`.
+A default re-review on the same GitHub head as the series' current `ObservedHead` with readiness already `ready` is a no-op. A same-head `UNABLE TO REVIEW` retry replaces the published artifacts under the same ordinal. `--full-rebuild` and a new head take the next ordinal. Every run rewrites all three files from current evidence; prior judgments survive in each finding's `DispositionHistory`, not in a parallel history section.
 
-Each epoch record has exactly these fields:
-
-- `Epoch`: the `R<positive integer>` ordinal.
-- `ObservedBase` and `ObservedHead`: the one base and one head examined for that epoch.
-- `ReviewType`: the review event kind.
-- `InheritsFrom`: the previous epoch, `initial` for the R1 upgrade, or `none` for a full rebuild.
-- `InheritedEvidence` and `InvalidatedEvidence`: explicit evidence treatments; use `none` rather than an empty value.
-- `Amendments`: comma-separated amendment IDs or `none`.
-- `FindingIDs`: every finding present in that epoch, or `none`.
-- `FindingStates`: matching `Fnnn=disposition` entries, or `none`.
-
-The epoch histories and every epoch field agree across all three artifacts. The top-level current head equals the current epoch's head. A full rebuild uses `InheritsFrom: none`, `InheritedEvidence: none`, and names the invalidated prior basis, while preserving every earlier epoch and historical finding record.
-
-Amendments live in the findings ledger and use stable `A<positive integer>` IDs. Every amendment is linked from its epoch and records `Epoch`, `Type`, `AmendsEpoch`, `SubjectFinding`, `HistoricalFinding`, `ReplacementFinding`, `FromDisposition`, `ToDisposition`, and `EvidenceChange`. Use `none` for fields that do not apply. Linked epochs, findings, replacements, and amendment IDs must resolve in the canonical artifacts.
-
-A rebase appends evidence: it changes observed SHAs and invalidates or revalidates revision-bound anchors without changing series identity or a finding ID. A same-head single-finding update may amend the current epoch only when its disposition is unchanged; a disposition change appends the next epoch so both states remain structurally verifiable. Any replacement finding keeps the historical record and uses a new monotonic finding ID plus supersession and amendment links.
+A rebase changes observed SHAs and may move anchors; it does not change series identity or a finding ID.
 
 ## Review Readiness
 
@@ -108,15 +93,9 @@ Finding identity belongs to the behavioral claim, not its wording, line anchor, 
 - `DispositionHistory` preserves each disposition, the reason for changing it, and the evidence used.
 - `RawOutput` links retained reviewer output when it exists; `none` is valid.
 
-Duplicate and supersession links must resolve to IDs in the same ledger. Every finding named by epoch history remains in the ledger, and the current epoch enumerates the complete current ledger with dispositions matching the records. The same behavioral claim keeps its ID through confirmation, changed evidence, relocation, rebase, dismissal, and narrowing. A materially different replacement claim receives a new ID; an amendment may not silently rename its `HistoricalFinding`.
+Duplicate and supersession links must resolve to IDs in the same ledger. Every finding ever recorded stays in the ledger. The same behavioral claim keeps its ID through confirmation, changed evidence, relocation, rebase, dismissal, and narrowing. A materially different replacement claim receives a new ID that `Supersedes` the old one.
 
-Allowed recorded disposition transitions are:
-
-- `candidate` to any disposition;
-- `verified` to `verified`, `dismissed`, or `superseded`; and
-- `dismissed` or `superseded` only to itself.
-
-Terminal records remain historical. If changed behavior requires a new actionable claim after a terminal disposition, create a new finding and link the replacement rather than reviving the old identity. Every changed cross-epoch disposition is represented by an amendment whose from and to values agree with the named epochs.
+Dismissed and superseded records are terminal. If changed behavior requires a new actionable claim after a terminal disposition, create a new finding and link the replacement rather than reviving the old identity. Every disposition change appends to `DispositionHistory` with the run, reason, and evidence.
 
 Purpose findings must be blocking. The ledger's required top-level `UnresolvedMaterialDecisions` field is `none` or a concise unresolved material dispute or Purpose decision. It is the deterministic source for the outcome-table condition; the context brief's `PurposeDecisions` remains supporting context. An unresolved Purpose decision is represented by the Purpose `NEEDS DISCUSSION` verdict and outcome, not by an advisory finding record. Clarity and Taste findings must be advisory.
 
@@ -147,4 +126,4 @@ Derive the ordered verdicts from final coverage, including each coverage record'
 
 Clarity and Taste findings are advisory. `UNREVIEWED` applies only to the principles affected by the recorded gaps; aggregate `UNABLE TO REVIEW` does not by itself force unaffected principles to `UNREVIEWED`. When readiness fails before any review occurs, all six evaluable principles are affected and therefore use `UNREVIEWED`; Taste remains `N/A`. A definitive `Recommendation` may not coexist with any `UNREVIEWED` verdict.
 
-After the seven ordered verdicts, include explicit `### <Principle>` finding sections only for principles with retained findings. Every finding that is verified in the current ledger and current epoch appears exactly once under its assigned principle; no dismissed, superseded, candidate, or stale historical state appears. Omit empty principle lists. Each retained finding carries `Scenario`, `Why`, `Fix`, and `Anchor`, each a single high-level line: a plausible triggering scenario, what actually produces the issue, a high-level potential fix, and a `file:line` anchor where a review comment could be placed. `Scenario`, `Why`, and `Fix` derive from the ledger finding's `Claim`, `Impact`, and `AffectedBehavior`; `Anchor` derives from its `Scope` or `Evidence` locations.
+After the seven ordered verdicts, include explicit `### <Principle>` finding sections only for principles with retained findings. Every finding that is verified in the current ledger appears exactly once under its assigned principle; no dismissed, superseded, or candidate record appears. Omit empty principle lists. Each retained finding carries `Scenario`, `Why`, `Fix`, and `Anchor`, each a single high-level line: a plausible triggering scenario, what actually produces the issue, a high-level potential fix, and a `file:line` anchor where a review comment could be placed. `Scenario`, `Why`, and `Fix` derive from the ledger finding's `Claim`, `Impact`, and `AffectedBehavior`; `Anchor` derives from its `Scope` or `Evidence` locations.

@@ -9,13 +9,13 @@
 - Mode: <Standard|Deep>
 - ModeSelection: <default|explicit>
 - ObservedHead: <full-head-commit-sha>
-- CurrentEpoch: <omit-before-normalization|R1|R2|...>
+- CurrentEpoch: <R1|R2|...>
 - Readiness: <ready|UNABLE TO REVIEW>
 - ContextArtifact: context-brief.md
 - LedgerArtifact: findings-ledger.md
 
 `ModeSelection` records selection provenance and prevents automatic escalation: Standard permits `default` or `explicit`, while Deep requires `explicit`.
-Omit `CurrentEpoch` only for an initial artifact set that has not yet been normalized. Once present, it names the last review-epoch record and its observed head.
+`CurrentEpoch` counts review runs on this PR, starting at R1, and matches the other two artifacts.
 
 ## Readiness Summary
 
@@ -45,14 +45,7 @@ Repeat one record for every reviewed or known concern or subsystem.
 - Clarity: <PASS|CONCERN|UNREVIEWED>
 - Taste: N/A
 
-Derive verdicts deterministically from retained verified findings, the ledger's `UnresolvedMaterialDecisions` value, and coverage gaps, retaining each gap's `Principles` set to identify the affected verdicts:
-
-- Purpose is `UNREVIEWED` for any `unreviewed` or `unable-to-review` Purpose gap, `FAIL` for a retained verified blocking Purpose finding, `NEEDS DISCUSSION` for an unresolved material Purpose decision when no such blocker exists, and otherwise `PASS`. Purpose findings are always blocking; represent unresolved Purpose decisions with `NEEDS DISCUSSION`, not advisory finding records.
-- EdgeCases, Reliability, Form, and Evidence are `UNREVIEWED` for a material gap assigned to that principle, `FAIL` for a retained verified blocking finding, `CONCERN` for a retained verified advisory finding or explicit non-material gap, and otherwise `PASS`.
-- Clarity is `UNREVIEWED` for a material Clarity gap, `CONCERN` for a retained verified advisory Clarity finding or explicit non-material gap, and otherwise `PASS`.
-- Taste is always `N/A` and its gaps do not alter the outcome; Clarity and Taste findings are advisory.
-
-Purpose cannot use `CONCERN`, so even a non-material Purpose gap requires `UNREVIEWED` and an overall `UnableToReview` outcome. Apply `UNREVIEWED` only to principles affected by recorded gaps; aggregate `UNABLE TO REVIEW` does not force unaffected principles to `UNREVIEWED`. A failure before review begins affects all six, while a renewed readiness failure after partial review can leave unaffected verdicts normally derived. A definitive `Recommendation` may not coexist with any `UNREVIEWED` verdict.
+Derive the verdicts from retained verified findings, the ledger's `UnresolvedMaterialDecisions`, and coverage gaps by the rules in `review-contracts.md`.
 
 ## Findings
 
@@ -69,7 +62,7 @@ After the ordered verdicts, add a section only for each principle with retained 
   - PriorArt: <none, or the author who already posted this claim and what this adds>
 ```
 
-List every finding that is verified in the current ledger and current epoch exactly once under its assigned principle, and reference no other ledger record or stale historical state. Omit empty principle sections; if every list is empty, omit the Findings section.
+List every finding that is verified in the current ledger exactly once under its assigned principle, and reference no other ledger record. Omit empty principle sections; if every list is empty, omit the Findings section.
 
 Every retained finding carries `Scenario`, `Why`, `Fix`, `Anchor`, and `PriorArt`. Keep each to a single high-level line; the more explanation required, the less useful it is. Carry `PriorArt` through from the ledger so a finding another reviewer already posted is never presented as new. Derive `Scenario`, `Why`, and `Fix` from the ledger finding's `Claim`, `Impact`, and `AffectedBehavior`, and derive `Anchor` from its `Scope` or `Evidence` source locations, choosing the most representative changed line when several apply.
 
@@ -87,8 +80,7 @@ For a definitive recommendation:
 - Recommendation: APPROVE
 ```
 
-`Recommendation` is exactly one of `APPROVE`, `REQUEST CHANGES`, or `NEEDS DISCUSSION`.
-With no verified blocker, `NEEDS DISCUSSION` requires a non-`none` ledger `UnresolvedMaterialDecisions` value, and `APPROVE` requires `none`. A verified blocker takes precedence and requires `REQUEST CHANGES`.
+`Recommendation` is exactly one of `APPROVE`, `REQUEST CHANGES`, or `NEEDS DISCUSSION`, derived by the outcome table in `review-contracts.md`.
 
 For an overall inability to review:
 
@@ -100,23 +92,4 @@ For an overall inability to review:
   - Remediation: <concrete action that would make review possible>
 ```
 
-Never include both `Recommendation` and `UnableToReview`.
-
-## Review Epochs
-
-Omit this section only for an initial artifact set that has not yet been normalized. Its first update records the prior review as R1 and the update as R2. Repeat the same ordered records in all three artifacts.
-
-### Epoch R1
-
-- Epoch: R1
-- ObservedBase: <full-base-commit-sha>
-- ObservedHead: <full-head-commit-sha>
-- ReviewType: <initial-upgrade|incremental|targeted-update|rebase|full-rebuild|single-finding>
-- InheritsFrom: <initial|none|prior-epoch>
-- InheritedEvidence: <none|explicit context, coverage, findings, and evidence>
-- InvalidatedEvidence: <none|explicit stale or rebuilt evidence>
-- Amendments: <none|comma-separated amendment IDs>
-- FindingIDs: <none|comma-separated stable finding IDs>
-- FindingStates: <none|comma-separated Fnnn=disposition entries>
-
-Epochs begin at R1 and increase without gaps. Each records exactly one observed head. Rebase SHAs are evidence changes, while full rebuilds preserve prior history. Regenerate the current review from the current ledger state; preserve any changed prior outcome in a linked recommendation amendment.
+Never include both `Recommendation` and `UnableToReview`. Regenerate this file from the current ledger on every run; the ledger's `DispositionHistory` is where prior judgments live.

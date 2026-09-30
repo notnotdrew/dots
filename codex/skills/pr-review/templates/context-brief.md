@@ -12,11 +12,11 @@
 - ModeSelection: <default|explicit>
 - ObservedBase: <full-base-commit-sha>
 - ObservedHead: <full-head-commit-sha>
-- CurrentEpoch: <omit-before-normalization|R1|R2|...>
+- CurrentEpoch: <R1|R2|...>
 
 Observed revisions are evidence, not review-series identity.
 `ModeSelection` records whether the mode was defaulted or explicitly requested. Standard permits either value; Deep requires `explicit`. Preserve this provenance rather than automatically escalating Standard to Deep.
-Omit `CurrentEpoch` only for an initial artifact set that has not yet been normalized. Once present, it names the last record in `Review Epochs`, and `ObservedHead` matches that record.
+`CurrentEpoch` counts review runs on this PR, starting at R1; the launcher names the disposable checkout `pr-<PRNumber>-<CurrentEpoch>`. `ObservedHead` is the head that run examined.
 
 ## Intent
 
@@ -82,22 +82,3 @@ Include this section only for Deep mode.
 - RiskAndOverlap: <planned reviewer scopes, justified overlap, and boundary ownership>
 - IndependentVerification: <decisive evidence and verifier capability required>
 - StoppingPoints: <evidence gathered, bounded stopping points, and gaps>
-
-## Review Epochs
-
-Omit this section only for an initial artifact set that has not yet been normalized. Its first update records the prior review as R1 and the update as R2. Repeat this record in order; the same records must appear in all three artifacts.
-
-### Epoch R1
-
-- Epoch: R1
-- ObservedBase: <full-base-commit-sha>
-- ObservedHead: <full-head-commit-sha>
-- ReviewType: <initial-upgrade|incremental|targeted-update|rebase|full-rebuild|single-finding>
-- InheritsFrom: <initial|none|prior-epoch>
-- InheritedEvidence: <none|explicit context, coverage, findings, and evidence>
-- InvalidatedEvidence: <none|explicit stale or rebuilt evidence>
-- Amendments: <none|comma-separated amendment IDs>
-- FindingIDs: <none|comma-separated stable finding IDs>
-- FindingStates: <none|comma-separated Fnnn=disposition entries>
-
-Every epoch has exactly one observed head. R2 and later are gap-free ordinals. A full rebuild preserves prior records, inherits `none`, and explicitly invalidates the prior basis. A rebase changes revision evidence, not series or finding identity.
