@@ -395,11 +395,40 @@ existing=$(jq -r --arg branch "$branch" \
   '[.result.worktrees[]? | select(.branch == $branch)][0].path // empty' <<<"$worktrees")
 [ -d "$existing" ] || existing=
 
-# Two branches can slug down to the same sibling path, and a checkout removed
-# by hand leaves its directory behind. Either way the path is not this
-# branch's to take, and opening it would put the agent on someone else's work.
+# The sibling path is named for this branch, but Herdr lists a worktree under
+# the branch it has checked out right now. A clean checkout that was switched
+# onto some other branch still belongs here: that other branch keeps its
+# commits, and this path is not the one its own name would get. Switch back
+# and use it. A dirty tree, a detached HEAD, a leftover directory, or two
+# branches that slug to this same path stay refused. Opening any of those
+# would put the agent on someone else's work.
 if [ -z "$existing" ] && [ -e "$checkout" ]; then
-  die "$branch is not what is checked out at $checkout"
+  occupant=$(git -C "$checkout" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  occupant_home="${repo_root}.$(printf '%s' "$occupant" | tr '/' '-')"
+  occupant_dirty=
+  if [ -n "$occupant" ] && [ "$occupant_home" != "$checkout" ]; then
+    occupant_dirty=$(git -C "$checkout" status --porcelain)
+  fi
+  branch_taken=
+  if [ -n "$occupant" ] && git -C "$repo_root" worktree list --porcelain |
+    grep -qxF "branch refs/heads/$branch"; then
+    branch_taken=1
+  fi
+  if [ "$occupant" = "$branch" ]; then
+    existing="$checkout"
+  elif [ -n "$occupant" ] && [ "$occupant_home" != "$checkout" ] &&
+    [ -z "$occupant_dirty" ] && [ -z "$branch_taken" ] &&
+    git -C "$repo_root" show-ref --verify --quiet "refs/heads/$branch"; then
+    printf 'Switching %s back to %s\n' "${checkout##*/}" "$branch"
+    switch_err=$(mktemp)
+    TMPFILES+=("$switch_err")
+    if ! git -C "$checkout" switch --quiet -- "$branch" 2>"$switch_err"; then
+      die "could not switch $checkout to $branch" "$switch_err"
+    fi
+    existing="$checkout"
+  else
+    die "$branch is not what is checked out at $checkout"
+  fi
 fi
 
 # The space opens in the background. Everything below targets it by pane id,
