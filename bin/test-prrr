@@ -1,0 +1,363 @@
+#!/usr/bin/env bash
+# Fixture tests for `prrr start --requested`: leave an in-flight review alone,
+# still no-op a same head, and start when the PR is new or the head has moved.
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRRR="${SCRIPT_DIR}/prrr"
+failures=0
+
+assert_eq() {
+  local name=$1 expected=$2 actual=$3
+  if [[ "$actual" == "$expected" ]]; then
+    printf 'ok  %s\n' "$name"
+  else
+    printf 'not ok  %s\nexpected:\n%s\nactual:\n%s\n' "$name" "$expected" "$actual"
+    failures=1
+  fi
+}
+
+assert_logged() {
+  local name=$1 needle=$2
+  if grep -F -q -- "$needle" "$log"; then
+    printf 'ok  %s\n' "$name"
+  else
+    printf 'not ok  %s\nmissing %s in:\n%s\nstderr:\n%s\n' \
+      "$name" "$needle" "$(cat "$log")" "$(cat "$err")"
+    failures=1
+  fi
+}
+
+assert_not_logged() {
+  local name=$1 needle=$2
+  if grep -F -q -- "$needle" "$log"; then
+    printf 'not ok  %s\nfound %s in:\n%s\n' "$name" "$needle" "$(cat "$log")"
+    failures=1
+  else
+    printf 'ok  %s\n' "$name"
+  fi
+}
+
+summary_line() {
+  { grep -E 'requested,' "$err" || true; } | tail -1 | sed 's/^prrr: //'
+}
+
+leave_line() {
+  grep -F 'leave acme/widgets#7 alone' "$err" || true
+}
+
+tmpdir="$(CDPATH= cd "$(mktemp -d "${TMPDIR:-/tmp}/test-prrr.XXXXXX")" && pwd -P)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+bin="$tmpdir/bin"
+art="$tmpdir/artifacts"
+dev="$tmpdir/dev"
+log="$tmpdir/herdr.log"
+err="$tmpdir/err"
+out="$tmpdir/out"
+snap="$tmpdir/snapshot.json"
+resolve_file="$tmpdir/resolve.out"
+checkout="$tmpdir/checkout"
+onhead="$tmpdir/onhead"
+oldhead="$tmpdir/oldhead"
+url="https://github.com/acme/widgets/pull/7"
+label='[PR] Example PR'
+head_a=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+head_b=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+last_status=0
+
+mkdir -p "$bin" "$art" "$dev/acme/widgets" "$checkout" "$onhead" "$oldhead"
+: >"$log"
+
+git init --quiet "$dev/acme/widgets"
+git -C "$dev/acme/widgets" remote add origin git@github.com:acme/widgets.git
+git init --quiet "$onhead"
+git -C "$onhead" -c user.email=test@example.com -c user.name=test \
+  commit --quiet --allow-empty -m init
+git init --quiet "$oldhead"
+git -C "$oldhead" -c user.email=test@example.com -c user.name=test \
+  commit --quiet --allow-empty -m init
+onhead="$(CDPATH= cd "$onhead" && pwd -P)"
+oldhead="$(CDPATH= cd "$oldhead" && pwd -P)"
+checkout="$(CDPATH= cd "$checkout" && pwd -P)"
+onhead_sha="$(git -C "$onhead" rev-parse HEAD)"
+
+cat >"$bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  search)
+    printf '%s\n' "acme/widgets	7	Example PR	https://github.com/acme/widgets/pull/7"
+    ;;
+  pr)
+    printf '%s\n' "Example PR"
+    ;;
+  *)
+    printf 'unexpected gh %s\n' "$*" >&2
+    exit 1
+    ;;
+esac
+EOF
+
+cat >"$bin/herdr" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "\$*" >>"$log"
+case "\$1" in
+  workspace)
+    case "\$2" in
+      list)
+        printf '%s\\n' '{"result":{"workspaces":[]}}'
+        ;;
+      report-metadata)
+        ;;
+      *)
+        printf 'unexpected herdr %s\\n' "\$*" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  api)
+    [[ "\$2" == snapshot ]]
+    cat "$snap"
+    ;;
+  worktree)
+    printf '%s\\n' '{"result":{"workspace":{"workspace_id":"w9"},"root_pane":{"pane_id":"w9:p1"},"already_open":false}}'
+    ;;
+  tab)
+    printf '%s\\n' '{"result":{"root_pane":{"pane_id":"w9:p2"}}}'
+    ;;
+  pane)
+    ;;
+  *)
+    printf 'unexpected herdr %s\\n' "\$*" >&2
+    exit 1
+    ;;
+esac
+EOF
+
+cat >"$bin/resolve-review-checkout" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cat "$resolve_file"
+EOF
+
+chmod +x "$bin/gh" "$bin/herdr" "$bin/resolve-review-checkout"
+
+write_resolve() {
+  local action=$1 checkout_path=$2 head=$3
+  printf 'ACTION=%q OWNER=%q REPO=%q PR_NUMBER=%q HEAD_SHA=%q EPOCH=%q CHECKOUT_BRANCH=%q CHECKOUT_CREATED=%q CHECKOUT_PATH=%q PR_URL=%q MESSAGE=%q\n' \
+    "$action" acme widgets 7 "$head" R1 pr-7-R1 no "$checkout_path" \
+    "$url" "resolver says ${action}" \
+    >"$resolve_file"
+}
+
+write_snapshot() {
+  local cwd=${1-}
+  if [[ -z "$cwd" ]]; then
+    printf '%s\n' '{"result":{"snapshot":{"workspaces":[],"panes":[]}}}' >"$snap"
+    return
+  fi
+  jq -n --arg label "$label" --arg cwd "$cwd" \
+    '{result:{snapshot:{workspaces:[{label:$label, workspace_id:"w1"}], panes:[{workspace_id:"w1", cwd:$cwd}]}}}' \
+    >"$snap"
+}
+
+write_vacant_snapshot() {
+  jq -n --arg label "$label" \
+    '{result:{snapshot:{workspaces:[{label:$label, workspace_id:"w1"}], panes:[]}}}' \
+    >"$snap"
+}
+
+write_brief() {
+  local dir=$1 head=$2
+  mkdir -p "$dir"
+  cat >"$dir/context-brief.md" <<EOF
+# Context Brief
+
+## Identity
+
+- ObservedHead: ${head}
+
+## Intent
+
+- IntentSummary: fixture
+EOF
+}
+
+reset_artifacts() {
+  rm -rf "$art"
+  mkdir -p "$art"
+}
+
+run_prrr() {
+  local status=0
+  : >"$log"
+  PRRR_ARTIFACTS_ROOT="$art" \
+    PRRR_DEV_ROOT="$dev" \
+    PRRR_RESOLVE_CHECKOUT="$bin/resolve-review-checkout" \
+    PATH="$bin:${PATH}" \
+    "$PRRR" "$@" >"$out" 2>"$err" || status=$?
+  last_status=$status
+}
+
+# A PR with no workspace and no in-progress review starts, without taking focus.
+reset_artifacts
+write_snapshot
+write_resolve review "$checkout" "$head_a"
+run_prrr start --requested
+assert_eq 'new review exits 0' 0 "$last_status"
+assert_eq 'new review starts' \
+  '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
+  "$(summary_line)"
+assert_logged 'new review opens a workspace' 'worktree open'
+assert_logged 'new review does not take focus' '--no-focus'
+assert_not_logged 'new review adds no extra tab' 'tab create'
+
+# Same head already reviewed: resolver no-op, no workspace touched.
+reset_artifacts
+write_snapshot
+write_resolve noop "$checkout" "$head_a"
+run_prrr start --requested
+assert_eq 'unchanged head exits 0' 0 "$last_status"
+assert_eq 'unchanged head no-ops' \
+  '1 requested, 0 started, 1 already current, 0 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'unchanged head opens nothing' 'worktree open'
+assert_not_logged 'unchanged head adds no tab' 'tab create'
+assert_not_logged 'unchanged head runs no pane' 'pane run'
+
+# Pane already sitting in the checkout we would use.
+reset_artifacts
+write_snapshot "$checkout"
+write_resolve review "$checkout" "$head_a"
+run_prrr start --requested
+assert_eq 'open checkout exits 0' 0 "$last_status"
+assert_eq 'open checkout is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  "$(summary_line)"
+assert_eq 'open checkout says why' \
+  'prrr: leave acme/widgets#7 alone; a review is already running' \
+  "$(leave_line)"
+assert_not_logged 'open checkout adds no tab' 'tab create'
+assert_not_logged 'open checkout opens no workspace' 'worktree open'
+assert_not_logged 'open checkout runs no pane' 'pane run'
+
+# Same commit, different path spelling: still the review already running.
+link="$tmpdir/checkout-link"
+ln -s "$checkout" "$link"
+reset_artifacts
+write_snapshot "$checkout"
+write_resolve review "$link" "$head_a"
+run_prrr start --requested
+assert_eq 'linked checkout is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'linked checkout adds no tab' 'tab create'
+
+# Workspace pane is on this commit even though the resolver named another path.
+reset_artifacts
+write_snapshot "$onhead"
+write_resolve review "$tmpdir/other-checkout" "$onhead_sha"
+run_prrr start --requested
+assert_eq 'pane on this commit is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'pane on this commit adds no tab' 'tab create'
+
+# Head moved out from under the open workspace: start one new tab, still unfocused.
+reset_artifacts
+write_snapshot "$oldhead"
+write_resolve review "$tmpdir/new-checkout" "$head_b"
+run_prrr start --requested
+assert_eq 'moved head exits 0' 0 "$last_status"
+assert_eq 'moved head starts' \
+  '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
+  "$(summary_line)"
+assert_logged 'moved head opens a tab' 'tab create'
+assert_logged 'moved head does not take focus' '--no-focus'
+assert_not_logged 'moved head does not open a second workspace' 'worktree open'
+assert_eq 'moved head is not left alone' '' "$(leave_line)"
+
+# A labelled workspace with nothing in it is not a review of this head.
+reset_artifacts
+write_vacant_snapshot
+write_resolve review "$checkout" "$head_b"
+run_prrr start --requested
+assert_eq 'vacant workspace still starts' \
+  '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
+  "$(summary_line)"
+assert_logged 'vacant workspace gets a tab' 'tab create'
+
+# In-progress work dir records this head, and there is no workspace.
+reset_artifacts
+write_snapshot
+write_brief "$art/acme--widgets/.pr-7.work.current" "$head_a"
+write_resolve review "$checkout" "$head_a"
+run_prrr start --requested
+assert_eq 'work dir for this head is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'work dir for this head opens nothing' 'worktree open'
+
+# Work dir for the previous head does not block the moved head.
+reset_artifacts
+write_snapshot
+write_brief "$art/acme--widgets/.pr-7.work.previous" "$head_a"
+write_resolve review "$checkout" "$head_b"
+run_prrr start --requested
+assert_eq 'work dir for the previous head still starts' \
+  '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
+  "$(summary_line)"
+assert_logged 'previous-head work dir still opens a workspace' 'worktree open'
+
+# Work dir that has not recorded a head yet is still in progress.
+reset_artifacts
+write_snapshot
+mkdir -p "$art/acme--widgets/.pr-7.work.pending"
+write_resolve review "$checkout" "$head_b"
+run_prrr start --requested
+assert_eq 'unheaded work dir is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'unheaded work dir opens nothing' 'worktree open'
+
+# Publish marker is an in-progress review even with no workspace.
+reset_artifacts
+write_snapshot
+mkdir -p "$art/acme--widgets/pr-7"
+cat >"$art/acme--widgets/pr-7/context-brief.md" <<EOF
+# Context Brief
+
+## Identity
+
+- Title: Example PR
+- ObservedHead: ${head_a}
+
+## Intent
+
+- IntentSummary: fixture
+EOF
+printf '%s\n' 'StagingDirectory: /tmp/staging' >"$art/acme--widgets/pr-7/.publish-in-progress"
+write_resolve review "$checkout" "$head_b"
+run_prrr start --requested
+assert_eq 'publish marker is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'publish marker opens nothing' 'worktree open'
+assert_not_logged 'publish marker adds no tab' 'tab create'
+
+# A direct start still stacks a tab. Only the pending check leaves it alone.
+reset_artifacts
+write_snapshot "$checkout"
+write_resolve review "$checkout" "$head_a"
+run_prrr start "$url"
+assert_eq 'direct start exits 0' 0 "$last_status"
+assert_logged 'direct start adds a tab' 'tab create'
+assert_logged 'direct start does not take focus' '--no-focus'
+assert_eq 'direct start is not left alone' '' "$(leave_line)"
+
+if [[ "$failures" -ne 0 ]]; then
+  exit 1
+fi
+printf 'all tests passed\n'

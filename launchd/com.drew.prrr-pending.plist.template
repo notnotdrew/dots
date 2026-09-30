@@ -20,7 +20,7 @@
 		<string>/bin/bash</string>
 		<string>@SCRIPT@</string>
 	</array>
-	<!-- Every 30 minutes (1800s). prrr start --requested no-ops when heads are unchanged. -->
+	<!-- Every 30 minutes (1800s). Leaves a PR alone while a review of its current head is already running, and no-ops when that head is already reviewed. -->
 	<key>StartInterval</key>
 	<integer>1800</integer>
 	<key>StandardOutPath</key>
