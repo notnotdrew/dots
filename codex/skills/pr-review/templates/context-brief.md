@@ -34,6 +34,7 @@ Omit `CurrentEpoch` only for an initial artifact set that has not yet been norma
 - SizeSignals: <signals affecting reviewability>
 - RiskSignals: <security, data, boundary, failure-mode, or complexity signals>
 - RelevantHistory: <commits, blame, discussions, or none>
+- SincePriorHead: <none|prior head SHA; descends-from-prior or history-rewritten; paths and symbols changed since; prior coverage or finding scopes they touch>
 
 ## Relationships
 

@@ -1,29 +1,14 @@
 # Standard Review Context Gathering
 
-Use this procedure only from the isolated context-gatherer job. Gather enough evidence to review changed behavior and its immediate boundaries without performing Deep planning, broad architecture discovery, or incremental-review inheritance.
+Use this procedure only from the isolated context-gatherer job. Gather enough evidence to review changed behavior and its immediate boundaries without performing Deep planning or broad architecture discovery. The handoff names every file you may open and every command you may run; open nothing else, and return an open question as a gap or `MaterialLimitation` rather than looking it up.
 
-Write `context-brief.md` into the handed-off `WorkDirectory`. Do not write canonical series files, staging, backups, or the review checkout. Keep external systems read-only: do not post GitHub or Linear comments, submit a review, change issue state, or mutate the PR. A targeted Git fetch is allowed only when required to resolve observed revisions locally.
+Write `context-brief.md` into the handed-off `WorkDirectory`. A targeted Git fetch is allowed only when required to resolve observed revisions locally.
 
-Match changed paths with [language-skill-mapping.md](language-skill-mapping.md) and record skill names plus unmatched languages. Do not load stack skill bodies. Do not launch reviewers, assess final readiness, or derive a recommendation.
+Match changed paths with [language-skill-mapping.md](language-skill-mapping.md) and record the matched skill paths plus unmatched languages. Do not open the matched skills.
 
-## Resolve PR Identity Before Gathering Evidence
+## Confirm PR Identity Before Gathering Evidence
 
-Run `scripts/gh-pr-parse` against the original PR reference and keep the parsed values separate from shell code.
-
-- For a GitHub URL, use the parser's `OWNER`, `REPO`, and `PR_NUMBER` values. The URL identifies the target repository even when the current checkout has a different remote.
-- For a numeric reference, the parser returns only `PR_NUMBER`. From the repository in which the command was invoked, run:
-
-  ```bash
-  gh repo view --json nameWithOwner --jq '.nameWithOwner'
-  ```
-
-  Require exactly one non-empty `owner/repository` value, split it into `OWNER` and `REPO`, and fail readiness if the current repository cannot be resolved unambiguously. Do this before deriving the artifact path; do not infer owner or repository from a checkout directory, remote-name convention, PR branch, or numeric PR alone.
-
-The stable review-series directory is:
-
-```text
-~/.cdx-artifacts/pr-reviews/<OWNER>--<REPO>/pr-<PR_NUMBER>/
-```
+Run the `gh-pr-parse` script the handoff names against `PRURL` and keep the parsed values separate from shell code. Require its `OWNER`, `REPO`, and `PR_NUMBER` to equal the handoff's `PRIdentity`; a mismatch is a material limitation, not something to reconcile here. The URL identifies the target repository even when the current checkout has a different remote.
 
 Treat owner, repository, and PR number as identity. Commit IDs are observed evidence, not review-series identity.
 
@@ -86,6 +71,15 @@ In the context brief:
 - preserve the GitHub `baseRefOid`, base/head names, and merge-base command as supporting evidence in `RelevantHistory` or `GatheredEvidence`.
 
 Do not use the current base branch tip as a substitute for the merge-base.
+
+## Relate the Current Head to a Prior Review
+
+When the handoff carries `PriorReview`, open `PriorBriefPath` as an index of what the last review examined. Then run the named `Comparison`:
+
+- when `PriorObservedHead` is an ancestor of the current head (`git merge-base --is-ancestor`), diff `PriorObservedHead...HEAD_REF_OID` with `--stat` and `--name-status`;
+- otherwise history was rewritten: compare the prior and current merge-base-to-head patches by content, symbols, and tests rather than by commit correspondence.
+
+Record in `SincePriorHead`: the prior head, whether the current head descends from it or history was rewritten, the paths and symbols changed since, and which prior coverage records or finding scopes those paths touch. Stop there. Do not copy prior readiness, coverage states, findings, or the recommendation into the current brief, and do not mark anything inherited, invalidated, or superseded; the coordinator decides that from both briefs. With `PriorReview: none`, write `SincePriorHead: none`.
 
 ## Read Changed Source and Immediate Boundaries
 
@@ -185,7 +179,7 @@ This procedure does not:
 - synthesize, verify, deduplicate, or disposition findings;
 - compile the final PERFECT outcome;
 - perform Deep planning or broaden Standard into Deep;
-- detect, inherit, invalidate, or amend an existing review series;
-- create epochs, preserve cross-epoch identity, perform a full rebuild, or revise one prior finding.
+- inherit, invalidate, or supersede anything from a prior review; with `PriorReview` it records `SincePriorHead` and stops;
+- perform a full rebuild or revise one prior finding.
 
-Those responsibilities belong to later Standard workflow stages or the deferred Deep and incremental phase. This file produces only bounded Standard context, readiness inputs, risk signals, and explicit gaps. Final readiness remains a coordinator decision.
+Those responsibilities belong to later Standard workflow stages or the Deep and incremental workflows. This file produces only bounded Standard context, readiness inputs, risk signals, and explicit gaps. Final readiness remains a coordinator decision.

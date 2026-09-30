@@ -51,7 +51,7 @@ Adjacent reviewers may report evidence or candidates about the same boundary, bu
 
 ## Bounded Reviewer Handoff
 
-Give each reviewer one self-contained handoff with these fields:
+Give each reviewer one self-contained handoff with these fields. It is the whole instruction: `MatchedStackSkills` lists the only skill files the reviewer may open, `EvidenceRequirements` names the paths and commands it may use, and `ReturnContract` carries the shapes below verbatim so the reviewer never opens this file. The role rules in [isolated-jobs.md](isolated-jobs.md) apply without restating them here.
 
 ```text
 Assignment: <stable run-local reviewer identifier>
@@ -70,17 +70,14 @@ ChangedScope: <changed files, symbols, and behavior in scope>
 RelationshipAffectedScope: <immediate callers, models, tests, history, and boundaries in scope>
 CrossBoundaryOwnership: <owned boundaries and invariants, or none>
 Focus: <general changed behavior or selected specialized concerns>
-MatchedStackSkills: <installed skill names from the gatherer, or none>
+MatchedStackSkills: <absolute SKILL.md paths from the gatherer, or none>
 ExplicitExclusions: <unrelated areas and excluded concerns>
 EvidenceRequirements: <files, commands, checks, history, or external evidence to examine>
-ReturnContract: <CandidateFinding[] and CoverageGap[] shapes below>
+ReturnContract: <ReviewerResult, CandidateFinding, and CoverageGap shapes below, pasted verbatim>
 Escalation: <return a material limitation to the coordinator; do not manufacture a finding>
-Delegation: prohibited; do not launch, ask, or hand off to another reviewer
-ArtifactMutation: prohibited
-Recommendation: prohibited
 ```
 
-The observed head is immutable run evidence. If the reviewer discovers that the checkout or evidence does not match it, the reviewer stops and escalates the mismatch. Reviewers may inspect read-only evidence within the assignment, but must not edit code, canonical artifacts, coverage records, or ledger dispositions. Load only the stack skills named in `MatchedStackSkills`. Do not load unlisted stack skills, `context-gathering.md`, or coordinator workflows.
+The observed head is immutable run evidence. If the reviewer discovers that the checkout or evidence does not match it, the reviewer stops and escalates the mismatch. Reviewers inspect read-only evidence within the assignment and must not edit code, coverage records, or ledger dispositions.
 
 ## Reviewer Return Contract
 
