@@ -442,19 +442,37 @@ if [ -n "$existing" ]; then
     --label "$item" --no-focus)
   printf 'Reusing %s\n' "${checkout##*/}"
 else
+  # herdr worktree create is a plain git worktree add, so a repo's worktrunk
+  # pre-start hooks never run. Create through wt, then register the checkout
+  # the same way an existing one is opened. Hooks are already approved; do
+  # not pass -y.
   action=create
   spin_label='Creating worktree'
-  worktree_args=(worktree create --workspace "$source_ws" --branch "$branch"
-    --path "$checkout" --label "$item" --no-focus)
-  [ -n "$base" ] && worktree_args+=(--base "$base")
+  command -v wt >/dev/null 2>&1 || die 'wt is required'
 fi
-
-trust_workspace "$checkout"
 
 worktree_out=$(mktemp)
 worktree_err=$(mktemp)
 TMPFILES+=("$worktree_out" "$worktree_err")
-"$HERDR" "${worktree_args[@]}" >"$worktree_out" 2>"$worktree_err" &
+if [ "$action" = open ]; then
+  trust_workspace "$checkout"
+  "$HERDR" "${worktree_args[@]}" >"$worktree_out" 2>"$worktree_err" &
+else
+  (
+    wt_args=(switch --create "$branch")
+    [ -n "$base" ] && wt_args+=(--base "$base")
+    wt_args+=(--no-cd --format=json)
+    wt_json=$(wt -C "$repo_root" "${wt_args[@]}" 2>"$worktree_err") || exit 1
+    created=$(jq -r '.path // empty' <<<"$wt_json" 2>/dev/null) || created=
+    if [ -z "$created" ]; then
+      printf 'worktrunk returned no worktree path\n%s\n' "$wt_json" >"$worktree_err"
+      exit 1
+    fi
+    trust_workspace "$created"
+    "$HERDR" worktree open --workspace "$source_ws" --path "$created" \
+      --label "$item" --no-focus >"$worktree_out" 2>>"$worktree_err"
+  ) &
+fi
 worktree_pid=$!
 spinner "$worktree_pid" "$spin_label"
 wait "$worktree_pid" || die "worktree $action failed" "$worktree_err"
