@@ -17,7 +17,8 @@ A title is a commit subject: a plain "what". A description is a commit body with
 2. Check for a repository pull request template.
 3. Write a plain one-clause title.
 4. Write one or two sentences of why. Add a high-level view of the code only when that why does not show the shape of the change.
-5. If the user asked to open or update the PR, do that with `gh`. If they asked for wording only, stop at the title and description.
+5. If one of the extra cases applies, add that one piece. Otherwise stop.
+6. If the user asked to open or update the PR, do that with `gh`. If they asked for wording only, stop at the title and description.
 
 ## Instructions
 
@@ -67,13 +68,25 @@ Skip the view when the title and why already tell the story. A one-commit, one-b
 
 The view is not a tour. Do not name the files, functions, or commits. Do not say what stayed the same. Do not list steps the diff already shows. Bullets only when the parts are truly parallel, and even then prefer a sentence.
 
-### 6. Fill the template, do not invent one
+### 6. Add one piece when the diff cannot carry it
+
+The why stays one or two sentences. Each case below adds exactly one piece, and only when that case is true. More than one case can apply. None of them is a reason to walk the diff.
+
+**A performance claim.** When the title or description says the change is faster, smaller, or cheaper, include the numbers. Launch a subagent to measure the changed path against the base. Have it use a benchmark the repo already has, or a small before-and-after run of that path. Put one comparison in the description: what ran, the before, the after. Do not estimate, and do not reuse a number from memory or from the conversation. If it cannot be measured, take the claim out.
+
+**An error that prompted it.** When the change comes from a tracked failure, link that failure. One URL, the fault or report itself: a Honeybadger fault, or the same kind of page in whatever tracker the repo uses. A revert links the commit or PR it undoes. A security fix links the advisory or the fault and does not explain how to exploit it.
+
+**A step someone still has to take.** When landing the diff leaves a person or another system something to do — run a migration, deploy in an order, change a client — say that in one sentence.
+
+**A change someone can see.** Attach a screenshot of the result.
+
+### 7. Fill the template, do not invent one
 
 If the repo has a template, keep its headings and checkbox lines. Put the why, and the view if there is one, in the section that asks for them. Check only the matching type. Leave the rest as short as the template allows.
 
 Do not add a `Summary`, a `Test plan`, or a verification checklist unless the template has that section. Another instruction that shows that skeleton does not apply here. How it was verified goes in the description only when the template asks.
 
-### 7. Match the response to the ask
+### 8. Match the response to the ask
 
 Wording only: give the title and description.
 
@@ -81,11 +94,15 @@ Opening or updating: push if the branch is not on the remote, then `gh pr create
 
 After a rebase onto a new base, rewrite the description so it still matches the remaining diff.
 
-### 8. Validate before finalizing
+### 9. Validate before finalizing
 
 - title is one plain clause you would say out loud, imperative, within 72 characters
 - description leads with why, in one or two sentences
 - a view of the code, if present, is one or two simplified sentences and names no files
+- a performance claim has measured before-and-after numbers, or the claim is gone
+- an error that prompted the change has its link
+- a leftover step, if there is one, is a single sentence
+- a visible change has a screenshot
 - no file list, no commit list, no "X stays as it is", no process notes
 - template headings kept, and no section added that the template lacks
 - no AI attribution
@@ -136,4 +153,25 @@ Use a fast model for mechanical review jobs
 
 Auto started routing those jobs to a slower model, and every one of
 them inherited it.
+```
+
+**Performance claim, with the measured comparison**
+
+```text
+Skip the second pass over the order list
+
+The checkout page was rebuilding the list twice per request.
+
+1000 orders, median of 5 runs: 48ms before, 19ms after.
+```
+
+**Prompted by a fault**
+
+```text
+Stop counting a blank title as saved
+
+The editor reported success when the title was empty, and the
+article then failed to publish.
+
+https://app.honeybadger.io/projects/1/faults/123
 ```

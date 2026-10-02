@@ -94,6 +94,8 @@ Add a body only for something the diff cannot show:
 
 These are not reasons for a body: the change spans several files, the subject had to be simplified, the change feels big, or the work took a long time. Size is not context.
 
+A few changes need the body to carry a piece the diff cannot. `writing-pull-requests` lists them. Use the same piece here: measured before-and-after numbers for a performance claim (from a subagent, not an estimate), a link to the error that prompted the change, and one sentence when someone still has to do something after the commit lands. A screenshot is a pull request concern.
+
 When a body is warranted:
 
 - one short paragraph is the norm; two is the ceiling
