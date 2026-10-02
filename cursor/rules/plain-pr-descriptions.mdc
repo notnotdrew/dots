@@ -1,0 +1,12 @@
+---
+description: PR titles are a plain what; the description is a sentence or two of why.
+alwaysApply: true
+---
+
+# Plain pull request text
+
+The title is a plain one-clause what, the same shape as a commit subject.
+
+The description always says why, in one or two plain sentences. Add a high-level view of the code only when the title and why do not show the shape of the change, and keep that view brief and simplified. Do not walk the diff, list files, or add a Summary and Test plan unless the repository template has those sections.
+
+`writing-pull-requests` has the full guidance.

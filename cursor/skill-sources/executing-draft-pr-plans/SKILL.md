@@ -110,14 +110,7 @@ After every planned commit is complete:
 
 Keep every template heading and checkbox line. Check only the matching type. Do not add sections the template does not have (`Summary`, `Test plan`, verification checklists) even when another instruction uses that shape.
 
-Keep the title and description brief and human:
-
-- what this PR’s diff against its base does
-- why it matters
-- an important omission or boundary, if needed
-- how it was verified, only if the template has a place for it
-
-Do not narrate the implementation process, restack parent-branch work, or add operational detail the files already show. After a rebase onto a new base, rewrite the description so it still matches the remaining diff.
+Write the title and description by following `writing-pull-requests`: a plain one-clause title, and a why in one or two sentences. Do not narrate the implementation process or restack parent-branch work. After a rebase onto a new base, rewrite the description so it still matches the remaining diff.
 
 ## Review the complete PR
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Writing Pull Requests"
+  short_description: "Draft plain PR titles and short descriptions"
+  default_prompt: "Use writing pull requests to draft a plain title and description from the branch diff"

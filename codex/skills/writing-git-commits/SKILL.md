@@ -19,6 +19,8 @@ Default workflow:
 
 The code is its own language. The subject names the change in plain words; the body, when there is one, carries only what a reader cannot get from the diff.
 
+Pull request titles and descriptions are `writing-pull-requests`.
+
 ## Instructions
 
 ### 1. Follow the iron law

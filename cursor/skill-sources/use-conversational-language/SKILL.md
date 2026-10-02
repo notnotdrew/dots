@@ -163,6 +163,7 @@ A body is optional. Two short sentences that stop are better than a wrapped moti
 - This skill owns **wording** for text under Drew's name. It does not decide what to review, what to commit, or how to structure a document.
 - `writing-for-humans` still owns burying the lede, restatement, and LLM vocabulary tics. This skill still owns preferring the spoken word in chat. Apply this voice on top; do not import its checklists into chat.
 - When writing a commit **as Drew**, this skill owns the body wording. `writing-git-commits` still owns inspecting the diff, skipping AI attribution, and an imperative subject. Do not apply its 72-character body wrap or Tim Pope "why paragraph" shape on top of this voice.
+- When writing a pull request **as Drew**, this skill owns the wording. `writing-pull-requests` still owns the title, the why, and whether a short view of the code belongs.
 
 ## Examples
 
