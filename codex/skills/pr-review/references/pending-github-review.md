@@ -80,7 +80,7 @@ rewrites for humans:
 
 - plain, simple, clear;
 - factual statements with minimal color;
-- short; often a question when asking for a change;
+- short; state the problem and the needed change plainly; ask a question only for genuine uncertainty;
 - code identifiers in backticks;
 - no process narration, no finding IDs, no PERFECT labels, no "AI noted".
 
