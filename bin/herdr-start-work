@@ -112,6 +112,67 @@ trust_workspace() {
     '{trustedAt: $at, workspacePath: $path}' >"$dir/.workspace-trusted"
 }
 
+# cursor-agent --output-format text prints only the assistant text after the
+# last tool call. The planner writes a plan, then a background tool finishes
+# and Cursor asks for a status sentence. That sentence replaces the plan, and
+# the script used to die with "could not find JSON". A follow-up that repeats
+# the plan instead lands both copies back to back, and a greedy {...} match
+# glues them into one value jq will not treat as a single kind. JSON mode
+# keeps every text delta in .result, plan included. Take the last object that
+# is a plan; a later sentence has none, and a second copy is the same plan.
+extract_plan() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+raw = open(path, encoding="utf-8").read()
+text = raw
+try:
+    outer = json.loads(raw)
+except json.JSONDecodeError:
+    outer = None
+if (
+    isinstance(outer, dict)
+    and outer.get("type") == "result"
+    and isinstance(outer.get("result"), str)
+):
+    text = outer["result"]
+
+def is_plan(obj):
+    if not isinstance(obj, dict):
+        return False
+    kind = obj.get("kind", "worktree")
+    if kind == "commands":
+        return isinstance(obj.get("commands"), list)
+    if kind == "worktree":
+        root = obj.get("repo_root")
+        branch = obj.get("branch")
+        return isinstance(root, str) and root != "" and isinstance(branch, str) and branch != ""
+    return False
+
+dec = json.JSONDecoder()
+found = None
+i = 0
+while True:
+    j = text.find("{", i)
+    if j < 0:
+        break
+    try:
+        obj, end = dec.raw_decode(text, j)
+    except json.JSONDecodeError:
+        i = j + 1
+        continue
+    if is_plan(obj):
+        found = obj
+    i = end
+
+if found is None:
+    sys.exit(1)
+json.dump(found, sys.stdout, ensure_ascii=False, separators=(",", ":"))
+PY
+}
+
 # Scratch roots. A git dir under one of these is a probe or a test fixture,
 # never a checkout to branch from.
 is_scratch_path() {
@@ -288,6 +349,7 @@ fi
 
 if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
   command -v cursor-agent >/dev/null 2>&1 || die 'cursor-agent is required'
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required'
   printf '\n'
   prepare_plan_home
   run_id="$(date +%Y%m%d-%H%M%S)-$$"
@@ -297,7 +359,7 @@ if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
   # The intake workspace is deliberately unrelated to any checkout. Resolve
   # repo_root from the request instead of biasing the plan toward whatever
   # workspace happened to be focused before this one.
-  cursor-agent --workspace "$PLAN_HOME" --trust -p -f --output-format text \
+  cursor-agent --workspace "$PLAN_HOME" --trust -p -f --output-format json \
     "Plan how to handle this request:
 
 $request
@@ -327,9 +389,8 @@ Reply with one minified JSON object and nothing else." >"$plan_out" 2>"$plan_err
   spinner "$planner_pid" 'Planning'
   wait "$planner_pid" || die 'planning agent failed' "$plan_err"
 
-  plan_raw=$(<"$plan_out")
-  plan=$(printf '%s' "$plan_raw" | grep -o '{.*}' | tail -1) ||
-    die "could not find JSON in plan: $plan_raw"
+  plan=$(extract_plan "$plan_out") ||
+    die "could not find JSON in plan: $(<"$plan_out")"
 fi
 if [ -z "$attach_ws" ]; then
 jq -e . >/dev/null 2>&1 <<<"$plan" || die "plan is not valid JSON: $plan"
