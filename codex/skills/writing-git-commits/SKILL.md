@@ -87,7 +87,7 @@ The default is no body. The diff is the what and nearly always the how. Code doe
 
 Add a body only for something the diff cannot show:
 
-- why: the failure, constraint, or request that led here
+- why: the failure, constraint, or request that led here. For a bug fix this is the bug, what actually went wrong; the subject already says the fix, and the diff does not show the old behavior
 - how, only when the approach is surprising enough that a reader might undo it
 - a behavior change a casual reader would miss
 - an alternative that was tried and rejected, and why

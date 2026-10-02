@@ -54,6 +54,8 @@ The description always answers why, in one or two plain sentences. That is the w
 
 The why is the failure, constraint, or request that led to the change. Say it in spoken words and do not restate it.
 
+When the change fixes a bug, that sentence is the bug: what actually went wrong. The title already says the fix.
+
 ### 5. Add a view of the code only when the shape is not obvious
 
 A high-level view is optional. Add one when a reader of the title and the why still could not picture the change without opening the diff: the work moved, the approach is the point, or several commits make one behavior.
