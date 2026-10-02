@@ -1,0 +1,12 @@
+---
+description: Commit subjects are a plain what; bodies are optional and never narrate the diff.
+alwaysApply: true
+---
+
+# Plain commit messages
+
+The subject says what the commit does in one plain clause, the way you would say it to a teammate. Simplify it even at the cost of precision; the diff holds the detail. Do not stack qualifiers, smuggle in the reason, or list the things touched.
+
+The body is optional and usually absent. Code is its own language, so never narrate what the diff shows: no file lists, no "X now does Y", no "Z stays as it is". Add a body only for a why the code cannot show, or a how a reader might otherwise undo. One short paragraph is the norm, two is the ceiling.
+
+`writing-git-commits` has the full guidance and examples.

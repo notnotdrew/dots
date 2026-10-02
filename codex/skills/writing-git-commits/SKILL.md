@@ -13,9 +13,11 @@ Default workflow:
 
 1. Inspect the relevant changes with `git diff --cached` or `git diff`.
 2. Check for project-specific commit templates.
-3. Draft a focused subject in imperative mood.
-4. Add a body only when the change needs context.
+3. Write a plain one-clause subject that says what the commit does.
+4. Leave the body out unless there is a why the code cannot show.
 5. If the user asked to commit, use a non-interactive `git commit` command.
+
+The code is its own language. The subject names the change in plain words; the body, when there is one, carries only what a reader cannot get from the diff.
 
 ## Instructions
 
@@ -50,73 +52,62 @@ Before defaulting to Tim Pope style, inspect:
 
 If the repo has an established template or convention, follow it. Otherwise use Tim Pope style.
 
-### 4. Use Tim Pope style by default
+### 4. Write the subject as a plain "what"
 
-Subject rules:
+The subject says what the commit does, the way you would say it to a teammate across the desk. One clause, plain words. Simplify it even when that loses precision; the diff carries the detail.
 
-- aim for about 50 characters
-- never exceed 72 characters
-- capitalize the first word
-- do not end with a period
-- use imperative mood
+Format (Tim Pope):
 
-Completion test:
+- aim for about 50 characters, never exceed 72
+- capitalize the first word, no trailing period
+- imperative mood: `If applied, this commit will [subject]`
 
-`If applied, this commit will [subject]`
+Say-it-out-loud test: if you would not say the subject that way, rewrite it.
 
-If the sentence sounds wrong, rewrite the subject.
+A subject is packed when it:
 
-Common verbs:
+- stacks qualifiers (`Give each isolated review job its whole instruction in the handoff`)
+- smuggles in the reason (`Symlink skills so the sync walk skips them`)
+- names the mechanism and the component when one would do
+- lists the things touched (`Update parser, lexer, and tests`)
 
-- `Add`
-- `Fix`
-- `Update`
-- `Refactor`
-- `Remove`
-- `Rename`
-- `Move`
-- `Extract`
-- `Simplify`
-- `Improve`
-- `Implement`
-- `Document`
+Fix it by cutting words until one plain claim is left:
 
-### 5. Decide whether the body is needed
+- `Give each isolated review job its whole instruction in the handoff` → `Make job handoffs self-contained`
+- `Symlink skills so the sync walk skips them` → `Move skills out of the sync path`
+- `Update parser, lexer, and tests for the new token type` → `Add the range token`
 
-Use subject only when the change is narrow and obvious from the diff.
+Do not reach for a stock verb to open the subject. Use the verb a person would use for this change.
 
-Add a body when the change:
+### 5. Leave the body out unless the code cannot say it
 
-- spans multiple files
-- has non-obvious motivation
-- includes tradeoffs or caveats
-- introduces breaking behavior
-- should reference issues or follow-up work
+The default is no body. The diff is the what and nearly always the how. Code does not need narrating.
 
-Body rules:
+Add a body only for something the diff cannot show:
 
-- leave one blank line after the subject
-- wrap at 72 characters
-- explain what changed and why
-- do not narrate low-level implementation details the diff already shows
+- why: the failure, constraint, or request that led here
+- how, only when the approach is surprising enough that a reader might undo it
+- a behavior change a casual reader would miss
+- an alternative that was tried and rejected, and why
 
-Use bullets for genuinely parallel items and prose for narrative explanation. Do not bullet-list a single thought.
+These are not reasons for a body: the change spans several files, the subject had to be simplified, the change feels big, or the work took a long time. Size is not context.
+
+When a body is warranted:
+
+- one short paragraph is the norm; two is the ceiling
+- plain spoken sentences; no headings, no bullets unless the items are truly parallel
+- leave one blank line after the subject, wrap at 72 characters
+- never list the files, functions, options, or agents touched
+- never say what stays unchanged
+- never restate the subject in longer words
 
 #### The diff-redundancy test
 
-Ask of every sentence: could a future engineer derive this from `git log --stat -p` alone?
+Ask of every sentence: could a reader get this from `git show`?
 
-If yes, delete it. If the whole body fails, rewrite it to capture why rather than what. Drop to subject-only only when the change is genuinely trivial.
+If yes, delete it. If nothing survives, there is no body. Do not rewrite a narrating body into a why paragraph unless there is a real why; a change made because it was obviously right needs no explanation.
 
-The body's monopoly is on what the diff cannot show:
-
-- the motivation, constraint, or external trigger behind the change
-- alternatives considered and rejected, and why
-- invariants or constraints not visible in the code
-- subtle behavior changes a casual reader would miss
-- historical or external context, such as a vendor changing an API on a given date
-
-A body that paraphrases the diff ("Modified X to add Y, updated Z") adds nothing. Cut it.
+A body that walks the diff ("The validator now checks X; the templates drop Y; Z stays as it is") adds nothing. Cut it.
 
 #### The cross-reference test
 
@@ -154,48 +145,72 @@ If the user asked to commit:
 
 Check:
 
-- subject passes the completion test
-- subject is imperative
-- subject starts capitalized
-- subject has no trailing period
-- subject stays within length limits
-- blank line exists before the body
-- body lines wrap at 72 characters
-- body explains what and why
-- every body sentence survives the diff-redundancy test
-- every reference survives the cross-reference test
-- issue references appear at the end when used
+- subject is one plain clause you would say out loud
+- subject passes the completion test and is imperative, capitalized, unpunctuated, within 72 characters
+- body is absent, or every sentence survives the diff-redundancy test
+- body is at most two short paragraphs
+- body names no files, functions, or things left unchanged
+- blank line before the body, lines wrap at 72
+- every reference survives the cross-reference test, and issue references sit at the end
 - no AI attribution appears anywhere
 
 ## Examples
 
-**Simple change**
+**Subject only** (most commits)
 
 ```text
 Fix typo in README
 ```
 
-**Non-trivial change**
-
 ```text
-Refactor authentication to use JWT tokens
-
-Replace session-backed authentication with JWT validation so
-requests can be served by any app node without sticky sessions.
-This removes a deployment constraint and makes auth behavior
-consistent across the current runtime environments.
+Add the range token
 ```
 
-**Bug fix**
+```text
+Make job handoffs self-contained
+```
+
+**Body carries a why the code cannot**
 
 ```text
-Fix race condition in order processing
+Serialize inventory updates
 
-Serialize inventory updates so concurrent orders cannot decrement
-stock below zero. The previous check-then-update flow allowed
-multiple workers to validate the same inventory at once.
+Two workers could both pass the stock check before either wrote,
+so an order could take stock below zero.
 
 Fixes #1234
+```
+
+**Body carries a how a reader might undo**
+
+```text
+Read the plan from JSON output
+
+Text output only keeps the text after the last tool call, so a
+late status reply replaced the plan.
+```
+
+**Before and after**
+
+Packed subject, narrating body:
+
+```text
+Pick a fast model for the mechanical review jobs
+
+Cursor Auto started routing auto-smart to a slower model, and every
+isolated job inherited it through model: inherit. The gatherer, comment
+verifier, and comment readability agent now run on
+cursor-grok-4.6-high-fast, named once in isolated-jobs.md. The Deep
+planner, focused reviewers, and synthesis reviewer keep the session
+model. cli-config.json stays as it is.
+```
+
+Plain subject, body kept to the why:
+
+```text
+Use a fast model for mechanical review jobs
+
+Auto started routing to a slower model and every job inherited it.
 ```
 
 ## Reference Files

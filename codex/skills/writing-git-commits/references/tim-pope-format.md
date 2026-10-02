@@ -11,11 +11,11 @@ Use this reference when the repository does not define a stronger local conventi
 5. Do not end the subject with a period.
 6. Use imperative mood.
 7. Wrap body lines at 72 characters.
-8. Use the body to explain what changed and why.
+8. Use the body, when there is one, for the why the diff cannot show.
 
 ## Subject Guidance
 
-The subject should describe the main action of the commit in a form that completes this sentence:
+The subject is one plain clause saying what the commit does, in a form that completes this sentence:
 
 `If applied, this commit will [subject]`
 
@@ -31,6 +31,7 @@ Bad:
 - `Fixes login timeout`
 - `Updated stuff`
 - `WIP`
+- `Give each isolated review job its whole instruction in the handoff` (packed; say `Make job handoffs self-contained`)
 
 Useful subject verbs:
 
@@ -53,26 +54,21 @@ Useful subject verbs:
 
 ## When to Write a Body
 
-Use a body when the diff alone is not enough for a future reader to understand the change.
+Default to none. Use a body only when the diff cannot tell a future reader why the change was made.
 
 Typical triggers:
 
-- multiple files contribute to one behavior change
-- the motivation is not obvious from the code
-- there are tradeoffs, consequences, or caveats
+- the motivation is not visible in the code
+- the approach is surprising enough that someone might undo it
+- there is a tradeoff or caveat
 - the change is breaking
-- issues or migration notes should be recorded
+- an issue must be closed or migration notes recorded
+
+Touching many files is not a trigger.
 
 ## What the Body Should Do
 
-The body should explain:
-
-- what changed at a conceptual level
-- why the change was necessary
-- what consequences or tradeoffs matter
-- what a reviewer or future maintainer should know
-
-The body should not just narrate implementation steps already visible in the diff.
+The body explains why, in one or two short paragraphs. It does not describe what changed; the diff does that. It does not list the files or pieces touched, and it does not say what was left alone.
 
 ## Common Patterns
 
@@ -103,14 +99,13 @@ BREAKING CHANGE: Remove the /api/v1/* routes. Clients must use
 
 ### Multi-part thematic commits
 
-Keep the subject focused on the shared theme, not every individual edit.
+Keep the subject on the shared theme, not every individual edit. Do not bullet the edits in the body; the diff already lists them.
 
 ```text
-Improve error handling across payment flow
+Improve error handling in the payment flow
 
-- Add retry behavior for transient gateway failures
-- Log enough context for debugging
-- Return clearer user-facing failure messages
+Gateway timeouts were surfacing as a blank 500 with nothing in the
+logs to go on.
 ```
 
 ## Edge Cases
@@ -141,6 +136,6 @@ Avoid vague `WIP` messages in shared history. Prefer a descriptive checkpoint or
 - subject stays at or under 72 characters
 - body is separated by one blank line
 - body lines wrap at 72 characters
-- body explains what and why
+- body is absent, or explains only the why
 - issue references are at the end
 - no AI attribution appears anywhere
