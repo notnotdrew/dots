@@ -53,6 +53,10 @@ projects/*/*
 !herdr-agent-state.sh
 !agents/
 !agents/**
+# Skill bodies. skills/* entries are symlinks at these, so Cursor's
+# "Sync Skills for Cloud Agents" walk does not see or trash them.
+!skill-sources/
+!skill-sources/**
 
 # Non-portable / machine-local (dots sync)
 projects/

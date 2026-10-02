@@ -1,5 +1,9 @@
 # Private overlay skills. Linked from ~/dots-private by its update_symlinks.
 # Do not commit. Add a name here when you add a skill under
 # dots-private/dev/.../.cursor/skills/.
+#
+# Tracked skills in this directory are symlinks to ../skill-sources.
+# Cursor skill sync only descends real directories, then trashes them.
+# Keep new tracked skills as symlinks too.
 using-screensteps-staging-api
 triaging-screensteps-on-call
