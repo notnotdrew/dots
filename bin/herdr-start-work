@@ -15,6 +15,9 @@
 # The planning agent only gathers facts and returns JSON. Every mutation
 # happens here so a bad plan cannot create branches or move panes on its own.
 set -euo pipefail
+# History expansion runs before quotes do. Leave it off so a request or a plan
+# cannot be rewritten into a command, and so $! stays the background pid.
+set +H
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/herdr-pane-agent.bash"
 
@@ -44,7 +47,8 @@ trap cleanup EXIT
 die() {
   printf '\nerror: %s\n' "$1" >&2
   if [ -n "${2:-}" ] && [ -s "$2" ]; then
-    printf '\n%s\n' "$(<"$2")" >&2
+    printf '\n' >&2
+    cat -- "$2" >&2
   fi
   # The pane closes the moment this exits, so hold it open to be read.
   flush_input
@@ -276,17 +280,17 @@ dispatch_command() {
 # Show what the plan wants to run, then run it. The commands open their own
 # workspaces if they need one; this script opens nothing.
 run_commands_plan() {
-  local plan="$1" summary command status=0
+  local plan_json="$1" summary command status=0
   local -a commands=()
 
-  mapfile -t commands < <(jq -r '.commands[]?' <<<"$plan")
-  [ ${#commands[@]} -gt 0 ] || die "plan has no commands: $plan"
+  mapfile -t commands < <(jq -r '.commands[]?' "$plan_json")
+  [ ${#commands[@]} -gt 0 ] || die "plan has no commands" "$plan_json"
 
   for command in "${commands[@]}"; do
     check_command "$command"
   done
 
-  summary=$(jq -r '.summary // empty' <<<"$plan")
+  summary=$(jq -r '.summary // empty' "$plan_json")
   [ -n "$summary" ] && printf '%s\n\n' "$summary"
   printf '  %s\n' "${commands[@]}"
 
@@ -309,13 +313,15 @@ herdr_pane_agent start-work
 
 command -v jq >/dev/null 2>&1 || die 'jq is required'
 
-plan=
+plan_json=
 request=
 attach_ws=
 case "${1:-}" in
   --from-json)
-    plan=${2:-}
-    [ -n "$plan" ] || die 'missing JSON after --from-json'
+    [ -n "${2:-}" ] || die 'missing JSON after --from-json'
+    plan_json=$(mktemp)
+    TMPFILES+=("$plan_json")
+    printf '%s\n' "$2" >"$plan_json"
     ;;
   --attach)
     attach_ws=${2:-}
@@ -347,7 +353,7 @@ if [ -n "$attach_ws" ]; then
   printf 'Reusing %s (%s)\n\n' "$item" "$workspace_id"
 fi
 
-if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
+if [ -z "$plan_json" ] && [ -z "$attach_ws" ]; then
   command -v cursor-agent >/dev/null 2>&1 || die 'cursor-agent is required'
   command -v python3 >/dev/null 2>&1 || die 'python3 is required'
   printf '\n'
@@ -359,10 +365,18 @@ if [ -z "$plan" ] && [ -z "$attach_ws" ]; then
   # The intake workspace is deliberately unrelated to any checkout. Resolve
   # repo_root from the request instead of biasing the plan toward whatever
   # workspace happened to be focused before this one.
-  cursor-agent --workspace "$PLAN_HOME" --trust -p -f --output-format json \
-    "Plan how to handle this request:
+  # The request is data. Python writes the prompt so the shell never parses
+  # the request, or the backticks in this template, as code.
+  prompt_file=$(mktemp)
+  TMPFILES+=("$prompt_file")
+  python3 - "$request" >"$prompt_file" <<'PY'
+import sys
 
-$request
+request = sys.argv[1]
+sys.stdout.write(
+    "Plan how to handle this request:\n\n"
+    + request
+    + """
 
 Work repo_root out from the request itself. The intake workspace deliberately
 does not provide a launching checkout as a hint.
@@ -370,51 +384,57 @@ does not provide a launching checkout as a hint.
 Pick one of two plans.
 
 A commands plan, when a tool already does the whole job and no new checkout is
-needed. Only \`prrr\` can be dispatched; read the usage header at the top of
+needed. Only `prrr` can be dispatched; read the usage header at the top of
 ~/bin/prrr to see what it offers, and use its own flags rather than stringing
 commands together. Those commands open their own workspaces when they need one.
-{\"kind\":\"commands\",\"summary\":\"one spoken line about what will run\",\"commands\":[\"prrr start --requested\"]}
+{"kind":"commands","summary":"one spoken line about what will run","commands":["prrr start --requested"]}
 
 A worktree plan, for work that needs its own branch and checkout. Follow the
 starting-herdr-work skill for naming. Resolve any Linear ticket with
-\`linear issue view <ID> --json --no-pager\` and use its \`branchName\` verbatim.
-Reuse an existing sibling project name from \`herdr workspace list\` when that
+`linear issue view <ID> --json --no-pager` and use its `branchName` verbatim.
+Reuse an existing sibling project name from `herdr workspace list` when that
 bucket already exists.
-{\"kind\":\"worktree\",\"repo_root\":\"absolute path to the main checkout\",\"branch\":\"git branch name\",\"base\":\"base ref or empty string\",\"item\":\"short lowercase item\",\"project\":\"Title Case project\",\"prompt\":\"task prompt for the coding agent\"}
+{"kind":"worktree","repo_root":"absolute path to the main checkout","branch":"git branch name","base":"base ref or empty string","item":"short lowercase item","project":"Title Case project","prompt":"task prompt for the coding agent"}
 
 Gather facts only. Do not create a branch, worktree, workspace, or any files.
 
-Reply with one minified JSON object and nothing else." >"$plan_out" 2>"$plan_err" &
+Reply with one minified JSON object and nothing else."""
+)
+PY
+  cursor-agent --workspace "$PLAN_HOME" --trust -p -f --output-format json \
+    "$(<"$prompt_file")" >"$plan_out" 2>"$plan_err" &
   planner_pid=$!
   spinner "$planner_pid" 'Planning'
   wait "$planner_pid" || die 'planning agent failed' "$plan_err"
 
-  plan=$(extract_plan "$plan_out") ||
-    die "could not find JSON in plan: $(<"$plan_out")"
+  plan_json=$(mktemp)
+  TMPFILES+=("$plan_json")
+  extract_plan "$plan_out" >"$plan_json" ||
+    die "could not find JSON in plan" "$plan_out"
 fi
 if [ -z "$attach_ws" ]; then
-jq -e . >/dev/null 2>&1 <<<"$plan" || die "plan is not valid JSON: $plan"
+jq -e . >/dev/null "$plan_json" || die "plan is not valid JSON" "$plan_json"
 
 # herdr-tidy and older callers pass a worktree plan with no kind.
-case "$(jq -r '.kind // "worktree"' <<<"$plan")" in
+case "$(jq -r '.kind // "worktree"' "$plan_json")" in
   commands)
-    run_commands_plan "$plan"
+    run_commands_plan "$plan_json"
     exit 0
     ;;
   worktree) ;;
-  *) die "unknown plan kind: $plan" ;;
+  *) die "unknown plan kind" "$plan_json" ;;
 esac
 
-repo_root=$(jq -r '.repo_root // empty' <<<"$plan")
-branch=$(jq -r '.branch // empty' <<<"$plan")
-base=$(jq -r '.base // empty' <<<"$plan")
-item=$(jq -r '.item // empty' <<<"$plan")
-project=$(jq -r '.project // empty' <<<"$plan")
-task=$(jq -r '.prompt // empty' <<<"$plan")
+repo_root=$(jq -r '.repo_root // empty' "$plan_json")
+branch=$(jq -r '.branch // empty' "$plan_json")
+base=$(jq -r '.base // empty' "$plan_json")
+item=$(jq -r '.item // empty' "$plan_json")
+project=$(jq -r '.project // empty' "$plan_json")
+task=$(jq -r '.prompt // empty' "$plan_json")
 
-[ -n "$repo_root" ] || die "plan has no repo_root: $plan"
-[ -n "$branch" ] || die "plan has no branch: $plan"
-[ -n "$item" ] || die "plan has no item: $plan"
+[ -n "$repo_root" ] || die "plan has no repo_root" "$plan_json"
+[ -n "$branch" ] || die "plan has no branch" "$plan_json"
+[ -n "$item" ] || die "plan has no item" "$plan_json"
 [ -n "$task" ] || task="$request"
 
 # A linked worktree resolves to the main checkout, so the new worktree always
