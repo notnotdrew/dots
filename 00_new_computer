@@ -36,6 +36,10 @@ source ~/.zshrc
 herdr plugin install vigneshwerv/herdr-golden-ratio -y
 herdr plugin install plannotator/herdr-annotate -y
 
+# Run the server from our own LaunchAgent so key commands and plugins see
+# ~/bin and Homebrew on PATH. Homebrew's service gives it the bare system PATH.
+herdr-server-agent --install
+
 # General config
 # #####################################
 

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Run the Herdr server from a LaunchAgent that carries a full PATH.
+#
+# Homebrew's service starts `herdr server` with launchd's bare system PATH.
+# Everything the server launches inherits it: custom key commands, plugin
+# scripts such as the worktrunk picker, status-bar commands. Anything in
+# ~/bin or /opt/homebrew/bin is then "command not found". `launchctl config
+# user path` would fix the domain for every agent, but SIP refuses it, so
+# this swaps the Homebrew agent for one of ours with PATH set.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks). The plist is
+# generated from launchd/com.drew.herdr-server.plist.template.
+set -euo pipefail
+
+LABEL=com.drew.herdr-server
+BREW_FORMULA=herdr
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+TEMPLATE="$HOME/dots/launchd/$LABEL.plist.template"
+AGENT_PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+usage() {
+  cat <<EOF
+usage: $(basename "$0") --install | --uninstall
+
+  --install    stop the Homebrew herdr service and load $LABEL
+  --uninstall  unload $LABEL and hand the server back to Homebrew
+
+Either way the server restarts, which ends every pane and agent in the
+session. Run it from a terminal outside Herdr.
+EOF
+}
+
+die() {
+  printf '%s: %s\n' "$(basename "$0")" "$1" >&2
+  exit 1
+}
+
+outside_herdr() {
+  [ -z "${HERDR_PANE_ID:-}" ] ||
+    die 'this restarts the server and would cut off its own pane; run it outside Herdr'
+}
+
+domain() {
+  printf 'gui/%s' "$(id -u)"
+}
+
+write_plist() {
+  [ -f "$TEMPLATE" ] || die "missing $TEMPLATE"
+  mkdir -p "$(dirname "$PLIST")" "$HOME/Library/Logs"
+  local tmp
+  tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-server-plist.XXXXXX")
+  sed -e "s|@HOME@|$HOME|g" -e "s|@PATH@|$AGENT_PATH|g" "$TEMPLATE" >"$tmp"
+  plutil -lint "$tmp" >/dev/null
+  mv "$tmp" "$PLIST"
+}
+
+install() {
+  outside_herdr
+  write_plist
+  brew services stop "$BREW_FORMULA" >/dev/null 2>&1 || true
+  launchctl bootout "$(domain)/$LABEL" 2>/dev/null || true
+  launchctl bootstrap "$(domain)" "$PLIST"
+  printf 'loaded %s\n' "$LABEL"
+  printf 'logs: %s/Library/Logs/herdr-server.err.log\n' "$HOME"
+}
+
+uninstall() {
+  outside_herdr
+  launchctl bootout "$(domain)/$LABEL" 2>/dev/null || true
+  rm -f "$PLIST"
+  brew services start "$BREW_FORMULA"
+  printf 'unloaded %s; Homebrew runs the server again\n' "$LABEL"
+}
+
+case "${1:-}" in
+  --install) install ;;
+  --uninstall) uninstall ;;
+  -h | --help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
