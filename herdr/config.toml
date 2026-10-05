@@ -78,20 +78,25 @@ description = "worktree: switch / create including remotes"
 # interactive script sources bin/lib/herdr-pane-agent.bash to claim a row in the
 # Agents panel while it runs, so a split left waiting for a keypress can be
 # found from anywhere with ctrl+shift+up / ctrl+shift+down.
+#
+# Herdr runs these through /bin/sh with the server's environment. The server is
+# a Homebrew launchd service, so that PATH is the bare system one: no ~/bin, no
+# Homebrew. Wrap each command in zsh -c, which reads ~/.zshenv and gets the
+# real PATH. Without it the key closes prefix mode and nothing happens.
 
 # Curated shortlist of keys worth using, kept in herdr/keybindings.md.
 # prefix+? still shows the full live keymap.
 [[keys.command]]
 key = "prefix+u"
 type = "pane"
-command = "herdr-help"
+command = "zsh -c herdr-help"
 description = "keys worth using"
 
 # Sets the $note token on the branch-row sidebar layout.
 [[keys.command]]
 key = "prefix+shift+m"
 type = "pane"
-command = "herdr-note"
+command = "zsh -c herdr-note"
 description = "workspace: set note"
 
 # Focuses the persistent start-work workspace, then asks what to work on and
@@ -99,14 +104,14 @@ description = "workspace: set note"
 [[keys.command]]
 key = "prefix+shift+s"
 type = "shell"
-command = "herdr-open-start-work herdr-start-work"
+command = "zsh -c 'herdr-open-start-work herdr-start-work'"
 description = "workspace: start work on a task"
 
 # Same dedicated workspace, hardcoded to "tidy herdr" on a dots worktree.
 [[keys.command]]
 key = "prefix+shift+y"
 type = "shell"
-command = "herdr-open-start-work herdr-tidy"
+command = "zsh -c 'herdr-open-start-work herdr-tidy'"
 description = "workspace: tidy herdr"
 
 [ui]
