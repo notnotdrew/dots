@@ -31,7 +31,7 @@ The launched agent is told to review the PR and be ready to discuss it. Before d
 1. **Relics** — agent-like leftovers (verbose or tombstone comments/specs). If it finds any, it folds them into the **existing** commits on this branch (amend/squash; no tooling-named cleanup stack) and `git push --force-with-lease`. If none, it says so.
 2. **Adequacy** — whether the change goes far enough. A patch that only repairs a tiny spot in unused or otherwise dead code should have been a deletion of that code. Lead with that; do not treat the nibble as complete, and do not silently expand into a large deletion.
 
-Then it discusses. Only the implement branch may be force-pushed; never `develop` or `main`. Reviewer-facing copy still follows [authored-output](authored-output.md) (tool name as a word vs path-shaped mentions).
+Then it discusses. Only the implement branch may be force-pushed; never `develop` or `main`. Reviewer-facing copy still follows [authored-output](authored-output.md) (tool name as a word vs path-shaped mentions). The "Picked and implemented by" footer on the PR body is the coordinator's deliberate attribution, not a relic; the review agent leaves it in place.
 
 ## Distinct from daily run
 

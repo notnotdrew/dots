@@ -556,7 +556,7 @@ Relics: odd agent-like leftovers from the agent that worked on it — unnecessar
 
 Adequacy: whether the change goes far enough. Look at the surrounding code, not only the diff. If the patch only repairs a tiny spot in unused, unreferenced, or otherwise dead code, the real work was to delete that code, not to fix its internals. Lead the discussion with that. Do not treat the tiny fix as complete. Do not silently expand the PR into a large deletion; bring the deletion (or that it is too large) to the human.
 
-Then discuss the PR. Do not name the daily runner in commit messages or PR copy; path-shaped mentions are fine. Never force-push develop or main.
+Then discuss the PR. Do not name the daily runner in commit messages, the PR title, or any PR copy you write; path-shaped mentions are fine. The one exception is the existing "Picked and implemented by" footer on the last line of the PR body: it is there on purpose, so leave it alone and do not treat it as a relic. Never force-push develop or main.
 EOF
 }
 
