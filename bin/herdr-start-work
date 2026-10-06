@@ -219,10 +219,17 @@ EOF
 # shells out to direnv, mise, or compinit hides the shell behind a child, so a
 # pane seconds old fails and herdr gives up. Keep asking until it settles.
 # Prints the last failing response so die can show it.
+#
+# cursor-agent asks to allow each MCP server the first time this checkout's
+# project slug is seen. Herdr reports that dialog as idle rather than blocked,
+# so the task would be typed into it. --approve-mcps skips the dialog.
+# mcp-approvals.json ids include a hash of the checkout path, so a copy from
+# another checkout would not approve those servers. The flag does not trust
+# the workspace; trust_workspace still writes that marker first.
 start_agent() {
   local name="$1" pane="$2" response code
   for _ in $(seq 15); do
-    response=$("$HERDR" agent start "$name" --kind "$AGENT_KIND" --pane "$pane" 2>&1) &&
+    response=$("$HERDR" agent start "$name" --kind "$AGENT_KIND" --pane "$pane" -- --approve-mcps 2>&1) &&
       return 0
     code=$(jq -r '.error.code // empty' <<<"$response" 2>/dev/null) || code=
     [ "$code" = agent_pane_busy ] || break
