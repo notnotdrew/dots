@@ -14,8 +14,10 @@
 #   INCHWORM_SCOUT_FIXTURE_DIR — if set, load scout candidate JSON from this dir
 #                               (test stub). Filenames: smell.json, lint.json,
 #                               errors.json, backlog.json, slow.json. When unset,
-#                               live agent scouts run for all five sources (smell,
-#                               lint, errors, backlog, slow) via INCHWORM_AGENT.
+#                               live agent runs today's weekday scout via
+#                               INCHWORM_AGENT (Mon smell, Tue backlog, Wed lint,
+#                               Thu errors, Fri slow). An open find from that
+#                               source skips the scout. Weekend now uses smell.
 #   INCHWORM_BRANCH_PREFIX    — overrides yaml/git identity. The harness unsets
 #                               it unless a test exported it on purpose.
 #                               Production reads .inchworm.yml branch_prefix,
@@ -2414,7 +2416,7 @@ EOF
 }
 
 test_run_live_scouts_all_five_sources() {
-  test_name="eligible run without scout fixtures invokes smell/lint/errors/backlog/slow agents"
+  test_name="Tuesday run without scout fixtures invokes only the backlog scout"
   now="2026-08-18T10:00:00"
   implement_fixture=success
   setup_eligible_run_env "live-scouts"
@@ -2447,37 +2449,26 @@ test_run_live_scouts_all_five_sources() {
   if [ "$after_last" != "2026-08-18" ]; then
     problems="${problems}expected stamp 2026-08-18, got: $after_last"$'\n'
   fi
-  if ! grep -qiE 'selected F-live-smell|Live smell find' "$out_file"; then
-    problems="${problems}expected pick of live-smell (rank 1) from live scouts"$'\n'
+  if ! grep -qiE 'selected F-live-backlog|Live backlog find' "$out_file"; then
+    problems="${problems}expected pick of live-backlog from the Tuesday scout"$'\n'
   fi
   if [ ! -f "$finds_md" ]; then
     problems="${problems}expected finds.md from live scouts: $finds_md"$'\n'
-  else
-    for id in live-smell live-lint live-errors live-backlog live-slow; do
-      if ! grep -q "$id" "$finds_md"; then
-        problems="${problems}finds.md missing candidate $id"$'\n'
-      fi
-    done
+  elif ! grep -q 'live-backlog' "$finds_md"; then
+    problems="${problems}finds.md missing candidate live-backlog"$'\n'
   fi
-  for source in smell lint errors backlog slow; do
-    if ! grep -qi "${source} scout" "$TEST_ROOT/agent-invocations.log"; then
-      problems="${problems}expected live ${source} scout agent invocation"$'\n'
+  if ! grep -qi 'backlog scout' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}expected live backlog scout agent invocation"$'\n'
+  fi
+  for source in smell lint errors slow; do
+    if grep -qi "${source} scout" "$TEST_ROOT/agent-invocations.log"; then
+      problems="${problems}Tuesday must not invoke the ${source} scout"$'\n'
     fi
   done
   if ! grep -qiE 'dead code' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}scout prompts must tell agents not to patch dead code"$'\n'
   fi
-  slow_prompt=$(grep -i -A 30 'slow scout' "$TEST_ROOT/agent-invocations.log" || true)
-  if ! printf '%s' "$slow_prompt" | grep -qiE '\bpup\b'; then
-    problems="${problems}slow scout prompt must prefer pup for Datadog"$'\n'
-  fi
-  if ! printf '%s' "$slow_prompt" | grep -qiE 'Datadog.*(URL|link)|URL.*Datadog'; then
-    problems="${problems}slow scout prompt must require openable Datadog evidence"$'\n'
-  fi
-  if ! printf '%s' "$slow_prompt" | grep -qiE 'thin|bounded|unbounded'; then
-    problems="${problems}slow scout prompt must keep optimization candidates thin"$'\n'
-  fi
-  if ! printf '%s' "$slow_prompt" | grep -qiE 'Do not edit.*finds\.md'; then
+  if ! grep -qiE 'Do not edit.*finds\.md' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}scout prompts must forbid finds.md edits"$'\n'
   fi
   if ! assert_agent_argv_safe "$TEST_ROOT/agent-invocations.log"; then
@@ -2532,14 +2523,17 @@ test_run_live_scouts_tolerate_prose_stdout() {
   if [ ! -f "$finds_md" ]; then
     problems="${problems}expected finds.md: $finds_md"$'\n'
   else
-    for id in file-smell file-lint file-errors file-backlog file-slow; do
-      if ! grep -q "$id" "$finds_md"; then
-        problems="${problems}finds.md missing candidate $id"$'\n'
+    if ! grep -q 'file-backlog' "$finds_md"; then
+      problems="${problems}finds.md missing candidate file-backlog"$'\n'
+    fi
+    for id in file-smell file-lint file-errors file-slow; do
+      if grep -q "$id" "$finds_md"; then
+        problems="${problems}Tuesday must not store $id"$'\n'
       fi
     done
   fi
-  if ! grep -qiE 'selected F-file-' "$out_file"; then
-    problems="${problems}expected a file-written candidate to be selected"$'\n'
+  if ! grep -qiE 'selected F-file-backlog' "$out_file"; then
+    problems="${problems}expected the Tuesday file-written candidate to be selected"$'\n'
   fi
 
   if [ -n "$problems" ]; then
@@ -2550,11 +2544,211 @@ test_run_live_scouts_tolerate_prose_stdout() {
   pass "$test_name"
 }
 
+test_run_friday_scout_is_slow() {
+  test_name="Friday run without scout fixtures invokes only the slow scout"
+  now="2026-08-21T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "friday-slow"
+  live_agent="$TEST_ROOT/run-friday-slow-agent"
+  write_live_scout_agent "$live_agent"
+
+  out_file="$TEST_ROOT/run-friday-slow-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    unset INCHWORM_SCOUT_FIXTURE_DIR 2>/dev/null || true
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -qi 'slow scout' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}expected live slow scout agent invocation"$'\n'
+  fi
+  for source in smell lint errors backlog; do
+    if grep -qi "${source} scout" "$TEST_ROOT/agent-invocations.log"; then
+      problems="${problems}Friday must not invoke the ${source} scout"$'\n'
+    fi
+  done
+  slow_prompt=$(grep -i -A 30 'slow scout' "$TEST_ROOT/agent-invocations.log" || true)
+  if ! printf '%s' "$slow_prompt" | grep -qiE '\bpup\b'; then
+    problems="${problems}slow scout prompt must prefer pup for Datadog"$'\n'
+  fi
+  if ! printf '%s' "$slow_prompt" | grep -qiE 'Datadog.*(URL|link)|URL.*Datadog'; then
+    problems="${problems}slow scout prompt must require openable Datadog evidence"$'\n'
+  fi
+  if ! printf '%s' "$slow_prompt" | grep -qiE 'thin|bounded|unbounded'; then
+    problems="${problems}slow scout prompt must keep optimization candidates thin"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "agent log:" "$(cat "$TEST_ROOT/agent-invocations.log" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_skips_scout_when_source_already_open() {
+  test_name="Tuesday skips the backlog scout when an open backlog find is waiting"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "skip-backlog"
+  live_agent="$TEST_ROOT/run-skip-backlog-agent"
+  write_live_scout_agent "$live_agent"
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  mkdir -p "$(dirname "$finds_md")"
+  cat >"$finds_md" <<'EOF'
+# Inchworm finds
+
+<!-- inchworm:finds-version:1 -->
+
+## F-shelf-smell
+
+- status: open
+- source: smell
+- rank: 1
+- title: Shelf smell find
+- summary: better rank
+
+## F-shelf-backlog
+
+- status: open
+- source: backlog
+- rank: 2
+- title: Shelf backlog find
+- summary: already scouted
+EOF
+
+  out_file="$TEST_ROOT/run-skip-backlog-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    unset INCHWORM_SCOUT_FIXTURE_DIR 2>/dev/null || true
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -q 'skip backlog scout' "$out_file"; then
+    problems="${problems}expected to skip the backlog scout"$'\n'
+  fi
+  if grep -qi 'scout' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}must not invoke a scout when that source is already open"$'\n'"$(cat "$TEST_ROOT/agent-invocations.log")"$'\n'
+  fi
+  if ! grep -q 'selected F-shelf-smell' "$out_file"; then
+    problems="${problems}expected the waiting smell find to be picked"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "agent log:" "$(cat "$TEST_ROOT/agent-invocations.log" 2>/dev/null || true)" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_scouts_when_only_other_sources_are_open() {
+  test_name="Tuesday still scouts backlog when the open shelf is another source"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "scout-despite-smell"
+  live_agent="$TEST_ROOT/run-scout-despite-smell-agent"
+  write_live_scout_agent "$live_agent"
+  finds_md=$(finds_md_for "$data_dir" "$repo_dir")
+  mkdir -p "$(dirname "$finds_md")"
+  cat >"$finds_md" <<'EOF'
+# Inchworm finds
+
+<!-- inchworm:finds-version:1 -->
+
+## F-shelf-smell
+
+- status: open
+- source: smell
+- rank: 1
+- title: Shelf smell find
+- summary: does not stock the backlog shelf
+
+## F-shipped-backlog
+
+- status: in_pr
+- source: backlog
+- rank: 2
+- title: Shipped backlog find
+- summary: in_pr is not an open shelf
+EOF
+
+  out_file="$TEST_ROOT/run-scout-despite-smell-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    unset INCHWORM_SCOUT_FIXTURE_DIR 2>/dev/null || true
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_AGENT="$live_agent"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -qi 'backlog scout' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}expected the backlog scout"$'\n'
+  fi
+  for source in smell lint errors slow; do
+    if grep -qi "${source} scout" "$TEST_ROOT/agent-invocations.log"; then
+      problems="${problems}must not invoke the ${source} scout"$'\n'
+    fi
+  done
+  if ! grep -q 'live-backlog' "$finds_md"; then
+    problems="${problems}expected the new backlog candidate to merge"$'\n'
+  fi
+  if ! grep -q 'selected F-shelf-smell' "$out_file"; then
+    problems="${problems}expected the better open smell find to stay the pick"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "agent log:" "$(cat "$TEST_ROOT/agent-invocations.log" 2>/dev/null || true)" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
 test_run_repo_guidance_injected_into_agent_prompts() {
   # .inchworm.yml guidance is plain text for agents (scouts + planner + executor).
   # Injected into prompts because .inchworm.yml is gitignored (absent from worktrees).
   test_name="repo guidance from .inchworm.yml is injected into scout, planner, and executor prompts"
-  now="2026-08-18T10:00:00"
+  now="2026-08-17T10:00:00"
   setup_eligible_run_env "guidance"
   guidance_marker="use honeybadger; do not touch hubspot sync"
   cat >"$repo_dir/.inchworm.yml" <<EOF
@@ -5914,6 +6108,9 @@ run_test test_run_pick_none_when_no_open_finds
 run_test test_run_discover_parses_utf8_finds_under_c_locale
 run_test test_run_live_scouts_all_five_sources
 run_test test_run_live_scouts_tolerate_prose_stdout
+run_test test_run_friday_scout_is_slow
+run_test test_run_skips_scout_when_source_already_open
+run_test test_run_scouts_when_only_other_sources_are_open
 run_test test_run_repo_guidance_injected_into_agent_prompts
 run_test test_run_live_delegates_plan_then_complete_draft_pr_execution
 run_test test_run_live_draft_body_ends_with_footer

@@ -291,6 +291,18 @@ when "field"
   target = finds.find { |find| find["id"] == id }
   print(target ? target[field].to_s : "")
 
+when "has_open_source"
+  # has_open_source <repo_abs_path> <data_dir> <source>
+  # Exit 0 when an open find from that source is already on the shelf.
+  repo_path = ARGV.fetch(1)
+  data_dir = ARGV.fetch(2)
+  source = ARGV.fetch(3).to_s.downcase
+  finds = parse_finds_md(File.join(finds_dir_for(data_dir, repo_path), "finds.md"))
+  found = finds.any? do |find|
+    find["status"].to_s.downcase == "open" && find["source"].to_s.downcase == source
+  end
+  exit(found ? 0 : 1)
+
 when "discover"
   # discover <repo_abs_path> <data_dir> [fixture_dir]
   repo_path = ARGV.fetch(1)

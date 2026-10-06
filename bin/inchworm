@@ -22,9 +22,6 @@ readonly YAML_HELPER
 readonly FINDS_HELPER
 readonly REVIEW_HELPER
 
-SCOUT_SOURCES=(smell lint errors backlog slow)
-readonly SCOUT_SOURCES
-
 CONFIG_DIR="${INCHWORM_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/inchworm}"
 CONFIG_FILE="${CONFIG_DIR}/config.yml"
 DATA_DIR="${INCHWORM_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm}"
@@ -246,23 +243,48 @@ run_live_scout() {
   fi
 }
 
-# Discover: scouts (fixtures or live sources in SCOUT_SOURCES) → curator merge → pick.
+# One live source per weekday. Tuesday is backlog; the others keep the
+# remaining sources in their previous order. Weekend `inchworm now` uses smell.
+scout_source_for_weekday() {
+  case "$1" in
+    1) printf '%s\n' smell ;;
+    2) printf '%s\n' backlog ;;
+    3) printf '%s\n' lint ;;
+    4) printf '%s\n' errors ;;
+    5) printf '%s\n' slow ;;
+    *) printf '%s\n' smell ;;
+  esac
+}
+
+# True when finds.md already has an open find from this source.
+source_has_open_find() {
+  local repo_path=$1
+  local source=$2
+  ruby_finds has_open_source "$repo_path" "$DATA_DIR" "$source"
+}
+
+# Discover: today's scout (or fixture files) → curator merge → pick.
 discover_pipeline() {
   local repo_path=$1
   local scout_dir
   local cleanup_scout_dir=0
   local source
   local guidance
+  local weekday
 
   if [[ -n "${INCHWORM_SCOUT_FIXTURE_DIR:-}" ]]; then
     scout_dir="$INCHWORM_SCOUT_FIXTURE_DIR"
   else
     scout_dir=$(mktemp -d "${TMPDIR:-/tmp}/inchworm-scouts.XXXXXX")
     cleanup_scout_dir=1
-    guidance=$(load_repo_guidance "${repo_path}/.inchworm.yml")
-    for source in "${SCOUT_SOURCES[@]}"; do
+    read -r _ weekday _ _ <<<"$(parse_clock)"
+    source=$(scout_source_for_weekday "$weekday")
+    if source_has_open_find "$repo_path" "$source"; then
+      printf 'inchworm: skip %s scout — open find already waiting\n' "$source" >&2
+    else
+      guidance=$(load_repo_guidance "${repo_path}/.inchworm.yml")
       run_live_scout "$repo_path" "$source" "${scout_dir}/${source}.json" "$guidance"
-    done
+    fi
   fi
 
   ruby_finds discover "$repo_path" "$DATA_DIR" "$scout_dir"

@@ -2,13 +2,15 @@
 
 Scouts propose candidates only. They do not edit `finds.md`, pick work, or implement.
 
+One live scout runs per weekday: Monday smell, Tuesday backlog, Wednesday lint, Thursday errors, Friday slow. Skip that scout when an open find from the same source is already in `finds.md`. A weekend `inchworm now` uses smell. Fixture runs still load every source file.
+
 Sources:
 
-- **smell** — always run; code smells, dead code, awkward structure
-- **lint** — optional; lint / static analysis leftovers
-- **errors** — optional; recurring runtime / CI errors
-- **backlog** — optional; small documented TODOs ready for a thin PR
-- **slow** — optional; slow Datadog APM resources/endpoints with a bounded optimization
+- **smell** — code smells, dead code, awkward structure
+- **lint** — lint / static analysis leftovers
+- **errors** — recurring runtime / CI errors
+- **backlog** — small documented TODOs ready for a thin PR
+- **slow** — slow Datadog APM resources/endpoints with a bounded optimization
 
 ## Shared contract
 
