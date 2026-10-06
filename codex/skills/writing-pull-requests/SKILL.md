@@ -13,11 +13,11 @@ A title is a commit subject: a plain "what". A description is a commit body with
 
 ## Quick Start
 
-1. Find the base and read the diff against it, not the working tree.
+1. Find the base and read the diff against it, not the working tree. If a description already exists, read that too.
 2. Check for a repository pull request template.
 3. Write a plain one-clause title.
-4. Write one or two sentences of why. Add a high-level view of the code only when that why does not show the shape of the change.
-5. If one of the extra cases applies, add that one piece. Otherwise stop.
+4. Write one or two sentences of why the work exists. When rewriting, keep the author's intent and cut the rest. Add a high-level view of the code only when that why does not show the shape of the change.
+5. If one of the extra cases applies, add that one piece. A planned follow-up is not an extra case. Otherwise stop.
 6. If the user asked to open or update the PR, do that with `gh`. If they asked for wording only, stop at the title and description.
 
 ## Instructions
@@ -36,6 +36,10 @@ The base is the existing PR's base, the stacked parent, or the repository defaul
 
 Write from the diff. A plan, a ticket, or the commit list is context, not the description.
 
+When the PR already has a description, start from that. Keep the author's intent and the facts they stated, and cut the rest. The diff checks those facts. It does not supply a new why.
+
+Do not describe code or consumers the diff does not change.
+
 ### 3. Write the title as a plain "what"
 
 Same shape as a commit subject. One clause, plain words, said the way you would say it to a teammate. Simplify it even when that loses precision; the diff carries the detail.
@@ -50,11 +54,15 @@ A single-commit PR may use the commit subject as the title when that subject is 
 
 ### 4. Always say why
 
-The description always answers why, in one or two plain sentences. That is the whole description for most PRs. Stop there.
+The description always answers why the work exists, in one or two plain sentences. That is the whole description for most PRs. Stop there.
 
-The why is the failure, constraint, or request that led to the change. Say it in spoken words and do not restate it.
+The why is the failure, constraint, or request that led to the change. It is not a description of what the change does for a caller. Say it in spoken words and do not restate it.
 
 When the change fixes a bug, that sentence is the bug: what actually went wrong. The title already says the fix.
+
+When the change prepares for later work, the why is the step it enables, and whether anything uses it yet. "This sets us up for X. Nothing calls it yet" is a complete why. The later switch is not a leftover step.
+
+When the new code matches an existing interface, name that contract in the why, in one clause ("keeps the contract of the current import endpoint"). Do not list its params, response shape, or error cases. That walks the diff from the outside. Naming the contract is not the same as saying something else was left unchanged.
 
 ### 5. Add a view of the code only when the shape is not obvious
 
@@ -68,7 +76,7 @@ When you add one:
 
 Skip the view when the title and why already tell the story. A one-commit, one-behavior PR rarely needs it.
 
-The view is not a tour. Do not name the files, functions, or commits. Do not say what stayed the same. Do not list steps the diff already shows. Bullets only when the parts are truly parallel, and even then prefer a sentence.
+The view is not a tour. Do not name the files, functions, or commits. Do not say what stayed the same. Do not list steps the diff already shows. Bullets only when the parts are truly parallel, and even then prefer a sentence. A kept contract belongs in the why, not here.
 
 ### 6. Add one piece when the diff cannot carry it
 
@@ -78,7 +86,9 @@ The why stays one or two sentences. Each case below adds exactly one piece, and 
 
 **An error that prompted it.** When the change comes from a tracked failure, link that failure. One URL, the fault or report itself: a Honeybadger fault, or the same kind of page in whatever tracker the repo uses. A revert links the commit or PR it undoes. A security fix links the advisory or the fault and does not explain how to exploit it.
 
-**A step someone still has to take.** When landing the diff leaves a person or another system something to do — run a migration, deploy in an order, change a client — say that in one sentence.
+**A step someone still has to take.** Only when landing the diff is unsafe until a person or another system acts: run a migration, or deploy in a set order. Say that in one sentence.
+
+A planned follow-up is not this case. Work that will adopt the change later, such as a client switch or the next PR, belongs in the why only when it is why the change exists. Do not add a handoff sentence for it.
 
 **A change someone can see.** Attach a screenshot of the result.
 
@@ -94,16 +104,21 @@ Wording only: give the title and description.
 
 Opening or updating: push if the branch is not on the remote, then `gh pr create` or `gh pr edit`. Use a heredoc for the body. Open a draft only when the user asked for a draft. Do not mention agent activity.
 
-After a rebase onto a new base, rewrite the description so it still matches the remaining diff.
+After a rebase onto a new base, rewrite the description so it still matches the remaining diff. Keep the author's why. Drop only what the remaining diff no longer supports.
+
+When rewriting, do not re-derive the why from callers in the diff. Start from the description that is already there.
 
 ### 9. Validate before finalizing
 
 - title is one plain clause you would say out loud, imperative, within 72 characters
-- description leads with why, in one or two sentences
+- description leads with why the work exists, in one or two sentences, not with what the change does for a caller
+- a rewrite keeps the author's intent, and does not describe code or consumers the diff does not change
 - a view of the code, if present, is one or two simplified sentences and names no files
+- a kept contract is named in one clause, not listed field by field
 - a performance claim has measured before-and-after numbers, or the claim is gone
 - an error that prompted the change has its link
-- a leftover step, if there is one, is a single sentence
+- a leftover step, if there is one, is something landing requires, and it is a single sentence
+- a planned follow-up is not written up as a leftover step
 - a visible change has a screenshot
 - no file list, no commit list, no "X stays as it is", no process notes
 - template headings kept, and no section added that the template lacks
@@ -165,6 +180,30 @@ Skip the second pass over the order list
 The checkout page was rebuilding the list twice per request.
 
 1000 orders, median of 5 runs: 48ms before, 19ms after.
+```
+
+**Preparatory change**
+
+Walking the caller's contract, then a handoff:
+
+```text
+Add a v3 import endpoint
+
+The dialog already posts a file and an import type, then toasts a
+message or shows an error. A clean file returns that toast. A bad
+file comes back as one error.
+
+The dialog still has to be pointed at this path.
+```
+
+Why the work exists, with the kept contract named:
+
+```text
+Add a v3 import endpoint
+
+This sets us up to move import onto the new importer. Nothing calls
+the endpoint yet, but it keeps the contract of the current one, so
+the client can switch later without changes.
 ```
 
 **Prompted by a fault**
