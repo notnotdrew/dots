@@ -165,9 +165,12 @@ it at `~/.local/state/herdr-start-work` when needed, then runs
 only returns to it. The flow asks for the request, then runs a headless planning
 agent that answers with one of two plans.
 
-The planner receives no checkout hint: start-work is normally unrelated to the
-workspace Drew just left, so it resolves `repo_root` from the request alone. A
-plan that names a scratch git dir under `/tmp` or `/var/folders` is refused.
+The planner is a router. It may look up one ticket, one pull request, or the
+open workspace names, and then it stops. It does not read the checkout or turn
+the request into an investigation; the agent in the new worktree does the task.
+It also receives no checkout hint, because start-work is normally unrelated to
+the workspace Drew just left, so it resolves `repo_root` from the request alone.
+A plan that names a scratch git dir under `/tmp` or `/var/folders` is refused.
 The workspace stays open after the command exits so the next intake can reuse
 it. While the command runs, its Agents-panel row makes the pane findable from
 wherever Drew happens to be.

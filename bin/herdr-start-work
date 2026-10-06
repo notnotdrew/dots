@@ -12,8 +12,9 @@
 # Opened in a dedicated workspace by herdr-open-start-work, so the session stays
 # usable and the flow never splits an unrelated workspace.
 #
-# The planning agent only gathers facts and returns JSON. Every mutation
-# happens here so a bad plan cannot create branches or move panes on its own.
+# The planning agent only routes the request into JSON. It does not investigate
+# the task. Every mutation happens here so a bad plan cannot create branches
+# or move panes on its own.
 set -euo pipefail
 # History expansion runs before quotes do. Leave it off so a request or a plan
 # cannot be rewritten into a command, and so $! stays the background pid.
@@ -381,31 +382,43 @@ import sys
 
 request = sys.argv[1]
 sys.stdout.write(
-    "Plan how to handle this request:\n\n"
+    "Route this request. Reply with one minified JSON object and nothing else.\n\n"
     + request
     + """
 
-Work repo_root out from the request itself. The intake workspace deliberately
-does not provide a launching checkout as a hint.
+You are routing, not doing the work. Do not read skills, source, diffs, or docs.
+Do not diagnose the task. Do not create a branch, worktree, workspace, or any
+files. The intake workspace is not a checkout hint.
 
-Pick one of two plans.
+Use at most two shell commands, and only from this list. Skip one when the
+request already has what it would return.
 
-A commands plan, when a tool already does the whole job and no new checkout is
-needed. Only `prrr` can be dispatched; read the usage header at the top of
-~/bin/prrr to see what it offers, and use its own flags rather than stringing
-commands together. Those commands open their own workspaces when they need one.
-{"kind":"commands","summary":"one spoken line about what will run","commands":["prrr start --requested"]}
+- `linear issue view <ID> --json --no-pager` when the request names a Linear
+  ticket. Use its `branchName` verbatim, and keep its title.
+- `gh pr view <url-or-number> --repo <owner/repo> --json title,headRefName,url`
+  when the request names a pull request and no ticket. Use `headRefName` as
+  the branch.
+- `herdr workspace list` only to reuse a project spelling already in use.
 
-A worktree plan, for work that needs its own branch and checkout. Follow the
-starting-herdr-work skill for naming. Resolve any Linear ticket with
-`linear issue view <ID> --json --no-pager` and use its `branchName` verbatim.
-Reuse an existing sibling project name from `herdr workspace list` when that
-bucket already exists.
-{"kind":"worktree","repo_root":"absolute path to the main checkout","branch":"git branch name","base":"base ref or empty string","item":"short lowercase item","project":"Title Case project","prompt":"task prompt for the coding agent"}
+A commands plan, when the whole request is to start PR reviews. The only
+command is `prrr`, as `prrr start --requested` or `prrr start <number-or-url>`.
+{"kind":"commands","summary":"one spoken line","commands":["prrr start --requested"]}
 
-Gather facts only. Do not create a branch, worktree, workspace, or any files.
+A worktree plan, for everything else.
+{"kind":"worktree","repo_root":"/absolute/main/checkout","branch":"git branch","base":"","item":"short lowercase fragment","project":"Title Case","prompt":"the request"}
 
-Reply with one minified JSON object and nothing else."""
+repo_root is the main checkout. Screensteps repos are
+/Users/drew/dev/screensteps/<repo>. This dots repo, including Herdr, is
+/Users/drew/dots. Use the path you already know; do not search for it.
+
+branch is the ticket's branchName, or the PR's head branch. With neither, use
+drew/<item-slug>-YYYYMMDD. Leave base empty unless the request names one.
+
+item is a few lowercase words, with no project prefix and no ticket id.
+project reuses a sibling spelling when you listed workspaces; otherwise it is
+a short Title Case bucket from the request. prompt is the request itself, plus
+the ticket or PR title and URL when you fetched them. No files, no diagnosis,
+no steps."""
 )
 PY
   cursor-agent --workspace "$PLAN_HOME" --trust -p -f --output-format json \
