@@ -1,6 +1,7 @@
 ---
 name: grilling-ideas
 description: Interviews the user rigorously about an idea — a plan, design, or half-formed direction — one question at a time until shared understanding is reached. Use when the user wants to stress-test their thinking, get grilled on a design, explore a vague direction, or says "grill me".
+disable-model-invocation: true
 ---
 
 # Grilling Ideas

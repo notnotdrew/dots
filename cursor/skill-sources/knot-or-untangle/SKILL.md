@@ -5,6 +5,7 @@ description: >-
   made progress toward untangling it. Use when the user asks if a diff added a
   knot, missed a higher-level fix, wants the obvious miss in an approach, or
   asks whether a local patch solved a problem by accepting the mess around it.
+disable-model-invocation: true
 ---
 
 # Knot or untangle

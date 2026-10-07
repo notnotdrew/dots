@@ -1,6 +1,7 @@
 ---
 name: reviewing-test-design
 description: Scores test quality against Dave Farley's 8 properties of good tests. Use when reviewing a test file or suite, assessing whether tests are worth their maintenance cost, or diagnosing tautological and mirror tests.
+disable-model-invocation: true
 ---
 
 # Reviewing Test Design

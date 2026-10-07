@@ -1,6 +1,7 @@
 ---
 name: using-honeybadger-cli
 description: Query and manage Honeybadger Data API resources with the hb CLI, including faults, Insights, alarms, streams, projects, deployments, check-ins, uptime, environments, comments, accounts, teams, and status pages. Use when investigating Honeybadger data or managing Honeybadger resources from the command line.
+disable-model-invocation: true
 ---
 
 # Using Honeybadger CLI

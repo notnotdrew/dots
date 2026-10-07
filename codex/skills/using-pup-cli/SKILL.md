@@ -1,6 +1,7 @@
 ---
 name: using-pup-cli
 description: Query and manage Datadog data with the pup CLI, including logs, metrics, traces, monitors, dashboards, SLOs, incidents, and related APIs. Use when investigating production behavior, checking Datadog resources, or performing Datadog operations from the command line.
+disable-model-invocation: true
 ---
 
 # Using Pup CLI

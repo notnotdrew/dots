@@ -1,6 +1,7 @@
 ---
 name: bssn
 description: Reviews named code through Daniel Terhorst-North's Best Simple System for Now (BSSN) framing — the middle path between gold-plating and hacking. Use when the user asks for a BSSN, bison, or Best Simple System for Now review, or to judge whether code is the simplest system that meets today's needs at an appropriate quality bar.
+disable-model-invocation: true
 ---
 
 # BSSN

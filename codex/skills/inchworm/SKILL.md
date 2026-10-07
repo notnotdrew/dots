@@ -1,6 +1,7 @@
 ---
 name: inchworm
 description: Coordinator-first daily create-window runner for inchworm finds (scouts → curator → pick → plan → execute draft PR → ping). Use when running inchworm, curating finds.md, or picking the next open find.
+disable-model-invocation: true
 ---
 
 # Inchworm
