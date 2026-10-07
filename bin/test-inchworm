@@ -24,7 +24,7 @@
 #                               success   — worktree + tiny commit, then fixture PR/review path
 #                               fail      — implement fails; mark find deferred; no PR
 #                               too_large — implement fails; mark find too_large; no PR
-#                               Unset in production → planner (writing-simple-plans),
+#                               Unset in production → thin-check writes plan or not_thin,
 #                               then an implementer that commits and stops. The shell
 #                               pushes, opens the draft with the footer already in the
 #                               body, reviews once, optionally fixes, pings, and
@@ -130,7 +130,7 @@
 #      <branch_prefix>/<slug>-<YYYYMMDD> — the prefix names the human, never the runner
 #      Checkout path: <repo>.<branch with / replaced by -> (wt switch, not git worktree add)
 #      If that path already exists (stale empty dir), clobber/recreate and still succeed
-#   8. Live: planner (writing-simple-plans) writes .inchworm/plan.md or not_thin.
+#   8. Live: thin-check writes .inchworm/plan.md or not_thin.
 #      not_thin marks too_large and skips the implementer. Otherwise an implementer
 #      commits and stops. The shell then pushes, opens the draft with the footer
 #      already in the body, reviews once, optionally fixes, pings, and removes
@@ -720,7 +720,7 @@ EOF
 # on the Work item prompt so a planner call cannot commit or open a PR.
 thin_plan_case_arm() {
   cat <<'ARM'
-  *"writing-simple-plans"*)
+  *"Thin check for:"*)
     mkdir -p .inchworm
     cat >.inchworm/plan.md <<'PLAN'
 # Selected cleanup is complete
@@ -777,7 +777,7 @@ case "\$*" in
   *"lint scout"*|*"errors scout"*|*"backlog scout"*|*"slow scout"*)
     printf '%s\n' '[]'
     ;;
-  *"writing-simple-plans"*)
+  *"Thin check for:"*)
     mkdir -p .inchworm
     if [ "\${PLAN_RESULT_NOT_THIN:-}" = "1" ]; then
       printf '%s\n' not_thin >.inchworm/plan-result
@@ -2645,7 +2645,7 @@ EOF
       ' "$TEST_ROOT/agent-invocations.log"
     )
     scout_hits=$(printf '%s\n' "$flattened" | grep -ci 'smell scout' || true)
-    plan_hits=$(printf '%s\n' "$flattened" | grep -ci 'writing-simple-plans' || true)
+    plan_hits=$(printf '%s\n' "$flattened" | grep -ci 'Thin check for:' || true)
     implement_hits=$(printf '%s\n' "$flattened" | grep -ci 'Work item:' || true)
     if [ "${scout_hits:-0}" -lt 1 ]; then
       problems="${problems}expected smell scout invocation"$'\n'
@@ -2665,7 +2665,7 @@ EOF
     if ! printf '%s\n' "$flattened" | grep -F 'smell scout' | grep -Fq "$guidance_marker"; then
       problems="${problems}expected guidance on smell scout prompt"$'\n'
     fi
-    if ! printf '%s\n' "$flattened" | grep -F 'writing-simple-plans' | grep -Fq "$guidance_marker"; then
+    if ! printf '%s\n' "$flattened" | grep -F 'Thin check for:' | grep -Fq "$guidance_marker"; then
       problems="${problems}expected guidance on planner prompt"$'\n'
     fi
     if ! printf '%s\n' "$flattened" | grep -F 'Work item:' | grep -Fq "$guidance_marker"; then
@@ -2674,7 +2674,7 @@ EOF
     if ! printf '%s\n' "$flattened" | grep -F 'smell scout' | grep -qiE 'dead code'; then
       problems="${problems}expected dead-code instruction on smell scout prompt"$'\n'
     fi
-    if ! printf '%s\n' "$flattened" | grep -F 'writing-simple-plans' | grep -qiE 'dead code|nibble'; then
+    if ! printf '%s\n' "$flattened" | grep -F 'Thin check for:' | grep -qiE 'dead code|nibble'; then
       problems="${problems}expected dead-code / nibble instruction on planner prompt"$'\n'
     fi
   fi
@@ -2794,7 +2794,7 @@ test_run_live_shell_opens_draft_after_implementer_commits() {
       END { if (length(buf)) print buf }
     ' "$TEST_ROOT/agent-invocations.log"
   )
-  if ! grep -q 'writing-simple-plans' "$TEST_ROOT/agent-invocations.log"; then
+  if ! grep -q 'Thin check for:' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}expected a planning agent invocation"$'\n'
   fi
   work_item_hits=$(printf '%s\n' "$implement_records" | grep -c 'Work item:' || true)
@@ -2803,6 +2803,9 @@ test_run_live_shell_opens_draft_after_implementer_commits() {
   fi
   if ! printf '%s\n' "$implement_records" | grep -F 'Work item:' | grep -Fq 'Implement the plan at .inchworm/plan.md'; then
     problems="${problems}implementer must be told to implement .inchworm/plan.md"$'\n'
+  fi
+  if grep -q 'writing-simple-plans' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}thin-check must not mention writing-simple-plans"$'\n'
   fi
   if grep -q 'executing-draft-pr-plans' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}implementer must not be told to follow executing-draft-pr-plans"$'\n'

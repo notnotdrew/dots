@@ -829,7 +829,7 @@ plan_with_agent() {
   rm -f "${worktree_path}/${PLAN_PATH}" "${worktree_path}/${PLAN_RESULT_PATH}"
   mkdir -p "${worktree_path}/$(dirname "$PLAN_PATH")"
 
-  prompt="Follow the writing-simple-plans skill for this goal: ${find_title}"
+  prompt="Thin check for: ${find_title}"
   if [[ -n "${find_summary//[[:space:]]/}" ]]; then
     prompt+=$'\n\n'"Why it matters: ${find_summary}"
   fi

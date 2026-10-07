@@ -1,7 +1,8 @@
 # Implementer prompt
 
-Live runs: a planner following `writing-simple-plans` writes `.inchworm/plan.md`
-or `not_thin`. `not_thin` is `too_large` with no implementer and no draft PR.
+Live runs: a short thin-check prompt writes `.inchworm/plan.md` or `not_thin`.
+It does not follow `writing-simple-plans`. `not_thin` skips the implementer and
+marks the find `too_large`; there is no draft PR.
 The implementer then implements that plan, commits, writes the PR title and
 body files, and stops. The shell appends the footer, pushes, and opens the
 draft. It runs one Standard review, runs one fixer only for a verified blocker,

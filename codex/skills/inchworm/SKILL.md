@@ -21,18 +21,15 @@ result, and draft PR URL.
 
 After a find is selected:
 
-1. A fresh agent follows **`writing-simple-plans`** and writes `.inchworm/plan.md`,
-   or writes `not_thin`. It does not implement.
-2. `not_thin` is `too_large`: no implementer, no draft PR.
+1. A fresh agent runs a short thin-check prompt and writes `.inchworm/plan.md`
+   or `not_thin`. It does not follow `writing-simple-plans`. It does not implement.
+2. `not_thin` skips the implementer and marks the find `too_large`: no draft PR.
 3. A second fresh agent implements that plan, commits, writes
    `.inchworm/pr/title.txt` and `.inchworm/pr/body.md`, and stops. It does not
    push, open a pull request, review, or fix.
 4. The shell commits any leftover edits, pushes, opens the draft with the footer
    already in the body, runs one Standard review, runs one fixer only for a
    verified blocker, pings, and removes the checkout.
-
-`writing-simple-plans` stays generic. Inchworm-specific policy is supplied in
-each handoff; it is not added to that skill.
 
 ## Scope (discover → plan → implement → draft PR → ping → schedule)
 
@@ -48,7 +45,7 @@ On an eligible `inchworm run`:
 6. Pick the highest-priority open find (lowest rank)
 7. If none: **stop** — no implementer, no worktree, no `gh pr create`
 8. If selected: create a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on the freshly fetched trunk
-9. Run a fresh planning agent with `writing-simple-plans`. It writes `.inchworm/plan.md` or `not_thin`. `not_thin` marks the find `too_large` and does not launch the implementer.
+9. Run a fresh thin-check. The short prompt writes `.inchworm/plan.md` or `not_thin`. It does not follow `writing-simple-plans`. `not_thin` marks the find `too_large` and does not launch the implementer.
 10. Run a fresh implementer. It implements the plan, commits, writes the PR title and body files, and stops.
 11. The shell pushes, opens the draft (`gh pr create --draft`) with the footer already in the body, sets `state.active_draft_pr`, marks the find `in_pr`, runs one Standard `pr-review`, runs one fixer only for a verified blocker, pings, then `wt remove --no-delete-branch` the checkout (keep the branch).
 12. On failure: no second pick (stamp already burned), alert the human, and clean up the checkout. A `not_thin` plan marks the find `too_large`; an implementer failure is `deferred` and opens no PR.
@@ -68,7 +65,7 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Scout** — propose candidates (see [scout-prompts](references/scout-prompts.md))
 - **Curator** — merge/dedupe into durable `finds.md` (see [curator-prompt](references/curator-prompt.md))
 - **Pick** — choose one open find or report none (see [discover-boundary](references/discover-boundary.md))
-- **Planner** — fresh agent following `writing-simple-plans`; writes `.inchworm/plan.md` or `not_thin`
+- **Planner** — short thin-check prompt; writes `.inchworm/plan.md` or `not_thin`. It does not follow `writing-simple-plans`. `not_thin` skips the implementer and marks `too_large`
 - **Implementer** — implements that plan, commits, writes `pr/title.txt` and `pr/body.md`, and stops (see [implementer-prompt](references/implementer-prompt.md))
 - **Coordinator** — owns checkout, push, draft PR, Standard review, fixer, ping, and cleanup (see [implement-boundary](references/implement-boundary.md))
 - **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep and an adequacy check (did the change go far enough, or is it a nibble in dead code?) (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop

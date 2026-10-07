@@ -23,10 +23,11 @@ publishes the draft itself.
 
 ## Live delegation
 
-1. Launch a fresh agent in the checkout and tell it to follow
-   `writing-simple-plans`, writing `.inchworm/plan.md` or `not_thin`.
-2. The planner does not edit production code. `not_thin` marks the find
-   `too_large` and stops: no implementer, no draft PR.
+1. Launch a fresh agent in the checkout with a short thin-check prompt. It
+   writes `.inchworm/plan.md` or `not_thin`. It does not follow
+   `writing-simple-plans`.
+2. The planner does not edit production code. `not_thin` skips the implementer
+   and marks the find `too_large`: no draft PR.
 3. Launch a second fresh agent. It implements the plan at `.inchworm/plan.md`,
    commits, writes `.inchworm/pr/title.txt` and `.inchworm/pr/body.md`, and
    stops. It does not push, open a pull request, review, or fix.
@@ -38,9 +39,8 @@ publishes the draft itself.
    review, runs one fixer only for a verified blocker, pings, and removes the
    checkout with `wt remove --no-delete-branch`.
 
-`writing-simple-plans` stays generic. Inchworm-specific policy is in the
-handoff, not in that skill. An implementer that exits non-zero is `deferred`,
-not `too_large`.
+The thin-check does not follow `writing-simple-plans`. An implementer that
+exits non-zero is `deferred`, not `too_large`.
 
 ## Failure / no second pick
 
