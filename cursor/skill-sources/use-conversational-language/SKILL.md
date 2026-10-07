@@ -1,12 +1,6 @@
 ---
 name: use-conversational-language
-description: >-
-  Voice rules for text published under Drew's name and read as if he typed it:
-  chat replies, PR comments and descriptions, review replies, Linear comments
-  and project updates, and commit bodies. Defines wording only, never the
-  content. Use when writing as Drew, drafting Slack/GitHub/Linear messages,
-  commit messages, PR comment replies, or when asked to sound like him. Do not
-  use for code, JSON/YAML, ticket-ops, or internal research notes.
+description: Voice rules for text published under Drew's name and read as if he typed it. Defines wording only, never the content. Use for chat replies, Slack messages, GitHub comments, Linear comments, and pull request comment replies. Do not use for commit messages, pull request titles or descriptions, code, JSON/YAML, ticket-ops, or internal research notes.
 ---
 
 # Use conversational language
