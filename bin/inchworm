@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Coordinator: discover → plan → execute draft PR → record → ping → LaunchAgent
+# Coordinator: discover → plan → implement → open draft PR → review → ping → LaunchAgent
 #
 # Usage:
 #   inchworm init
@@ -41,7 +41,7 @@ Usage: inchworm <init|run|now|status|review|launchd-setup>
 
   init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
   run            Gated: weekday create window, same-day, and draft gate, then core
-  now            Core only: preflight + stamp + discover + plan + execute draft PR + ping
+  now            Core only: preflight + stamp + discover + plan + implement + open draft PR + ping
   status         Show registered repos, last_run_date, create window, draft gate
   review         List open drafts, switch Worktrunk, launch a discuss agent
   launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
@@ -479,15 +479,6 @@ gh_pr_list_json() {
   )
 }
 
-find_draft_for_branch() {
-  local repo_path=$1
-  local branch_name=$2
-  local json
-
-  json=$(gh_pr_list_json "$repo_path") || return 1
-  printf '%s' "$json" | ruby_yaml find_draft_by_head "$branch_name"
-}
-
 # Blocking = an open draft of ours: the PR we recorded, or a branch we would have
 # created. Both are confirmed against the live PR list, never trusted on their own.
 find_blocking_draft() {
@@ -787,84 +778,6 @@ append_pr_footer() {
   printf '%s\n\n%s' "$body" "$PR_FOOTER"
 }
 
-# True when the last non-empty line is the footer, so a second pass does not
-# stack another copy.
-body_ends_with_footer() {
-  local body=$1
-  local last
-  last=$(printf '%s\n' "$body" | sed -e 's/[[:space:]]*$//' | awk 'NF { line = $0 } END { printf "%s", line }')
-  [[ "$last" == "$PR_FOOTER" ]]
-}
-
-# Body with one trailing footer line, and the blank lines above it, removed.
-# The name check runs on this so the footer itself is not a leak.
-strip_trailing_pr_footer() {
-  local body=$1
-  if ! body_ends_with_footer "$body"; then
-    printf '%s' "$body"
-    return 0
-  fi
-  printf '%s\n' "$body" | awk -v footer="$PR_FOOTER" '
-    { lines[NR] = $0 }
-    END {
-      last = NR
-      while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
-      if (last > 0) {
-        trimmed = lines[last]
-        sub(/[[:space:]]+$/, "", trimmed)
-        if (trimmed == footer) last--
-      }
-      while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--
-      for (i = 1; i <= last; i++) print lines[i]
-    }
-  '
-}
-
-# The execution agent opens the draft. Read its title and body, refuse a copy
-# that names the runner, and otherwise append the footer once.
-# 0: body ends with the footer. 1: title or body names the runner. 2: gh failed.
-ensure_discovered_draft_footer() {
-  local worktree_path=$1
-  local pr_url=$2
-  local json title body checked body_file
-
-  json=$(
-    cd "$worktree_path" || exit 1
-    "$GH_BIN" pr view "$pr_url" --json title,body
-  ) || return 2
-
-  title=$(printf '%s' "$json" | ruby_e -rjson -e 'j=JSON.parse(STDIN.read); print j["title"].to_s') || return 2
-  body=$(printf '%s' "$json" | ruby_e -rjson -e 'j=JSON.parse(STDIN.read); b=j["body"]; print(b.nil? ? "" : b)') || return 2
-  checked=$(strip_trailing_pr_footer "$body")
-  if mentions_tool_name "$title" || mentions_tool_name "$checked"; then
-    return 1
-  fi
-  if body_ends_with_footer "$body"; then
-    return 0
-  fi
-
-  body_file=$(mktemp "${TMPDIR:-/tmp}/inchworm-pr-body.XXXXXX")
-  printf '%s\n' "$(append_pr_footer "$body")" >"$body_file"
-  if ! (
-    cd "$worktree_path" || exit 1
-    "$GH_BIN" pr edit "$pr_url" --body-file "$body_file"
-  ); then
-    rm -f "$body_file"
-    return 2
-  fi
-  rm -f "$body_file"
-  return 0
-}
-
-close_draft_pr() {
-  local worktree_path=$1
-  local pr_url=$2
-  (
-    cd "$worktree_path" || exit 1
-    "$GH_BIN" pr close "$pr_url"
-  )
-}
-
 # Trim, drop a leading markdown heading marker, cap at a reviewable length.
 clean_pr_title() {
   local raw=$1
@@ -925,7 +838,7 @@ implement_fixture_success() {
 }
 
 # Plan a selected find in a fresh agent context. A successful planning pass
-# writes the plan only; the next agent owns execution.
+# writes the plan only; it does not implement.
 plan_with_agent() {
   local worktree_path=$1
   local find_title=$2
@@ -938,7 +851,7 @@ plan_with_agent() {
   rm -f "${worktree_path}/${PLAN_PATH}" "${worktree_path}/${PLAN_RESULT_PATH}"
   mkdir -p "${worktree_path}/$(dirname "$PLAN_PATH")"
 
-  prompt="Follow the writing-simple-plans skill for this goal: ${find_title}"
+  prompt="Thin check for: ${find_title}"
   if [[ -n "${find_summary//[[:space:]]/}" ]]; then
     prompt+=$'\n\n'"Why it matters: ${find_summary}"
   fi
@@ -958,29 +871,8 @@ plan_with_agent() {
   )
 }
 
-# Execute the plan in a second fresh context. This agent owns the complete
-# generic draft-PR workflow: implementation, verification, commits, draft PR,
-# Standard review, fixes, and the final force-with-lease update.
-execute_plan_with_agent() {
-  local worktree_path=$1
-  local base_branch=$2
-  local guidance=${3:-}
-  local agent_bin="${INCHWORM_AGENT:-agent}"
-  local prompt
-
-  prompt="Follow the executing-draft-pr-plans skill using ${PLAN_PATH}."
-  prompt+=$'\n\n'"Work on the current branch and use ${base_branch} as the pull request base. Complete the skill through opening and reviewing the draft pull request, including justified fixes and the final force-with-lease push. Do not mark the pull request ready and do not merge it."
-  prompt+=$'\n\n'"Preserve the plan's Done when and Not doing boundaries. Do not widen shared retry, reporting, discard, or fail-loud policy."
-  prompt+=$'\n\n'"Write commits and pull-request copy as the engineer making the change. Never mention prompts, agents, automation, orchestration, or the tool that scheduled the work."
-  prompt+=$(append_repo_guidance_block "$guidance")
-
-  (
-    cd "$worktree_path" || exit 1
-    "$agent_bin" -p "$prompt"
-  )
-}
-
-# Real implementer (Done-when): agent in worktree, never --yolo/--force/--trust.
+# Implement the plan in a fresh agent context. Commits and writes PR copy, then
+# stops. Never --yolo/--force/--trust. Does not push or open a pull request.
 implement_with_agent() {
   local worktree_path=$1
   local find_title=$2
@@ -997,6 +889,7 @@ implement_with_agent() {
   if [[ -n "${find_evidence//[[:space:]]/}" ]]; then
     prompt+=$'\n'"Context: ${find_evidence}"
   fi
+  prompt+=$'\n\n'"Implement the plan at ${PLAN_PATH}."
   prompt+=$'\n\n'"Make the smallest change that addresses this. Smallest means smallest blast radius, not the smallest diff. If the work is a defect inside unused or otherwise dead code, delete that code instead of patching it when the deletion is still a thin PR. If deletion is too large, stop and say so — do not nibble the internals. Stop when it is done, or when it turns out to be too large for one sitting."
   prompt+=$'\n\n'"Commit on the current branch. Write the message with the writing-git-commits skill: an imperative subject under 72 characters, and a body only when a reader needs context the diff cannot give them."
   prompt+=$'\n\n'"Then write two files for the pull request:"
@@ -1013,18 +906,42 @@ implement_with_agent() {
   )
 }
 
+# A subject and body a reviewer can read. Empty subject is not a message.
+message_is_clean() {
+  local subject=$1
+  local body=$2
+  [[ -n "${subject//[[:space:]]/}" ]] || return 1
+  ! mentions_tool_name "$subject" && ! mentions_tool_name "$body"
+}
+
+# Uncommitted edits outside runner scratch. Those are what a leftover commit lands.
+worktree_has_leftovers() {
+  local worktree_path=$1
+  [[ -n "$(git -C "$worktree_path" status --porcelain -- . ':!.inchworm')" ]]
+}
+
 # Agents often leave edits uncommitted; capture them so the branch carries the work.
+# `.inchworm/` is runner scratch (plan and PR draft files) and must stay out of the commit.
 commit_leftover_changes() {
   local worktree_path=$1
   local subject=$2
   local body=$3
 
-  if [[ -z "$(git -C "$worktree_path" status --porcelain)" ]]; then
+  if ! worktree_has_leftovers "$worktree_path"; then
     return 0
   fi
 
+  # Pathspec exclude still exits non-zero when a global gitignore already
+  # ignores `.inchworm/`. Stage everything, then drop that scratch tree.
   git -C "$worktree_path" add -A
-  commit_with_message "$worktree_path" "$subject" "$body"
+  git -C "$worktree_path" reset -q -- .inchworm
+  if git -C "$worktree_path" diff --cached --quiet; then
+    return 0
+  fi
+  if ! commit_with_message "$worktree_path" "$subject" "$body"; then
+    printf 'inchworm: could not commit the remaining edits\n' >&2
+    return 1
+  fi
 }
 
 # Collapse everything ahead of the base onto one commit we wrote ourselves.
@@ -1339,14 +1256,6 @@ pre_fix_commit_is_clean() {
   ! mentions_tool_name "$implement_full"
 }
 
-find_fallback_is_clean() {
-  local fallback_subject=$1
-  local fallback_body=$2
-
-  [[ -n "${fallback_subject//[[:space:]]/}" ]] || return 1
-  ! mentions_tool_name "$fallback_subject" && ! mentions_tool_name "$fallback_body"
-}
-
 refuse_unpublished_fix() {
   local worktree_path=$1
   local head_before=$2
@@ -1368,7 +1277,10 @@ land_fixer_work() {
   local base_ref head_after squash_subject squash_body
 
   base_ref=$(rewrite_base_ref "$repo_path")
-  commit_leftover_changes "$worktree_path" "$subject" "$body"
+  if ! commit_leftover_changes "$worktree_path" "$subject" "$body"; then
+    printf 'inchworm: could not commit the fix\n' >&2
+    return 1
+  fi
   head_after=$(git -C "$worktree_path" rev-parse HEAD 2>/dev/null || printf '')
   if [[ -n "$head_before" && "$head_after" == "$head_before" ]]; then
     printf 'inchworm: fixer left no changes — the pushed branch already matches\n'
@@ -1378,7 +1290,7 @@ land_fixer_work() {
   if pre_fix_commit_is_clean "$worktree_path" "$head_before"; then
     squash_subject=$(git -C "$worktree_path" log -1 --format='%s' "$head_before")
     squash_body=$(git -C "$worktree_path" log -1 --format='%b' "$head_before")
-  elif find_fallback_is_clean "$subject" "$body"; then
+  elif message_is_clean "$subject" "$body"; then
     squash_subject=$subject
     squash_body=$body
   else
@@ -1532,8 +1444,8 @@ run_review_fix_ping() {
   cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
 }
 
-# After discover selects a find, live runs delegate planning and complete draft-PR
-# execution to two fresh agents. Fixtures retain the deterministic legacy path.
+# After discover selects a find: fixture success commits a tiny file; live plans,
+# then an implementer that commits and stops. Both then share the publish path.
 run_implement_and_pr() {
   local repo_path=$1
   local repo_yml=$2
@@ -1543,7 +1455,8 @@ run_implement_and_pr() {
   local fixture="${INCHWORM_IMPLEMENT_FIXTURE:-}"
   local ymd branch_name branch_prefix worktree_path pr_url base_ref guidance
   local find_summary find_evidence commit_subject commit_body
-  local pr_title="" pr_body="" pr_body_file footer_rc
+  local leftover_subject leftover_body head_subject head_body agent_title agent_body
+  local pr_title="" pr_body="" pr_body_file
 
   ymd=$(yyyymmdd_from_today "$today")
   branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
@@ -1594,50 +1507,12 @@ run_implement_and_pr() {
         return 0
       fi
 
-      if ! execute_plan_with_agent "$worktree_path" "$IMPLEMENT_BASE_BRANCH" "$guidance"; then
-        pr_url=$(find_draft_for_branch "$repo_path" "$branch_name" || printf '')
-        if [[ -z "$pr_url" ]]; then
-          defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-            "draft-PR execution agent exited non-zero" "$branch_name"
-          return 0
-        fi
-        printf 'inchworm: draft-PR execution agent exited non-zero after opening %s\n' \
-          "$pr_url" >&2
-      else
-        pr_url=$(find_draft_for_branch "$repo_path" "$branch_name" || printf '')
-      fi
-
-      if [[ -z "$pr_url" ]]; then
+      if ! implement_with_agent "$worktree_path" "$find_title" "$find_summary" \
+        "$find_evidence" "$guidance"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-          "draft-PR execution produced no open draft" "$branch_name"
+          "implement agent exited non-zero" "$branch_name"
         return 0
       fi
-
-      footer_rc=0
-      ensure_discovered_draft_footer "$worktree_path" "$pr_url" || footer_rc=$?
-      case "$footer_rc" in
-        0) ;;
-        1)
-          close_draft_pr "$worktree_path" "$pr_url" || \
-            printf 'inchworm: could not close draft that names the runner: %s\n' "$pr_url" >&2
-          defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-            "PR title or body would name the runner" "$branch_name"
-          return 0
-          ;;
-        *)
-          printf 'inchworm: could not append the PR footer on %s\n' "$pr_url" >&2
-          fail_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-            "could not append the PR footer" "$branch_name"
-          return 0
-          ;;
-      esac
-
-      ruby_yaml set_state "$repo_yml" "active_draft_pr" "$pr_url"
-      ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
-      printf 'inchworm: completed draft PR %s\n' "$pr_url"
-      ping_draft_pr "$pr_url"
-      cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
-      return 0
       ;;
     fail|*)
       if [[ "$fixture" != "fail" ]]; then
@@ -1648,8 +1523,71 @@ run_implement_and_pr() {
       ;;
   esac
 
+  # Shared publish path (fixture success and live). Leftovers land before the
+  # no-commits check so an agent that edits and does not commit still ships.
+  # A find whose own words name the runner cannot label that commit: use a
+  # clean commit already on the branch, or the agent's title, or defer before
+  # writing a message a reviewer would see.
+  base_ref=$(rewrite_base_ref "$repo_path")
+  leftover_subject=$commit_subject
+  leftover_body=$commit_body
+  if worktree_has_leftovers "$worktree_path" \
+    && ! message_is_clean "$leftover_subject" "$leftover_body"; then
+    if branch_has_commits "$worktree_path" "$base_ref"; then
+      head_subject=$(git -C "$worktree_path" log -1 --format='%s')
+      head_body=$(git -C "$worktree_path" log -1 --format='%b')
+      if message_is_clean "$head_subject" "$head_body"; then
+        leftover_subject=$head_subject
+        leftover_body=$head_body
+      fi
+    fi
+    if ! message_is_clean "$leftover_subject" "$leftover_body"; then
+      agent_title=$(read_agent_pr_title "$worktree_path" || true)
+      agent_body=$(read_agent_pr_body "$worktree_path" || true)
+      if message_is_clean "$agent_title" "$agent_body"; then
+        leftover_subject=$agent_title
+        leftover_body=$agent_body
+      fi
+    fi
+    if ! message_is_clean "$leftover_subject" "$leftover_body"; then
+      defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+        "commit message would name the runner" "$branch_name"
+      return 0
+    fi
+  fi
+  if ! commit_leftover_changes "$worktree_path" "$leftover_subject" "$leftover_body"; then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "could not commit the remaining edits" "$branch_name"
+    return 0
+  fi
+  if ! branch_has_commits "$worktree_path" "$base_ref"; then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "no commits ahead of the base" "$branch_name"
+    return 0
+  fi
+  if ! sanitize_branch_commits "$worktree_path" "$base_ref" "$commit_subject" "$commit_body"; then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "could not rewrite a commit that names the runner" "$branch_name"
+    return 0
+  fi
+
+  if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/title.txt" ]] \
+    && ! pr_title=$(read_agent_pr_title "$worktree_path"); then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "PR title or body would name the runner" "$branch_name"
+    return 0
+  fi
+  if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/body.md" ]] \
+    && ! pr_body=$(read_agent_pr_body "$worktree_path"); then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "PR title or body would name the runner" "$branch_name"
+    return 0
+  fi
+
   # Resolve the reviewer-facing copy before anything leaves the machine: a find
   # whose own words name the runner is deferred rather than opened as a draft.
+  # Absent agent files fall back to the find. A present file that cannot be
+  # read is already deferred above.
   if [[ -z "$pr_title" ]]; then
     pr_title=$(subject_from_title "$find_title")
   fi

@@ -1,7 +1,8 @@
 # Human `inchworm review`
 
-Operator command. It follows the execution skill's completed draft-PR workflow
-and does not auto-ready the draft.
+Operator command. It follows the shell's completed draft — plan, implement,
+publish, one Standard review, one fixer for a verified blocker — and does not
+auto-ready the draft.
 
 ## Command
 
@@ -35,6 +36,7 @@ Then it discusses. Only the implement branch may be force-pushed; never `develop
 
 ## Distinct from daily run
 
-Daily `inchworm run` delegates the complete draft-PR workflow to
-`executing-draft-pr-plans`, then records the draft, pings, and removes the
-checkout. `review` is the human sitting down with that already-open draft.
+Daily `inchworm run` plans, then an implementer commits and stops. The shell
+pushes, opens the draft with the footer already in the body, runs one Standard
+review, runs one fixer only for a verified blocker, pings, and removes the
+checkout. `inchworm review` is the human sitting down with that already-open draft.
