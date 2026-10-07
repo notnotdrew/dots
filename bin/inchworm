@@ -905,7 +905,7 @@ commit_leftover_changes() {
   local subject=$2
   local body=$3
 
-  if [[ -z "$(git -C "$worktree_path" status --porcelain -- . ':!.inchworm')" ]]; then
+  if ! worktree_has_leftovers "$worktree_path"; then
     return 0
   fi
 
@@ -1234,14 +1234,6 @@ pre_fix_commit_is_clean() {
   ! mentions_tool_name "$implement_full"
 }
 
-find_fallback_is_clean() {
-  local fallback_subject=$1
-  local fallback_body=$2
-
-  [[ -n "${fallback_subject//[[:space:]]/}" ]] || return 1
-  ! mentions_tool_name "$fallback_subject" && ! mentions_tool_name "$fallback_body"
-}
-
 refuse_unpublished_fix() {
   local worktree_path=$1
   local head_before=$2
@@ -1276,7 +1268,7 @@ land_fixer_work() {
   if pre_fix_commit_is_clean "$worktree_path" "$head_before"; then
     squash_subject=$(git -C "$worktree_path" log -1 --format='%s' "$head_before")
     squash_body=$(git -C "$worktree_path" log -1 --format='%b' "$head_before")
-  elif find_fallback_is_clean "$subject" "$body"; then
+  elif message_is_clean "$subject" "$body"; then
     squash_subject=$subject
     squash_body=$body
   else
@@ -1441,6 +1433,7 @@ run_implement_and_pr() {
   local fixture="${INCHWORM_IMPLEMENT_FIXTURE:-}"
   local ymd branch_name branch_prefix worktree_path pr_url base_ref guidance
   local find_summary find_evidence commit_subject commit_body
+  local leftover_subject leftover_body head_subject head_body agent_title agent_body
   local pr_title="" pr_body="" pr_body_file
 
   ymd=$(yyyymmdd_from_today "$today")
@@ -1527,14 +1520,8 @@ run_implement_and_pr() {
       fi
     fi
     if ! message_is_clean "$leftover_subject" "$leftover_body"; then
-      agent_title=""
-      agent_body=""
-      if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/title.txt" ]]; then
-        agent_title=$(read_agent_pr_title "$worktree_path") || agent_title=""
-      fi
-      if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/body.md" ]]; then
-        agent_body=$(read_agent_pr_body "$worktree_path") || agent_body=""
-      fi
+      agent_title=$(read_agent_pr_title "$worktree_path" || true)
+      agent_body=$(read_agent_pr_body "$worktree_path" || true)
       if message_is_clean "$agent_title" "$agent_body"; then
         leftover_subject=$agent_title
         leftover_body=$agent_body
@@ -1562,19 +1549,17 @@ run_implement_and_pr() {
     return 0
   fi
 
-  if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/title.txt" ]]; then
-    if ! pr_title=$(read_agent_pr_title "$worktree_path"); then
-      defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-        "PR title or body would name the runner" "$branch_name"
-      return 0
-    fi
+  if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/title.txt" ]] \
+    && ! pr_title=$(read_agent_pr_title "$worktree_path"); then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "PR title or body would name the runner" "$branch_name"
+    return 0
   fi
-  if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/body.md" ]]; then
-    if ! pr_body=$(read_agent_pr_body "$worktree_path"); then
-      defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
-        "PR title or body would name the runner" "$branch_name"
-      return 0
-    fi
+  if [[ -f "${worktree_path}/${PR_DRAFT_DIR}/body.md" ]] \
+    && ! pr_body=$(read_agent_pr_body "$worktree_path"); then
+    defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
+      "PR title or body would name the runner" "$branch_name"
+    return 0
   fi
 
   # Resolve the reviewer-facing copy before anything leaves the machine: a find
