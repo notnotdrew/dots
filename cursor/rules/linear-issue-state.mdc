@@ -1,5 +1,5 @@
 ---
-description: Default Linear issue state. Never create in Triage unless asked.
+description: Default workflow state for a new Linear issue.
 alwaysApply: true
 ---
 
