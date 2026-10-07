@@ -1,6 +1,6 @@
 ---
 name: review-code
-description: Pragmatic code review for source code changes, focused on bugs, maintainability, and test value rather than style nitpicks. Use when the user asks for a code review. Do not use for a GitHub pull request review, which pr-review covers, or merely because code was just written.
+description: "Use when the user asks for a code review of source changes. Do not use for a GitHub pull request review (pr-review), or merely because code was just written."
 ---
 
 # Review Code

@@ -1,6 +1,6 @@
 ---
 name: developing-nextjs
-description: Expert guidance for building and refactoring Next.js App Router applications. Use when working in `app/` routes, layouts, route handlers, server actions, metadata, loading or error boundaries, or when you need framework-specific judgment about server vs client placement, route-layer composition, and feature-oriented Next.js structure.
+description: "Use when working in Next.js App Router routes, layouts, route handlers, server actions, metadata, or loading and error boundaries. Do not use for React that is not Next.js."
 ---
 
 # Developing Next.js

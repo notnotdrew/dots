@@ -1,6 +1,6 @@
 ---
 name: simplify-code
-description: Simplifies recently changed code without altering behavior, only when a change is actually worthwhile. Use when the user asks for a simplify pass. Do not use after ordinary implementation or refactoring unless they asked.
+description: "Use when the user asks to simplify recently changed code without changing behavior. Do not use after ordinary implementation unless they asked."
 ---
 
 # Simplify Code

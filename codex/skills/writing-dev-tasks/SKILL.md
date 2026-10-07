@@ -1,6 +1,6 @@
 ---
 name: writing-dev-tasks
-description: Writes well-scoped, verifiable development tasks for non-user-facing work such as refactors, test work, and dependency or tooling changes. Use when the user asks for a dev task, refactor task, tech-debt ticket, test task, dependency upgrade task, or a definition of done for a refactor. For user-facing behavior, use writing-agile-stories instead.
+description: "Use when the user asks for a dev task, refactor task, test task, dependency upgrade, or a definition of done for non-user-facing work. Do not use for user-facing behavior (writing-agile-stories)."
 ---
 
 # Writing Dev Tasks

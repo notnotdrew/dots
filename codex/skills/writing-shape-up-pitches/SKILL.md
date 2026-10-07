@@ -1,6 +1,6 @@
 ---
 name: writing-shape-up-pitches
-description: Write Shape Up pitches from rough ideas, discovery notes, or product problems. Use when drafting a Shape Up betting pitch with clear problems, shaped solutions, boundaries, bonus features, KPIs, and long-term vision.
+description: "Use when drafting a Shape Up pitch from a problem, with a shaped solution and boundaries. Do not use for a PRD or a product brief."
 ---
 
 # Writing Shape Up Pitches

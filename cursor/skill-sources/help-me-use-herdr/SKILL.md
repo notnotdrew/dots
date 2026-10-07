@@ -1,12 +1,6 @@
 ---
 name: help-me-use-herdr
-description: >-
-  Helps Drew use Herdr as a human: setup, keybindings, plugins, sidebar,
-  panels, and local config. Use when he asks how to do something in Herdr,
-  what a prefix chord does, which plugin owns a key, or how to get around
-  the TUI. Not for controlling another pane from inside Herdr (that is
-  `herdr --skill`) and not for spinning up a worktree workspace
-  (starting-herdr-work).
+description: "Use when Drew asks how to do something in Herdr, what a key does, or how to get around the TUI. Do not use to control another pane or to open a worktree."
 ---
 
 # Help me use Herdr

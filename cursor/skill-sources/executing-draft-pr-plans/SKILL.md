@@ -1,6 +1,6 @@
 ---
 name: executing-draft-pr-plans
-description: Executes a simple commit plan as one reviewable draft pull request. Use when the user provides an ordered implementation plan and wants each step implemented, tested, reviewed, simplified, and committed separately before opening a draft PR.
+description: "Use when the user provides an ordered plan and wants each step committed before one draft pull request. Do not use for writing the plan."
 ---
 
 # Execute a Draft PR Plan

@@ -1,6 +1,6 @@
 ---
 name: refactoring-code
-description: Improves object-oriented structure so the next change is safer and cheaper, without changing behavior. Ruby default. Use when the user asks to refactor, clean up a messy area, reduce technical debt, prepare code for a feature, or analyze what is making change expensive. Draws on Fowler, Beck, and Metz as heuristics, not rules.
+description: "Use when the user asks to refactor, reduce debt, or see what makes a change expensive, without changing behavior. Do not use for a feature or a bug fix."
 ---
 
 # Refactoring Code

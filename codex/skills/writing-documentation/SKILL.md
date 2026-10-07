@@ -1,6 +1,6 @@
 ---
 name: writing-documentation
-description: Writes documentation for human developers and LLMs. Covers code-level docs, architecture docs, and project docs such as READMEs, getting-started guides, and agent instructions. Use when asked to document code, add comments or docstrings, write a README, create an ADR or design doc, explain architecture, or create AGENTS.md guidance.
+description: "Use when asked to document code, add comments or docstrings, write a README, ADR, or AGENTS.md, or explain architecture. Do not use for a prose rewrite of an existing draft."
 ---
 
 # Writing Documentation

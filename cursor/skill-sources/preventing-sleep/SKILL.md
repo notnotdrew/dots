@@ -1,9 +1,6 @@
 ---
 name: preventing-sleep
-description: >-
-  Prevents macOS idle sleep with caffeinate so a long-running task keeps going,
-  and restores normal sleep when asked to undo. Use when the user wants to keep
-  the computer awake, disable sleep, stay-awake, or turn sleep back on.
+description: "Use when the user wants the computer kept awake for a long task, or wants sleep restored. Do not use for anything other than macOS idle sleep."
 ---
 
 # Preventing Sleep

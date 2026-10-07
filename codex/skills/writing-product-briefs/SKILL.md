@@ -1,6 +1,6 @@
 ---
 name: writing-product-briefs
-description: Write product briefs that align teams on goals before discovery. Use when defining a new product vision, articulating a problem statement, creating a one-pager, or crafting north star scenarios with thesis, audience, metrics, and narrative stories.
+description: "Use when defining a product vision, a problem statement, or a one-page brief before discovery. Do not use for a PRD or a Shape Up pitch."
 ---
 
 # Writing Product Briefs

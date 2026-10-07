@@ -1,6 +1,6 @@
 ---
 name: writing-simple-plans
-description: Writes a short ordered plan.md of meaningful, isolated decisions that reach a named end state. After writing, loops simplify-code on the planned implementation until a fresh subagent says it is already simple enough. Use when the user asks for a simple plan, plan.md, "plan it like grug", or a default implementation plan rather than a TDD, carpaccio, or grilling session.
+description: "Use when the user asks for a simple plan, plan.md, \"plan it like grug\", or a default implementation plan. Do not use for a TDD plan, carpaccio slices, or a grilling session."
 ---
 
 # Writing Simple Plans

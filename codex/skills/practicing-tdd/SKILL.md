@@ -1,6 +1,6 @@
 ---
 name: practicing-tdd
-description: Enforces test-first development with the Red-Green-Refactor cycle. Use when implementing a feature or bug fix with TDD, when the user says "test first" or "write a failing test", or when you need to keep implementation tightly coupled to observable behavior.
+description: "Use when implementing with TDD, or when the user says test first or write a failing test. Do not use for a plan that only names tests."
 ---
 
 # Practicing TDD

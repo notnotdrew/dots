@@ -1,6 +1,6 @@
 ---
 name: writing-for-humans
-description: Post-process dense drafts into concise, self-contained prose a teammate can read without the author's context. Use when polishing READMEs, guides, tutorials, Linear tickets, and other prose drafts, including a final rewrite pass after other writing skills. Do not use for commit messages, pull request titles or descriptions, code comments, internal specs, research notes, generated API references, or structured formats like JSON and YAML.
+description: "Use when polishing READMEs, guides, tutorials, Linear tickets, and other prose drafts. Do not use for commit messages, pull request titles or descriptions, code comments, internal specs, research notes, or JSON and YAML."
 ---
 
 # Writing for Humans

@@ -1,6 +1,6 @@
 ---
 name: developing-typescript
-description: Expert guidance for TypeScript authoring, refactoring, and maintenance. Use when working in `.ts` or `.tsx` files and the task needs language-specific judgment about types, narrowing, module boundaries, runtime validation, or safe incremental typing.
+description: "Use when writing or refactoring TypeScript and the task needs judgment about types, narrowing, modules, or runtime validation. Do not use for JavaScript or for a framework question."
 ---
 
 # Developing TypeScript

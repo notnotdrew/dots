@@ -1,6 +1,6 @@
 ---
 name: planning-tdd
-description: Produces implementation plans where tests are the primary unit of progress. Use when the user asks for a TDD plan, a test-first implementation strategy, or a phased plan that defines the RED steps before the implementation details.
+description: "Use when the user asks for a TDD plan or a test-first plan that names the RED steps before implementation. Do not use for a default implementation plan."
 ---
 
 # Planning TDD

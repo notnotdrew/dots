@@ -1,6 +1,6 @@
 ---
 name: slicing-elephant-carpaccio
-description: Slices a single feature or story into ultra-thin vertical increments of minutes to hours each, using Alistair Cockburn's Elephant Carpaccio methodology. Use during implementation planning when one story is too large to build in a session and you need demoable increments across layers. Produces an ordered backlog of 10-20 thin slices. Not for splitting an epic into sprint-sized stories (see decomposing-epics).
+description: "Use when one story is too large for a session and needs thin demoable slices across layers. Do not use for splitting an epic into sprint-sized stories (decomposing-epics)."
 ---
 
 # Slicing Elephant Carpaccio

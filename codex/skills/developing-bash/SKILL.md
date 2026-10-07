@@ -1,9 +1,6 @@
 ---
 name: developing-bash
-description: |
-  Shell scripting expertise covering POSIX-compliant and Bash-specific patterns, defensive scripting practices, cross-platform compatibility, and command-line automation.
-
-  Use when working with .sh files, shell scripts, or when the user mentions Bash, POSIX, shell scripting, shebang, pipelines, or CLI automation. Also use for set -e, traps, parameter expansion, or cross-platform shell compatibility.
+description: "Use when writing or editing .sh files or Bash scripts, including shebangs, pipelines, set -e, traps, parameter expansion, and portability. Do not use for shell commands that are not a script."
 ---
 
 # Developing Bash

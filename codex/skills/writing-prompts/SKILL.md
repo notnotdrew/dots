@@ -1,6 +1,6 @@
 ---
 name: writing-prompts
-description: Write reusable prompts including system prompts, workflow prompts, delegation prompts, and meta prompts. Use when creating commands, automating workflows, making tasks reusable, or when the user says "write a prompt", "create a command", or "automate this".
+description: "Use when the user says write a prompt, create a command, or automate a workflow as a reusable prompt. Do not use for a SKILL.md."
 ---
 
 # Writing Prompts

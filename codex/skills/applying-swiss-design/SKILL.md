@@ -1,6 +1,6 @@
 ---
 name: applying-swiss-design
-description: Applies Swiss and International Typographic Style principles to create clear, functional output. Use when designing interfaces, data visualizations, documentation, CLI output, or when requests mention clutter, readability, visual hierarchy, cleaner layout, or simplifying presentation.
+description: "Use when designing interfaces, visualizations, documentation, or CLI output, or when the request mentions clutter, readability, hierarchy, or a cleaner layout. Do not use for code structure or wording."
 ---
 
 # Applying Swiss Design

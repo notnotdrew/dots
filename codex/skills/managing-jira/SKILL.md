@@ -1,6 +1,6 @@
 ---
 name: managing-jira
-description: Loads Jira tickets into a compact normalized summary for downstream scoping or planning. Use when the input references Jira issue keys such as `ABC-123` and the next skill needs the ticket's summary, description, comments, or linked issues without turning that ticket into a plan.
+description: "Use when a Jira key such as ABC-123 needs a compact summary for a later skill. Do not turn that ticket into a plan."
 ---
 
 # Managing Jira
