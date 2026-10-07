@@ -1,12 +1,6 @@
 ---
 name: starting-herdr-work
-description: >-
-  Opens a Herdr child worktree and names its sidebar for the task: workspace
-  label = item, $note = project (reuse existing project names). Use when the
-  user says "work on …", "tidy …", starts a Linear ticket in Herdr, or asks to
-  spin up a worktree workspace for a task. Also decides when a request is just
-  a command to dispatch, such as "start any open prrr reviews", and needs no
-  workspace at all.
+description: "Use when the user says \"work on …\" or \"tidy …\", starts a Linear ticket in Herdr, or asks for a worktree workspace. Do not open a workspace when the request is only a command to dispatch."
 ---
 
 # Starting Herdr work

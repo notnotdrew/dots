@@ -1,6 +1,6 @@
 ---
 name: decomposing-epics
-description: Breaks an epic into an ordered backlog of vertical, sprint-sized user stories. Use when splitting an epic into stories, building a feature's story backlog, or when a story feels too large but is not ready for task breakdown. Produces 4-8 demoable stories grounded in user-visible behavior. Not for sub-story implementation slicing (see slicing-elephant-carpaccio) or for writing one story's full BDD spec (see writing-agile-stories).
+description: "Use when splitting an epic into sprint-sized stories, building a feature's story backlog, or when a story feels too large and is not ready for task breakdown. Do not use for thin implementation slices (slicing-elephant-carpaccio) or one story's acceptance criteria (writing-agile-stories)."
 ---
 
 # Decomposing Epics

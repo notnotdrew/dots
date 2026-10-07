@@ -1,6 +1,6 @@
 ---
 name: writing-prds
-description: Write Product Requirements Documents from product briefs. Use when turning a product vision into high-level requirements, a use case compendium, and Milestone 1 scope without drifting into implementation details.
+description: "Use when turning a product vision into requirements, use cases, and Milestone 1 scope. Do not use for an implementation plan or a one-page brief."
 ---
 
 # Writing PRDs

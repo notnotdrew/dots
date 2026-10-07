@@ -1,5 +1,5 @@
 ---
-description: Commit subjects are a plain what; bodies are optional and never narrate the diff.
+description: Commit message wording for this repo.
 alwaysApply: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: creating-codex-skills
-description: Expert guidance for creating, writing, and refining Codex skills. Use when working with SKILL.md files, authoring new skills, improving existing skills, or understanding skill structure and best practices.
+description: "Use when authoring, editing, or learning the structure of a SKILL.md. Do not use for a prompt that is not a skill."
 ---
 
 # Creating Codex Skills

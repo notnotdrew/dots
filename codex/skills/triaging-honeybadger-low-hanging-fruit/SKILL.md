@@ -1,6 +1,7 @@
 ---
 name: triaging-honeybadger-low-hanging-fruit
 description: Triages recent unresolved production Honeybadger faults into a short list of small, approachable fixes, then records the findings in a markdown triage doc inside an isolated Worktrunk worktree. Use when the user wants low-hanging fruit, quick wins, easy or beginner-friendly production bug fixes, Honeybadger error cleanup, or a warm-up task from real production errors.
+disable-model-invocation: true
 ---
 
 # Triaging Honeybadger Low-Hanging Fruit

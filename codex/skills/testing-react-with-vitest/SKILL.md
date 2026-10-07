@@ -1,6 +1,6 @@
 ---
 name: testing-react-with-vitest
-description: Expert guidance for writing React tests with Vitest and React Testing Library. Use when working on `.test.tsx` or `.test.ts` files, React component or hook tests, Vitest setup, `@testing-library/user-event`, `@testing-library/jest-dom`, or when you want sociable tests instead of heavy mocking.
+description: "Use when writing React tests with Vitest and Testing Library, including component and hook tests. Do not use for tests that are not React."
 ---
 
 # Testing React With Vitest

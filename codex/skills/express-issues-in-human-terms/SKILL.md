@@ -1,6 +1,7 @@
 ---
 name: express-issues-in-human-terms
 description: Rewrites already-identified review findings, bugs, or technical issues into short human briefs. Picks or invents the shape that fits the issue (request expected-vs-actual, six-field brief, timeline, UI path, or something else). Use when the user asks to express findings in human terms, rewrite review findings for humans, turn PERFECT or AI review notes into comment-ready briefs, or wants scenario / why / fix / case against framing.
+disable-model-invocation: true
 ---
 
 # Express Issues in Human Terms

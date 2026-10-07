@@ -1,6 +1,7 @@
 ---
 name: reviewing-tests-antagonistically
 description: Attacks new or changed tests by mutating production code, fixtures, and clocks to see whether the named examples still pass. Use when the user asks for an antagonistic test review, mutation-style test review, coverage-theater check, or whether specs would stay green if the implementation were deleted.
+disable-model-invocation: true
 ---
 
 # Reviewing Tests Antagonistically

@@ -1,6 +1,6 @@
 ---
 name: simplify-code
-description: Simplifies recently changed code without altering behavior, only when a change is actually worthwhile. Use after implementation or refactoring when the goal is to reduce unnecessary complexity, noisy comments, and speculative abstractions while preserving exact functionality.
+description: "Use when the user asks to simplify recently changed code without changing behavior. Do not use after ordinary implementation unless they asked."
 ---
 
 # Simplify Code

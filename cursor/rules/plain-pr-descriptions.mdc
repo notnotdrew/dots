@@ -1,5 +1,5 @@
 ---
-description: PR titles are a plain what; the description is a sentence or two of why.
+description: Pull request title and description wording.
 alwaysApply: true
 ---
 
@@ -7,7 +7,7 @@ alwaysApply: true
 
 The title is a plain one-clause what, the same shape as a commit subject.
 
-The description always says why, in one or two plain sentences. Add a high-level view of the code only when the title and why do not show the shape of the change, and keep that view brief and simplified. Do not walk the diff, list files, or add a Summary and Test plan unless the repository template has those sections.
+The description says why, in one or two plain sentences. Add a high-level view of the code only when the title and why do not show the shape of the change, and keep that view brief. Do not walk the diff, list files, or add a Summary and Test plan unless the repository template has those sections.
 
 A performance claim includes numbers a subagent measured. An error that prompted the change includes its link. A step someone still has to take gets one sentence. A visible change includes a screenshot.
 

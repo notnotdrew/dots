@@ -6,6 +6,7 @@ description: >-
   says annotate this branch, annotate unstaged, annotate staged, annotate the
   diff, review this branch in plannotator, or similarly names a VCS diff to
   mark up.
+disable-model-invocation: true
 ---
 
 # Annotate a diff

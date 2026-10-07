@@ -1,6 +1,6 @@
 ---
 name: refactoring-agent-instructions
-description: Refactors bloated agent instruction files (`AGENTS.md`, `CLAUDE.md`, `COPILOT.md`, `.cursorrules`, and related files) into progressive-disclosure roots plus categorized `guidelines/` files. Use when agent instructions are too long, contradictory, repetitive, or hard to maintain.
+description: "Use when AGENTS.md, CLAUDE.md, COPILOT.md, or .cursorrules is too long, contradictory, or repetitive. Do not use for product docs or a skill body."
 ---
 
 # Refactoring Agent Instructions

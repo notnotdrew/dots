@@ -1,6 +1,7 @@
 ---
 name: grug-brain
 description: Reviews named code the way a grug-brain developer would — hunt complexity, premature abstraction, debug-hardness, and fad architecture, then report in grug voice. Use when the user asks for a grug, grug-brain, or grugbrain review, or to look at code as grug would.
+disable-model-invocation: true
 ---
 
 # Grug Brain

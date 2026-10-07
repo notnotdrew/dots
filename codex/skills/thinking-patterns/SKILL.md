@@ -1,6 +1,6 @@
 ---
 name: thinking-patterns
-description: Applies structured reasoning patterns that produce concise, auditable output artifacts. Use when the user asks to think through a problem, compare options, plan work, calculate precisely, verify a conclusion, or synthesize multiple inputs.
+description: "Use when the user asks to think through a problem, compare options, calculate, verify, or synthesize. Do not use for ordinary planning or implementation."
 ---
 
 # Thinking Patterns

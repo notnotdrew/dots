@@ -1,6 +1,6 @@
 ---
 name: writing-agile-stories
-description: Write behavior-focused Agile user stories with BDD-style acceptance criteria. Use when defining features, clarifying requirements, creating development tickets, writing acceptance criteria, converting vague requirements into testable specs, or discussing user needs.
+description: "Use when writing a user story or its acceptance criteria, or turning a vague requirement into a testable spec. Do not use for a non-user-facing dev task (writing-dev-tasks)."
 ---
 
 # Writing Agile Stories
