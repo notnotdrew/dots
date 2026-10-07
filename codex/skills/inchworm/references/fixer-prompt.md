@@ -1,7 +1,7 @@
 # Fixer prompt (Phase 4)
 
-Legacy fixture contract only. Live fix folding is owned by
-`executing-draft-pr-plans`; inchworm does not launch another fixer.
+The shell runs one fixer pass, and only when the ledger has a verified blocker.
+The implementer does not fix, and inchworm does not launch another fixer.
 
 One fixer pass when the findings ledger has verified blockers. Blocking-only; then stop.
 

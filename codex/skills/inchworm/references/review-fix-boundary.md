@@ -1,10 +1,8 @@
 # Review → fix → ping boundary
 
-This boundary now applies only to deterministic fixture coverage of the former
-coordinator-owned workflow. Live runs delegate the complete draft PR, Standard
-review, and fix-folding workflow to `executing-draft-pr-plans`; see
-[implement-boundary](implement-boundary.md). Do not use this document to
-orchestrate a live run.
+Live and fixture success share this path. The implementer has already committed
+and stopped. The shell opens the draft, then reviews, optionally fixes, pings,
+and removes the checkout. See [implement-boundary](implement-boundary.md).
 
 After a successful draft PR (`gh pr create --draft`, `active_draft_pr` set, find `in_pr`), the coordinator continues:
 

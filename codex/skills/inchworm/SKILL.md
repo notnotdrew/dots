@@ -1,6 +1,6 @@
 ---
 name: inchworm
-description: Coordinator-first daily create-window runner for inchworm finds (scouts → curator → pick → plan → execute draft PR → ping). Use when running inchworm, curating finds.md, or picking the next open find.
+description: Coordinator-first daily create-window runner for inchworm finds (scouts → curator → pick → plan → implement → draft PR → ping). Use when running inchworm, curating finds.md, or picking the next open find.
 ---
 
 # Inchworm
@@ -15,26 +15,26 @@ When a find is not an easy change, inchworm's job is to notice that. The destina
 
 Run `inchworm run` or `inchworm now`; do not reproduce the pipeline in the
 current agent session. The shell process owns orchestration and durable state.
-Each scout, planner, and executor starts in a fresh agent context and returns
-through files or GitHub state. The coordinator keeps only the selected find,
-branch, plan result, and draft PR URL.
+Each scout, planner, and implementer starts in a fresh agent context and returns
+through files. The coordinator keeps only the selected find, branch, plan
+result, and draft PR URL.
 
-After a find is selected, compose existing generic skills:
+After a find is selected:
 
-1. A fresh agent follows **`writing-simple-plans`** and writes the plan. It does
-   not implement.
-2. If the result cannot fit one thin, behavior-preserving PR, stop as
-   `too_large`.
-3. A second fresh agent follows **`executing-draft-pr-plans`**. That skill owns
-   implementation, verification, commits, opening the draft PR, Standard
-   review, folding fixes, and the final force-with-lease push.
-4. The coordinator discovers the draft by its exact branch, appends the footer,
-   records it, pings, and removes the checkout.
+1. A fresh agent follows **`writing-simple-plans`** and writes `.inchworm/plan.md`,
+   or writes `not_thin`. It does not implement.
+2. `not_thin` is `too_large`: no implementer, no draft PR.
+3. A second fresh agent implements that plan, commits, writes
+   `.inchworm/pr/title.txt` and `.inchworm/pr/body.md`, and stops. It does not
+   push, open a pull request, review, or fix.
+4. The shell commits any leftover edits, pushes, opens the draft with the footer
+   already in the body, runs one Standard review, runs one fixer only for a
+   verified blocker, pings, and removes the checkout.
 
-The reused skills remain generic. Inchworm-specific policy is supplied in each
-handoff; it is not added to those skills.
+`writing-simple-plans` stays generic. Inchworm-specific policy is supplied in
+each handoff; it is not added to that skill.
 
-## Scope (discover → plan → execute draft PR → ping → schedule)
+## Scope (discover → plan → implement → draft PR → ping → schedule)
 
 LaunchAgent ticks call gated `inchworm run`. `inchworm now` is the same core without the weekday / create-window / same-day / blocking-draft gates.
 
@@ -48,10 +48,10 @@ On an eligible `inchworm run`:
 6. Pick the highest-priority open find (lowest rank)
 7. If none: **stop** — no implementer, no worktree, no `gh pr create`
 8. If selected: create a **Worktrunk** checkout on branch `<branch_prefix>/<slug>-<YYYYMMDD>` based on the freshly fetched trunk
-9. Run a fresh planning agent with `writing-simple-plans`. No thin plan means `too_large`; do not launch execution.
-10. Run a fresh execution agent with `executing-draft-pr-plans`. It completes the generic workflow through draft PR and Standard review.
-11. On success, discover the open draft by exact branch, append the footer, set `state.active_draft_pr`, mark the find `in_pr`, **ping** immediately, then `wt remove --no-delete-branch` the checkout (keep the branch).
-12. On failure: no second pick (stamp already burned), alert the human, and clean up the checkout. A planning verdict can mark the find `too_large`; other attempts are `deferred`.
+9. Run a fresh planning agent with `writing-simple-plans`. It writes `.inchworm/plan.md` or `not_thin`. `not_thin` marks the find `too_large` and does not launch the implementer.
+10. Run a fresh implementer. It implements the plan, commits, writes the PR title and body files, and stops.
+11. The shell pushes, opens the draft (`gh pr create --draft`) with the footer already in the body, sets `state.active_draft_pr`, marks the find `in_pr`, runs one Standard `pr-review`, runs one fixer only for a verified blocker, pings, then `wt remove --no-delete-branch` the checkout (keep the branch).
+12. On failure: no second pick (stamp already burned), alert the human, and clean up the checkout. A `not_thin` plan marks the find `too_large`; an implementer failure is `deferred` and opens no PR.
 
 Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement branch is ever force-pushed, and only with `--force-with-lease` — never `develop` or `main`. No auto-ready / merge.
 
@@ -68,9 +68,9 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Scout** — propose candidates (see [scout-prompts](references/scout-prompts.md))
 - **Curator** — merge/dedupe into durable `finds.md` (see [curator-prompt](references/curator-prompt.md))
 - **Pick** — choose one open find or report none (see [discover-boundary](references/discover-boundary.md))
-- **Planner** — fresh agent following `writing-simple-plans`; produces only a thin plan or a not-thin result
-- **Executor** — fresh agent following `executing-draft-pr-plans`; owns the complete draft PR workflow
-- **Coordinator** — owns checkout, state mapping, ping, and cleanup (see [implement-boundary](references/implement-boundary.md))
+- **Planner** — fresh agent following `writing-simple-plans`; writes `.inchworm/plan.md` or `not_thin`
+- **Implementer** — implements that plan, commits, writes `pr/title.txt` and `pr/body.md`, and stops (see [implementer-prompt](references/implementer-prompt.md))
+- **Coordinator** — owns checkout, push, draft PR, Standard review, fixer, ping, and cleanup (see [implement-boundary](references/implement-boundary.md))
 - **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep and an adequacy check (did the change go far enough, or is it a nibble in dead code?) (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop
 
 ## References

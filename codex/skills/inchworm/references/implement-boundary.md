@@ -1,7 +1,8 @@
 # Implement boundary
 
-After discover selects a find, the coordinator creates the checkout, delegates
-planning and execution to fresh agents, then records the resulting draft.
+After discover selects a find, the coordinator creates the checkout, asks a
+planner for a thin plan, asks an implementer to commit that plan and stop, then
+publishes the draft itself.
 
 ## Worktrunk + branch
 
@@ -15,38 +16,38 @@ planning and execution to fresh agents, then records the resulting draft.
 
 | Value | Behavior |
 | --- | --- |
-| `success` | Simulate the completed workflow with a tiny commit and draft PR |
+| `success` | Tiny commit, then the same publish path as live. Does not call the planner or the implementer |
 | `fail` | Mark find `deferred`; no PR; print implement-failed signal |
 | `too_large` | Mark find `too_large`; no PR |
-| unset | Fresh planner agent, then fresh draft-PR executor agent (`INCHWORM_AGENT` or `agent`) |
+| unset | Fresh planner, then a fresh implementer that commits and stops (`INCHWORM_AGENT` or `agent`). The shell publishes |
 
 ## Live delegation
 
 1. Launch a fresh agent in the checkout and tell it to follow
-   `writing-simple-plans`, writing `.inchworm/plan.md`.
-2. The planner does not edit production code. If it reports that the change
-   cannot fit one thin PR, mark the find `too_large` and stop.
-3. Launch a second fresh agent and tell it to follow
-   `executing-draft-pr-plans` using that plan.
-4. The execution skill owns implementation, test attack, simplification,
-   verification, commits, draft creation, Standard review, fix folding, and the
-   final force-with-lease push. It does not ready or merge the PR.
-5. The coordinator queries open PRs for the exact branch and requires a draft
-   URL. It appends the footer to that draft. It does not repeat any execution
-   or review stage.
-6. Set `state.active_draft_pr`, mark the find `in_pr`, ping, and remove the
+   `writing-simple-plans`, writing `.inchworm/plan.md` or `not_thin`.
+2. The planner does not edit production code. `not_thin` marks the find
+   `too_large` and stops: no implementer, no draft PR.
+3. Launch a second fresh agent. It implements the plan at `.inchworm/plan.md`,
+   commits, writes `.inchworm/pr/title.txt` and `.inchworm/pr/body.md`, and
+   stops. It does not push, open a pull request, review, or fix.
+4. The shell commits leftover edits (never `.inchworm/`), rewrites a commit
+   message that names the runner, and defers when that rewrite cannot produce a
+   clean history or the branch has no commits.
+5. The shell appends the footer, pushes, and opens the draft with `gh pr create`.
+   It sets `state.active_draft_pr`, marks the find `in_pr`, runs one Standard
+   review, runs one fixer only for a verified blocker, pings, and removes the
    checkout with `wt remove --no-delete-branch`.
 
-`writing-simple-plans` and `executing-draft-pr-plans` remain generic. Their
-normal input receives the selected find, repo guidance, base branch, and the
-thin-change constraints; neither skill contains runner-specific behavior.
+`writing-simple-plans` stays generic. Inchworm-specific policy is in the
+handoff, not in that skill. An implementer that exits non-zero is `deferred`,
+not `too_large`.
 
 ## Failure / no second pick
 
 `too_large` is a correct result, not a fallback: if you cannot bound who inherits the retry, fail, or report policy, or the safe version needs that seam moved first, end the day without a PR (see [shared-seam](shared-seam.md)).
 
-On failure (planner/executor non-zero, missing plan, missing draft, `too_large`,
-or inability to resolve the trunk):
+On failure (planner or implementer non-zero, missing plan, no commits, a rewrite
+that cannot be published, `too_large`, or inability to resolve the trunk):
 
 - Do **not** call `gh pr create` (or stop if create already failed)
 - Leave `active_draft_pr` null
@@ -59,7 +60,7 @@ Whether the find keeps its place depends on who failed, because the next tidy dr
 
 | Failure | Find status | Why |
 | --- | --- | --- |
-| `fail` fixture, agent non-zero, missing plan, or no draft produced | `deferred` | The attempt reached the selected find but did not complete |
+| `fail` fixture, agent non-zero, missing plan, no commits, or a publish check that defers | `deferred` | The attempt reached the selected find but did not complete |
 | `too_large` | `too_large` | A correct result (see [shared-seam](shared-seam.md)) |
 | No base to work from | `open` | The remote failed before the find was judged |
 
