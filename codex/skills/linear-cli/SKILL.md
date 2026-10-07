@@ -1,6 +1,6 @@
 ---
 name: linear-cli
-description: Manage Linear issues from the command line using the linear cli. This skill allows automating linear management.
+description: Use when creating or updating a Linear issue with the linear CLI, including which id and workflow state to pass. Do not use for comments, queries, or project status.
 allowed-tools: Bash(linear:*), Bash(curl:*)
 ---
 
@@ -60,7 +60,13 @@ linear issue create --team ENG --title "Fix login redirect" \
 
 Write multi-line markdown to a file and pass `--description-file` (see the markdown section below); `--no-interactive` avoids prompts in scripted use.
 
+### Ids
+
+`--team` and `--state` take a team key and a state name. When a flag or a `linear api` query needs a team, project, state, or user id, list it first and pass that id. Use `linear team list`, `linear team id`, `linear team states`, `linear project list`, or `linear user list`. Do not guess ids.
+
 ### Update an issue's state, assignee, or labels
+
+Pass `--state` when the state should change. Omitting it leaves the state as it is.
 
 ```bash
 linear issue update ENG-123 --state "In Review" --assignee sam
