@@ -9,14 +9,21 @@ This skill teaches how to create effective Codex skills following Codex's curren
 
 ## Quick Start
 
-Create a new skill in `~/.codex/skills/`:
+Create the skill body in `~/.cursor/skill-sources/`, then link it from `~/.cursor/skills/` and `~/.codex/skills/`:
 
 ```text
-~/.codex/skills/my-skill-name/
+~/.cursor/skill-sources/my-skill-name/
 ```
 
+```sh
+ln -s ../skill-sources/my-skill-name ~/.cursor/skills/my-skill-name
+ln -s ../../cursor/skill-sources/my-skill-name ~/.codex/skills/my-skill-name
+```
+
+Keep those `skills/` entries as symlinks. Cursor's cloud sync deletes real directories it copies out of `~/.cursor/skills/`.
+
 ````markdown
-# ~/.codex/skills/my-skill-name/SKILL.md
+# ~/.cursor/skill-sources/my-skill-name/SKILL.md
 ---
 name: my-skill-name
 description: Generates weekly status reports from git logs. Use when the user asks for status updates, weekly reports, or standup summaries.

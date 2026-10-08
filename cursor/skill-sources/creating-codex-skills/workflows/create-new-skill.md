@@ -8,7 +8,7 @@ Use this workflow when the user wants a new skill, not just advice.
    - What should the output or handoff look like?
 
 2. Search for a local analog first.
-   - Check `codex/skills/` for an existing skill that already covers the job.
+   - Check `~/.cursor/skills/` for an existing skill that already covers the job.
    - If a close Bob analog exists in `~/bobfiles/claude/skills/`, translate it instead of inventing a new workflow.
 
 3. Choose the smallest structure that fits.
