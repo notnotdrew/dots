@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Daily cleanup: prune merged worktrunk worktrees, then prrr --clean.
+# Daily cleanup: prune merged worktrunk worktrees, remove checkouts whose
+# pull request GitHub has already merged, then prrr --clean.
 # Walks ~/dots, ~/dots-private, and every main git checkout under ~/dev.
 # Linked worktrees (`.git` file) are skipped; `wt` run from the main checkout
 # already sees them. Checkouts open in a Herdr workspace are locked for the
@@ -7,8 +8,14 @@
 # runs while those locks are still held, because it force-removes epoch
 # worktrees for closed/merged PRs.
 #
+# wt step prune only removes a worktree it can prove is integrated, and it
+# skips a dirty tree. A squash merge on a busy repo falls outside that proof
+# once the default branch has moved on, so the checkout stays forever. GitHub
+# is the source of truth for those: a merged PR, or a pr-<n>-R* epoch whose
+# PR is merged or closed.
+#
 #   wt-clean-roots            prune, then prrr --clean
-#   wt-clean-roots --dry-run  preview prune only (prrr has no dry-run)
+#   wt-clean-roots --dry-run  preview prune and merged-PR removal (prrr has no dry-run)
 #   wt-clean-roots --list     print main checkouts, do not prune
 #   wt-clean-roots --install  write and load the daily LaunchAgent
 set -euo pipefail
@@ -29,11 +36,12 @@ usage() {
 Usage: $SCRIPT_NAME [--dry-run|--list|--install] [--] [root ...]
 
 Walk each root for main git checkouts (directory named .git) and run
-\`wt step prune --foreground\` there, then \`prrr --clean\`. Default roots:
-~/dots, ~/dots-private, ~/dev. Checkouts Herdr has open are locked for the
-duration so prune and prrr leave them alone.
+\`wt step prune --foreground\` there, remove worktrees whose pull request
+GitHub has merged, then \`prrr --clean\`. Default roots: ~/dots,
+~/dots-private, ~/dev. Checkouts Herdr has open are locked for the duration
+so prune, the merged-PR removal, and prrr leave them alone.
 
-  --dry-run   pass --dry-run to prune; skip prrr (it has no preview)
+  --dry-run   preview prune and merged-PR removal; skip prrr (it has no preview)
   --list      print checkouts only
   --install   generate ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist and load it
               (daily 12:00)
@@ -197,6 +205,131 @@ prune_one() {
   command wt -C "$repo" step prune --foreground "$@"
 }
 
+# owner/repo from origin. Non-GitHub remotes are skipped.
+github_slug() {
+  local repo=$1 remote
+  remote="$(git -C "$repo" remote get-url origin 2>/dev/null)" || return 1
+  remote="${remote%.git}"
+  case "$remote" in
+    git@github.com:*)
+      printf '%s\n' "${remote#git@github.com:}"
+      ;;
+    https://github.com/*)
+      printf '%s\n' "${remote#https://github.com/}"
+      ;;
+    http://github.com/*)
+      printf '%s\n' "${remote#http://github.com/}"
+      ;;
+    ssh://git@github.com/*)
+      printf '%s\n' "${remote#ssh://git@github.com/}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# True when this checkout is locked for any reason, including a lock this run
+# took because Herdr has it open and a lock Drew set by hand.
+checkout_is_locked() {
+  local repo=$1 path=$2 line worktree
+  worktree=""
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*)
+        worktree="${line#worktree }"
+        ;;
+      locked*)
+        [[ "$worktree" == "$path" ]] && return 0
+        ;;
+    esac
+  done < <(git -C "$repo" worktree list --porcelain 2>/dev/null)
+  return 1
+}
+
+# One state per line (OPEN, MERGED, CLOSED). Empty when the branch has no PR.
+pr_head_states() {
+  local slug=$1 branch=$2
+  command gh pr list --repo "$slug" --head "$branch" --state all \
+    --json state --jq '.[].state'
+}
+
+# pr-<n>-R* is a review epoch, not the PR's head branch, so --head misses it.
+epoch_pr_state() {
+  local slug=$1 branch=$2 number
+  [[ "$branch" =~ ^pr-([1-9][0-9]*)-R[1-9][0-9]*$ ]] || return 1
+  number="${BASH_REMATCH[1]}"
+  command gh pr view "$number" --repo "$slug" --json state --jq '.state'
+}
+
+# Why this branch's worktree should go, or nothing if it should stay.
+# An open PR always wins, including over an older merged PR on the same head.
+removal_reason() {
+  local slug=$1 branch=$2 states_text state open=0 merged=0 epoch_state
+  if ! states_text="$(pr_head_states "$slug" "$branch")"; then
+    printf '%s: could not query PRs for %s\n' "$SCRIPT_NAME" "$branch" >&2
+    return 1
+  fi
+  while IFS= read -r state; do
+    case "$state" in
+      OPEN) open=1 ;;
+      MERGED) merged=1 ;;
+    esac
+  done <<<"$states_text"
+  if [[ "$open" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ "$merged" -eq 1 ]]; then
+    printf '%s\n' "merged PR"
+    return 0
+  fi
+  if epoch_state="$(epoch_pr_state "$slug" "$branch")"; then
+    case "$epoch_state" in
+      MERGED|CLOSED)
+        printf '%s\n' "epoch of ${epoch_state} PR"
+        ;;
+    esac
+  fi
+}
+
+# Force-remove worktrees prune left behind. --force drops leftover uncommitted
+# files (a merged PR's plan.md); -D drops the branch worktrunk still calls
+# unmerged because the squash is outside its walk cap.
+remove_merged_worktrees() {
+  local repo=$1 slug json branch path reason failed_local=0
+  if ! slug="$(github_slug "$repo")"; then
+    return 0
+  fi
+  command -v gh >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || die "jq is required to read worktree status"
+
+  if ! json="$(command wt -C "$repo" list --format=json)"; then
+    printf '%s: wt list failed: %s\n' "$SCRIPT_NAME" "$repo" >&2
+    return 1
+  fi
+
+  while IFS=$'\t' read -r branch path; do
+    [[ -n "$branch" && -n "$path" ]] || continue
+    reason="$(removal_reason "$slug" "$branch")" || failed_local=1
+    [[ -n "$reason" ]] || continue
+    if checkout_is_locked "$repo" "$path"; then
+      printf 'skip locked %s (%s)\n' "$branch" "$reason"
+      continue
+    fi
+    if [[ ${#prune_args[@]} -gt 0 ]]; then
+      printf 'would remove %s (%s)\n' "$branch" "$reason"
+      continue
+    fi
+    printf 'removing %s (%s)\n' "$branch" "$reason"
+    if ! command wt -C "$repo" remove --yes --foreground --force -D "$branch"; then
+      printf '%s: remove failed: %s\n' "$SCRIPT_NAME" "$branch" >&2
+      failed_local=1
+    fi
+  done < <(jq -r '.[] | select(.is_main != true) | select(.branch != null and .branch != "") | [.branch, .path] | @tsv' <<<"$json")
+
+  return "$failed_local"
+}
+
 run_prrr_clean() {
   printf '== prrr --clean\n'
   command prrr --clean
@@ -281,6 +414,10 @@ lock_open_checkouts
 for repo in "${checkouts[@]}"; do
   if ! prune_one "$repo" "${prune_args[@]+"${prune_args[@]}"}"; then
     printf '%s: prune failed: %s\n' "$SCRIPT_NAME" "$repo" >&2
+    failed=1
+  fi
+  if ! remove_merged_worktrees "$repo"; then
+    printf '%s: merged-PR removal failed: %s\n' "$SCRIPT_NAME" "$repo" >&2
     failed=1
   fi
 done

@@ -136,6 +136,66 @@ PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/herdr" \
 assert_eq 'skips prrr --clean on --dry-run' 'absent' \
   "$([[ -e "$guard/prrr-args" ]] && echo present || echo absent)"
 
+# Squash-merged PRs stay after prune: worktrunk cannot prove they are
+# integrated, and a dirty tree is refused. GitHub's merged state is the
+# signal, except for a checkout this run locked because Herdr has it open.
+git -C "$guard/repo" remote add origin git@github.com:example/repo.git
+
+cat >"$guard/bin/wt" <<EOF
+#!/usr/bin/env bash
+if [[ "\$*" == *list* ]]; then
+  printf '%s\n' '[
+    {"branch":"merged-one","path":"${guard}/repo.merged","is_main":false},
+    {"branch":"open-one","path":"${guard}/repo.open-pr","is_main":false},
+    {"branch":"merged-locked","path":"${guard}/repo.open","is_main":false},
+    {"branch":"pr-9-R1","path":"${guard}/repo.epoch","is_main":false},
+    {"branch":"main","path":"${guard}/repo","is_main":true}
+  ]'
+  exit 0
+fi
+if [[ "\$*" == *remove* ]]; then
+  printf '%s\n' "\$*" >>"${guard}/remove-args"
+  exit 0
+fi
+exit 0
+EOF
+
+cat >"$guard/bin/gh" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *"pr view 9"*) printf '%s\n' CLOSED ;;
+  *"--head merged-one"*) printf '%s\n' MERGED ;;
+  *"--head open-one"*) printf '%s\n' OPEN ;;
+  *"--head merged-locked"*) printf '%s\n' MERGED ;;
+esac
+exit 0
+EOF
+chmod +x "$guard/bin/gh"
+
+rm -f "$guard/remove-args"
+PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/herdr" \
+  "$CLEAN" -- "$guard" >/dev/null
+
+assert_eq 'force-removes a worktree whose PR is merged' \
+  "-C ${guard}/repo remove --yes --foreground --force -D merged-one" \
+  "$(grep -F 'merged-one' "$guard/remove-args")"
+assert_eq 'force-removes an epoch checkout for a closed PR' \
+  "-C ${guard}/repo remove --yes --foreground --force -D pr-9-R1" \
+  "$(grep -F 'pr-9-R1' "$guard/remove-args")"
+assert_eq 'leaves a worktree whose PR is still open' 'absent' \
+  "$(grep -F 'open-one' "$guard/remove-args" >/dev/null && echo present || echo absent)"
+assert_eq 'leaves a merged worktree Herdr has open' 'absent' \
+  "$(grep -F 'merged-locked' "$guard/remove-args" >/dev/null && echo present || echo absent)"
+
+rm -f "$guard/remove-args"
+dry="$(PATH="$guard/bin:$PATH" HERDR_BIN_PATH="$guard/bin/herdr" \
+  "$CLEAN" --dry-run -- "$guard" 2>/dev/null)"
+assert_eq 'previews a merged worktree on --dry-run' \
+  "would remove merged-one (merged PR)" \
+  "$(printf '%s\n' "$dry" | grep -F 'merged-one')"
+assert_eq 'does not remove it during --dry-run' 'absent' \
+  "$([[ -e "$guard/remove-args" ]] && echo present || echo absent)"
+
 if [[ "$failures" -ne 0 ]]; then
   exit 1
 fi
