@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Shell(\"codex/skills/pr-review/scripts/test-review-artifacts\")",
+      "Shell(\"cursor/skills/pr-review/scripts/test-review-artifacts\")",
       "Shell(actionlint)",
       "Shell(agent)",
       "Shell(awk)",
@@ -19,6 +20,11 @@
       "Shell(codex/skills/pr-review/scripts/gh-pr-parse)",
       "Shell(codex/skills/pr-review/scripts/test-pr-review-launcher)",
       "Shell(codex/skills/pr-review/scripts/test-review-artifacts)",
+      "Shell(cursor/skills/pr-review/scripts/check-skill-links)",
+      "Shell(cursor/skills/pr-review/scripts/check-skill-package)",
+      "Shell(cursor/skills/pr-review/scripts/gh-pr-parse)",
+      "Shell(cursor/skills/pr-review/scripts/test-pr-review-launcher)",
+      "Shell(cursor/skills/pr-review/scripts/test-review-artifacts)",
       "Shell(command)",
       "Shell(diff)",
       "Shell(echo)",
