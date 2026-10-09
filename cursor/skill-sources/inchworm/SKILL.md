@@ -38,8 +38,8 @@ LaunchAgent ticks call gated `inchworm run`. `inchworm now` is the same core wit
 
 On an eligible `inchworm run`:
 
-1. Preflight before spending anything: `wt`, `origin`, a successful `git fetch origin --prune`, a resolvable trunk (`origin/<base_branch>`, default `main`). A failure here is a day that never started — no stamp, no scouts, no find touched, alert the human, and the next tick in the window retries (see [discover-boundary](references/discover-boundary.md))
-2. Stamp `last_run_date` (burns the day; no second pick same day)
+1. Preflight before spending anything: `wt`, `origin`, a successful `git fetch origin --prune`, a resolvable trunk (`origin/<base_branch>`, default `main`). A failure here is a day that never started — no progress, no stamp, no scouts, no find touched, alert the human, and the next tick in the window retries (see [discover-boundary](references/discover-boundary.md))
+2. Record progress (`state.progress`, find, date, pid). A later tick skips while that pid is alive. A dead pid or a previous day is cleared. `last_run_date` is set when a draft PR opens, or when discover selects nothing
 3. Ensure the finds directory for the repo path hash
 4. Run today's scout. Weekdays rotate one source: Monday smell, Tuesday backlog, Wednesday lint, Thursday errors, Friday slow. Skip it when `finds.md` already has an open find from that source, then pick the best open find from any source. A weekend `inchworm now` uses smell. Fixtures (`INCHWORM_SCOUT_FIXTURE_DIR`) still load every source file. The slow scout uses `pup` against Datadog APM.
 5. Curator merges candidates into `finds.md`, then tidies (drop `deferred`/`too_large`; cap open at 20)
@@ -49,7 +49,7 @@ On an eligible `inchworm run`:
 9. Run a fresh thin-check. The short prompt writes `.inchworm/plan.md` or `not_thin`. It does not follow `writing-simple-plans`. `not_thin` marks the find `too_large` and does not launch the implementer.
 10. Run a fresh implementer. It implements the plan, commits, writes the PR title and body files, and stops.
 11. The shell pushes, opens the draft (`gh pr create --draft`) with the footer already in the body, sets `state.active_draft_pr`, marks the find `in_pr`, runs one Standard `pr-review`, runs one fixer only for a verified blocker, pings, then `wt remove --no-delete-branch` the checkout (keep the branch).
-12. On failure: no second pick (stamp already burned), alert the human, and clean up the checkout. A `not_thin` plan marks the find `too_large`; an implementer failure is `deferred` and opens no PR.
+12. On failure: the same process does not pick a second find. Clear progress, do not stamp the day, alert the human, and clean up the checkout. A later tick may pick again. A `not_thin` plan marks the find `too_large` and also leaves the day unstamped; an implementer failure is `deferred` and opens no PR.
 
 Never pass `--yolo`, `--force`, or `--trust` to any agent. Only the implement branch is ever force-pushed, and only with `--force-with-lease` — never `develop` or `main`. No auto-ready / merge.
 

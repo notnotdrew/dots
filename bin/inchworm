@@ -40,9 +40,9 @@ usage() {
 Usage: inchworm <init|run|now|status|review|launchd-setup>
 
   init           Write repo .inchworm.yml, register cwd in global config, ensure gitignore
-  run            Gated: weekday create window, same-day, and draft gate, then core
-  now            Core only: preflight + stamp + discover + plan + implement + open draft PR + ping
-  status         Show registered repos, last_run_date, create window, draft gate
+  run            Gated: weekday create window, in-progress, same-day, and draft gate, then core
+  now            Core only: skips the schedule and same-day gates; still waits if a run is in progress
+  status         Show registered repos, last_run_date, progress, create window, draft gate
   review         List open drafts, switch Worktrunk, launch a discuss agent
   launchd-setup  Install FDA-scoped runner + generate user-local LaunchAgent plist
 
@@ -1119,7 +1119,7 @@ mark_find_deferred() {
   local find_id=$2
   local reason=$3
   ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" deferred
-  printf 'inchworm: implement failed — %s for F-%s (deferred; stamp burned, no second pick)\n' \
+  printf 'inchworm: implement failed — %s for F-%s (deferred; no draft PR, day not stamped)\n' \
     "$reason" "$find_id"
   notify_failure "$reason" "F-${find_id} deferred"
 }
@@ -1136,16 +1136,16 @@ defer_implement_with_cleanup() {
 }
 
 # The attempt died on something outside the find — the network, gh, the remote.
-# The day is spent either way, but the find was never judged, and `deferred` is
-# dropped by the next tidy. Keeping it open is what lets tomorrow try again
-# instead of losing the find to an outage.
+# No draft PR was opened, so the day stays unstamped and a later tick can retry.
+# The find was never judged, and `deferred` is dropped by the next tidy, so it
+# stays open instead of disappearing into that tidy.
 fail_implement_with_cleanup() {
   local repo_path=$1
   local worktree_path=$2
   local find_id=$3
   local reason=$4
   local branch_name=${5:-}
-  printf 'inchworm: implement failed — %s for F-%s (find stays open; stamp burned, no second pick)\n' \
+  printf 'inchworm: implement failed — %s for F-%s (find stays open; no draft PR, day not stamped)\n' \
     "$reason" "$find_id"
   notify_failure "$reason" "F-${find_id} still open"
   cleanup_implement_worktree "$repo_path" "$worktree_path" "$branch_name"
@@ -1459,6 +1459,7 @@ run_implement_and_pr() {
   local pr_title="" pr_body="" pr_body_file
 
   ymd=$(yyyymmdd_from_today "$today")
+  set_run_progress "$repo_yml" "plan" "$find_id" "$today"
   branch_prefix=$(resolve_branch_prefix "$repo_path" "$repo_yml")
   branch_name="${branch_prefix}/$(branch_slug_from_id "$find_id")-${ymd}"
   worktree_path=""
@@ -1507,6 +1508,7 @@ run_implement_and_pr() {
         return 0
       fi
 
+      set_run_progress "$repo_yml" "implement" "$find_id" "$today"
       if ! implement_with_agent "$worktree_path" "$find_title" "$find_summary" \
         "$find_evidence" "$guidance"; then
         defer_implement_with_cleanup "$repo_path" "$worktree_path" "$find_id" \
@@ -1523,6 +1525,7 @@ run_implement_and_pr() {
       ;;
   esac
 
+  set_run_progress "$repo_yml" "implement" "$find_id" "$today"
   # Shared publish path (fixture success and live). Leftovers land before the
   # no-commits check so an agent that edits and does not commit still ships.
   # A find whose own words name the runner cannot label that commit: use a
@@ -1624,6 +1627,8 @@ run_implement_and_pr() {
   fi
 
   ruby_yaml set_state "$repo_yml" "active_draft_pr" "$pr_url"
+  ruby_yaml set_state "$repo_yml" "last_run_date" "$today"
+  clear_run_progress "$repo_yml"
   ruby_finds set_status "$repo_path" "$DATA_DIR" "$find_id" in_pr
   printf 'inchworm: opened draft PR %s\n' "$pr_url"
 
@@ -1838,8 +1843,71 @@ cmd_init() {
   printf 'inchworm: registered in %s\n' "$CONFIG_FILE"
 }
 
-# Core: preflight + stamp + discover + implement + draft PR + review/fix/ping.
+# Progress is the in-flight lock. last_run_date is the finished day, and it is
+# written only when a draft PR opens or discover has nothing to pick. A tick
+# that sees a live pid skips. A dead pid or a previous day is a crashed run:
+# clear it and let this tick proceed. The human watches for a draft PR.
+CURRENT_PROGRESS_YML=""
+
+clear_run_progress() {
+  local repo_yml=${1:-${CURRENT_PROGRESS_YML:-}}
+  [[ -n "$repo_yml" && -f "$repo_yml" ]] || return 0
+  ruby_yaml set_state "$repo_yml" "progress" "null" || true
+  ruby_yaml set_state "$repo_yml" "progress_find" "null" || true
+  ruby_yaml set_state "$repo_yml" "progress_on" "null" || true
+  ruby_yaml set_state "$repo_yml" "progress_pid" "null" || true
+  if [[ "$repo_yml" == "${CURRENT_PROGRESS_YML:-}" ]]; then
+    CURRENT_PROGRESS_YML=""
+  fi
+}
+
+set_run_progress() {
+  local repo_yml=$1
+  local phase=$2
+  local find_id=${3:-}
+  local today=$4
+
+  CURRENT_PROGRESS_YML=$repo_yml
+  ruby_yaml set_state "$repo_yml" "progress" "$phase"
+  if [[ -n "$find_id" ]]; then
+    ruby_yaml set_state "$repo_yml" "progress_find" "$find_id"
+  else
+    ruby_yaml set_state "$repo_yml" "progress_find" "null"
+  fi
+  ruby_yaml set_state "$repo_yml" "progress_on" "$today"
+  ruby_yaml set_state "$repo_yml" "progress_pid" "$$"
+}
+
+# 0 when this tick should skip. Stale progress is cleared and the tick proceeds.
+skip_if_run_in_progress() {
+  local repo_path=$1
+  local repo_yml=$2
+  local today=$3
+  local phase on pid find_id
+
+  phase=$(ruby_yaml get "$repo_yml" "state.progress")
+  if [[ -z "$phase" || "$phase" == "null" ]]; then
+    return 1
+  fi
+  on=$(ruby_yaml get "$repo_yml" "state.progress_on")
+  pid=$(ruby_yaml get "$repo_yml" "state.progress_pid")
+  find_id=$(ruby_yaml get "$repo_yml" "state.progress_find")
+  if [[ "$on" != "$today" ]] || [[ -z "$pid" || "$pid" == "null" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    printf 'inchworm: clearing stale progress on %s (%s)\n' "$repo_path" "$phase"
+    clear_run_progress "$repo_yml"
+    return 1
+  fi
+  if [[ -n "$find_id" && "$find_id" != "null" ]]; then
+    printf 'inchworm: skip %s — in progress (%s F-%s)\n' "$repo_path" "$phase" "$find_id"
+  else
+    printf 'inchworm: skip %s — in progress (%s)\n' "$repo_path" "$phase"
+  fi
+  return 0
+}
+
+# Core: preflight + progress + discover + implement + draft PR + review/fix/ping.
 # Schedule, same-day, and blocking-draft gates live only on the auto entry point.
+# A live progress record blocks both entry points so two ticks cannot overlap.
 run_core_for_repo() {
   local repo_path=$1
   local today=$2
@@ -1853,9 +1921,10 @@ run_core_for_repo() {
 
   load_base_branch "$repo_yml"
 
-  # Nothing below this point is free — scouts cost agent calls and the stamp
-  # burns the day — so the things that must hold for any of it to land are
-  # checked first. A failure here is a day that never started.
+  # Nothing below this point is free — scouts cost agent calls — so the things
+  # that must hold for any of it to land are checked first. A failure here is a
+  # day that never started. Progress is recorded after that. The day is stamped
+  # when a draft PR opens, or when there is nothing left to pick.
   if ! preflight_reason=$(preflight_repo "$repo_path" "${INCHWORM_IMPLEMENT_FIXTURE:-}"); then
     printf 'inchworm: skip %s — preflight failed: %s (no stamp; next tick in the window retries)\n' \
       "$repo_path" "$preflight_reason"
@@ -1864,24 +1933,28 @@ run_core_for_repo() {
   fi
 
   ruby_yaml set_state "$repo_yml" "active_draft_pr" "null"
-  ruby_yaml set_state "$repo_yml" "last_run_date" "$today"
+  set_run_progress "$repo_yml" "discover" "" "$today"
   printf 'inchworm: eligible %s — discover\n' "$repo_path"
   discover_out=$(discover_pipeline "$repo_path")
   printf '%s\n' "$discover_out"
 
   selected_line=$(printf '%s\n' "$discover_out" | grep -E 'inchworm: selected F-' | head -n1 || true)
   if [[ -z "$selected_line" ]]; then
+    ruby_yaml set_state "$repo_yml" "last_run_date" "$today"
+    clear_run_progress "$repo_yml"
     return 0
   fi
 
   find_id=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-\([^ ]*\).*/\1/p')
   find_title=$(printf '%s\n' "$selected_line" | sed -n 's/^inchworm: selected F-[^ ]* — //p')
   if [[ -z "$find_id" ]]; then
+    clear_run_progress "$repo_yml"
     return 0
   fi
   [[ -n "$find_title" ]] || find_title="$find_id"
 
   run_implement_and_pr "$repo_path" "$repo_yml" "$find_id" "$find_title" "$today"
+  clear_run_progress "$repo_yml"
 }
 
 cmd_run() {
@@ -1915,6 +1988,10 @@ cmd_run() {
       continue
     fi
 
+    if skip_if_run_in_progress "$repo_path" "$repo_yml" "$today"; then
+      continue
+    fi
+
     last_run=$(ruby_yaml get "$repo_yml" "state.last_run_date")
     if [[ "$last_run" == "$today" ]]; then
       printf 'inchworm: skip %s — already launched today (same-day; last_run_date=%s)\n' \
@@ -1939,12 +2016,16 @@ cmd_run() {
 }
 
 cmd_now() {
-  local today repo_path
+  local today repo_path repo_yml
 
   read -r today _ _ _ <<<"$(parse_clock)"
 
   while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
     [[ -z "$repo_path" ]] && continue
+    repo_yml="${repo_path}/.inchworm.yml"
+    if [[ -f "$repo_yml" ]] && skip_if_run_in_progress "$repo_path" "$repo_yml" "$today"; then
+      continue
+    fi
     run_core_for_repo "$repo_path" "$today"
   done < <(list_registered_repos)
 }
@@ -2008,7 +2089,7 @@ cmd_review() {
 cmd_status() {
   local weekday hour minute
   local repo_path repo_yml last_run blocking window_label
-  local draft_url draft_head
+  local draft_url draft_head progress progress_find
 
   read -r _ weekday hour minute <<<"$(parse_clock)"
   window_label="$(window_label_for "$weekday" "$hour" "$minute")"
@@ -2017,13 +2098,22 @@ cmd_status() {
     [[ -z "$repo_path" ]] && continue
     repo_yml="${repo_path}/.inchworm.yml"
     last_run="null"
+    progress="idle"
     if [[ -f "$repo_yml" ]]; then
       last_run=$(ruby_yaml get "$repo_yml" "state.last_run_date")
+      progress=$(ruby_yaml get "$repo_yml" "state.progress")
+      progress_find=$(ruby_yaml get "$repo_yml" "state.progress_find")
+      if [[ -z "$progress" || "$progress" == "null" ]]; then
+        progress="idle"
+      elif [[ -n "$progress_find" && "$progress_find" != "null" ]]; then
+        progress="${progress} F-${progress_find}"
+      fi
     fi
 
     blocking=$(find_blocking_draft "$repo_path" "$repo_yml" || true)
     printf 'repo: %s\n' "$repo_path"
     printf '  last_run_date: %s\n' "$last_run"
+    printf '  progress: %s\n' "$progress"
     printf '  create_window: %s\n' "$window_label"
     if [[ -n "$blocking" ]]; then
       draft_url=${blocking%%$'\t'*}
@@ -2036,6 +2126,8 @@ cmd_status() {
 }
 
 main() {
+  trap clear_run_progress EXIT
+
   if [[ $# -lt 1 ]]; then
     usage >&2
     exit 1

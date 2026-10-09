@@ -111,7 +111,11 @@ when "ensure_repo_yml"
         "base_branch" => "",
         "state" => {
           "last_run_date" => nil,
-          "active_draft_pr" => nil
+          "active_draft_pr" => nil,
+          "progress" => nil,
+          "progress_find" => nil,
+          "progress_on" => nil,
+          "progress_pid" => nil
         }
       }
     )

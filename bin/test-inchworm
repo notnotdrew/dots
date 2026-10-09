@@ -1249,6 +1249,7 @@ setup_eligible_run_env() {
   seed_registered_repo "$repo_dir" "$config_dir" "null"
   add_local_origin "$repo_dir" "$origin_dir"
   write_mock_gh "$mock_gh" "none"
+  rm -f "${mock_gh}.created-branch"
   write_mock_pr_review "$mock_pr_review"
   write_mock_notify "$mock_notify"
   mkdir -p "$data_dir" "$fixture_dir"
@@ -1796,7 +1797,7 @@ test_run_pretrusts_implement_worktree() {
 }
 
 test_run_implement_failure_defers_without_pr_or_second_pick() {
-  test_name="implement fail marks deferred, no PR, stamp burned; skips review/fix/ping"
+  test_name="implement fail marks deferred, no PR, day not stamped; skips review/fix/ping"
   now="2026-08-18T10:00:00"
   implement_fixture=fail
   setup_eligible_run_env "impl-fail"
@@ -1832,8 +1833,12 @@ test_run_implement_failure_defers_without_pr_or_second_pick() {
   elif ! grep -qiE 'implement (fail|failed)|deferred|too_?large|could not implement' "$out_file"; then
     problems="${problems}expected implement-failed / deferred signal in output"$'\n'
   fi
-  if [ "$after_last" != "2026-08-18" ]; then
-    problems="${problems}expected last_run_date stamped 2026-08-18, got: $after_last"$'\n'
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}last_run_date must stay null when no draft PR opened, got: $after_last"$'\n'
+  fi
+  progress=$(yaml_get "$repo_dir/.inchworm.yml" "state.progress" 2>/dev/null || printf 'ERR')
+  if [ "$progress" != "null" ]; then
+    problems="${problems}progress must clear when the run finishes without a PR, got: $progress"$'\n'
   fi
   if [ "$draft_cache" != "null" ]; then
     problems="${problems}active_draft_pr must stay null on implement failure, got: $draft_cache"$'\n'
@@ -1875,7 +1880,7 @@ test_run_implement_failure_defers_without_pr_or_second_pick() {
     problems="${problems}implement fail must not run fixer (fix fixture side-effect present)"$'\n'
   fi
 
-  # Same-day relaunch still refused — stamp burned; no re-pick.
+  # The failed attempt did not open a draft, so the next tick may pick again.
   : >"$TEST_ROOT/gh-invocations.log"
   second_out="$TEST_ROOT/run-impl-fail-second-out.txt"
   (
@@ -1886,18 +1891,23 @@ test_run_implement_failure_defers_without_pr_or_second_pick() {
     export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
     export INCHWORM_IMPLEMENT_FIXTURE=success
     export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
     export INCHWORM_NOTIFY="$mock_notify"
     export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
     run_inchworm run
   ) >"$second_out" 2>&1
-  if ! grep -qiE 'already|same.?day|last_run|launched today' "$second_out"; then
-    problems="${problems}same-day run after implement failure must refuse"$'\n'
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  if grep -qiE 'already launched today|in progress' "$second_out"; then
+    problems="${problems}next tick after a no-PR failure must not skip"$'\n'
   fi
-  if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
-    problems="${problems}same-day refuse must not open a PR"$'\n'
+  if ! grep -q 'smell-second' "$second_out"; then
+    problems="${problems}next tick must pick the remaining open find"$'\n'
   fi
-  if grep -qiE 'smell-second|Second find' "$second_out"; then
-    problems="${problems}same-day refuse must not pick second find"$'\n'
+  if ! assert_gh_pr_create_draft "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}next tick must be able to open a draft"$'\n'"$(cat "$TEST_ROOT/gh-invocations.log" 2>/dev/null || true)"$'\n'
+  fi
+  if [ "$after_last" != "2026-08-18" ]; then
+    problems="${problems}day is stamped once a draft PR opens, got: $after_last"$'\n'
   fi
 
   if [ -n "$problems" ]; then
@@ -1914,7 +1924,7 @@ test_run_implement_too_large_marks_without_pr() {
   setup_eligible_run_env "impl-large"
 
   write_smell_candidates_json "$fixture_dir" \
-    '[{"id":"smell-huge","source":"smell","title":"Huge refactor","summary":"Too large for one day","rank":1,"status":"open"}]'
+    '[{"id":"smell-huge","source":"smell","title":"Huge refactor","summary":"Too large for one day","rank":1,"status":"open"},{"id":"smell-next","source":"smell","title":"Next small cleanup","summary":"Eligible after the pre-check","rank":2,"status":"open"}]'
 
   out_file="$TEST_ROOT/run-impl-large-out.txt"
   (
@@ -1933,8 +1943,12 @@ test_run_implement_too_large_marks_without_pr() {
   finds_md=$(finds_md_for "$data_dir" "$repo_dir")
 
   problems=""
-  if [ "$after_last" != "2026-08-18" ]; then
-    problems="${problems}expected stamp 2026-08-18, got: $after_last"$'\n'
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}a too_large pre-check must not stamp the day, got: $after_last"$'\n'
+  fi
+  progress=$(yaml_get "$repo_dir/.inchworm.yml" "state.progress" 2>/dev/null || printf 'ERR')
+  if [ "$progress" != "null" ]; then
+    problems="${problems}progress must clear after too_large, got: $progress"$'\n'
   fi
   if [ "$draft_cache" != "null" ]; then
     problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
@@ -1949,9 +1963,157 @@ test_run_implement_too_large_marks_without_pr() {
   if ! grep -qiE 'too_?large|too large' "$out_file"; then
     problems="${problems}expected too_large signal in output"$'\n'
   fi
+  if grep -q 'smell-next' "$out_file"; then
+    problems="${problems}the same run must not pick the next find"$'\n'
+  fi
+
+  : >"$TEST_ROOT/gh-invocations.log"
+  second_out="$TEST_ROOT/run-impl-large-second-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE=success
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$second_out" 2>&1
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  if ! grep -q 'smell-next' "$second_out"; then
+    problems="${problems}next tick must pick the remaining open find"$'\n'
+  fi
+  if [ "$after_last" != "2026-08-18" ]; then
+    problems="${problems}day is stamped once a draft PR opens, got: $after_last"$'\n'
+  fi
 
   if [ -n "$problems" ]; then
-    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" \
+      "second:" "$(cat "$second_out" 2>/dev/null || true)" \
+      "finds.md:" "$(cat "$finds_md" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+write_progress_state() {
+  repo_yml=$1
+  phase=$2
+  find_id=$3
+  on=$4
+  pid=$5
+  mise exec -- ruby -ryaml -e '
+    path, phase, find_id, on, pid = ARGV
+    data = YAML.load_file(path)
+    data["state"] ||= {}
+    data["state"]["progress"] = phase
+    data["state"]["progress_find"] = find_id
+    data["state"]["progress_on"] = on
+    data["state"]["progress_pid"] = pid
+    File.write(path, YAML.dump(data))
+  ' "$repo_yml" "$phase" "$find_id" "$on" "$pid"
+}
+
+test_run_skips_while_progress_pid_is_alive() {
+  test_name="run skips while a progress pid is still alive"
+  now="2026-08-18T10:00:00"
+  setup_eligible_run_env "in-progress"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"held","source":"smell","title":"Held by the live run","summary":"must not start","rank":1,"status":"open"}]'
+  sleep 120 &
+  holder=$!
+  write_progress_state "$repo_dir/.inchworm.yml" "plan" "held" "2026-08-18" "$holder"
+
+  out_file="$TEST_ROOT/run-in-progress-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE=success
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  progress=$(yaml_get "$repo_dir/.inchworm.yml" "state.progress" 2>/dev/null || printf 'ERR')
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -q 'in progress (plan F-held)' "$out_file"; then
+    problems="${problems}expected an in-progress skip"$'\n'
+  fi
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}in-progress skip must not stamp the day, got: $after_last"$'\n'
+  fi
+  if [ "$progress" != "plan" ]; then
+    problems="${problems}live progress must stay put, got: $progress"$'\n'
+  fi
+  if ! assert_no_gh_pr_create "$TEST_ROOT/gh-invocations.log"; then
+    problems="${problems}in-progress skip must not open a PR"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_clears_stale_progress_and_proceeds() {
+  test_name="run clears a dead progress pid and can still open a draft"
+  now="2026-08-18T10:00:00"
+  implement_fixture=success
+  setup_eligible_run_env "stale-progress"
+  write_smell_candidates_json "$fixture_dir" \
+    '[{"id":"after-crash","source":"smell","title":"After a crashed run","summary":"the pid is gone","rank":1,"status":"open"}]'
+  write_progress_state "$repo_dir/.inchworm.yml" "implement" "after-crash" "2026-08-18" "99999999"
+
+  out_file="$TEST_ROOT/run-stale-progress-out.txt"
+  (
+    export INCHWORM_CONFIG_DIR="$config_dir"
+    export INCHWORM_NOW="$now"
+    export INCHWORM_GH="$mock_gh"
+    export INCHWORM_DATA_DIR="$data_dir"
+    export INCHWORM_SCOUT_FIXTURE_DIR="$fixture_dir"
+    export INCHWORM_IMPLEMENT_FIXTURE="$implement_fixture"
+    export INCHWORM_PR_REVIEW="$mock_pr_review"
+    export INCHWORM_REVIEW_FIXTURE=none
+    export INCHWORM_NOTIFY="$mock_notify"
+    export INCHWORM_AGENT="$TEST_ROOT/fake-bin/agent"
+    run_inchworm run
+  ) >"$out_file" 2>&1
+  status=$?
+
+  after_last=$(yaml_get "$repo_dir/.inchworm.yml" "state.last_run_date" 2>/dev/null || printf 'ERR')
+  progress=$(yaml_get "$repo_dir/.inchworm.yml" "state.progress" 2>/dev/null || printf 'ERR')
+  problems=""
+  if [ "$status" -ne 0 ]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -q 'clearing stale progress' "$out_file"; then
+    problems="${problems}expected stale progress to be cleared"$'\n'
+  fi
+  if ! grep -q 'after-crash' "$out_file"; then
+    problems="${problems}expected the find to be picked after the stale lock"$'\n'
+  fi
+  if [ "$after_last" != "2026-08-18" ]; then
+    problems="${problems}expected the day stamped once a draft opened, got: $after_last"$'\n'
+  fi
+  if [ "$progress" != "null" ]; then
+    problems="${problems}progress must be clear after the run, got: $progress"$'\n'
+  fi
+
+  if [ -n "$problems" ]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
     return
   fi
   pass "$test_name"
@@ -3639,8 +3801,8 @@ test_run_defers_when_rewrite_fallback_also_names_the_runner() {
   if [ "$draft_cache" != "null" ]; then
     problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
   fi
-  if [ "$after_last" != "2026-08-18" ]; then
-    problems="${problems}stamp must still be burned, got: $after_last"$'\n'
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}last_run_date must stay null when no draft PR opened, got: $after_last"$'\n'
   fi
   if [ ! -f "$finds_md" ]; then
     problems="${problems}missing finds.md"$'\n'
@@ -4192,10 +4354,9 @@ test_run_preflight_fetch_failure_skips_without_stamp() {
 }
 
 test_run_draft_pr_create_failure_keeps_find_open() {
-  # The implementer did real work, so the day is spent — but the find was never
-  # judged, and `deferred` is dropped by the next tidy. Losing a find to a gh
-  # outage is the bug; keep it open so tomorrow can pick it up again.
-  test_name="failed draft PR create burns the day, keeps the find open, and alerts"
+  # No draft PR was opened, so the day stays open. The find was never judged,
+  # and `deferred` is dropped by the next tidy, so keep it open for a later tick.
+  test_name="failed draft PR create does not stamp the day, keeps the find open, and alerts"
   now="2026-08-18T10:00:00"
   implement_fixture=success
   setup_eligible_run_env "pr-create-fail"
@@ -4227,8 +4388,8 @@ test_run_draft_pr_create_failure_keeps_find_open() {
   if [ "$status" -ne 0 ]; then
     problems="${problems}expected exit 0 (soft fail), got $status"$'\n'
   fi
-  if [ "$after_last" != "2026-08-18" ]; then
-    problems="${problems}expected last_run_date stamped 2026-08-18 (work was attempted), got: $after_last"$'\n'
+  if [ "$after_last" != "null" ]; then
+    problems="${problems}last_run_date must stay null when the draft PR was not created, got: $after_last"$'\n'
   fi
   if [ "$draft_cache" != "null" ]; then
     problems="${problems}active_draft_pr must stay null, got: $draft_cache"$'\n'
@@ -5983,6 +6144,8 @@ run_test test_now_proceeds_with_blocking_draft
 run_test test_run_pretrusts_implement_worktree
 run_test test_run_implement_failure_defers_without_pr_or_second_pick
 run_test test_run_implement_too_large_marks_without_pr
+run_test test_run_skips_while_progress_pid_is_alive
+run_test test_run_clears_stale_progress_and_proceeds
 run_test test_finds_path_hash_isolates_repos
 run_test test_run_pick_none_when_no_open_finds
 run_test test_run_discover_parses_utf8_finds_under_c_locale

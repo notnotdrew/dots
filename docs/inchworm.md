@@ -32,7 +32,7 @@ One small change per weekday. It opens a draft PR and then stops.
 
 Two early mistakes:
 
-- Stamp the date before writing any code. Otherwise a crash tries again on a different find and produces two PRs.
+- Record progress while a run is alive, and stamp the day when a draft PR opens. A tick that arrives during the run does not start a second one. A run that finishes with no draft PR leaves the day open, so the next tick can pick again. No draft PR is the signal that the day did not finish.
 - Keep the tool's name out of the branch, the commit, and the PR title. The body ends with one line linking here: Picked and implemented by inchworm.
 
 ## Things it won't do

@@ -42,5 +42,5 @@ The **implementer** works only on the selected plan, inside the coordinator-crea
 ## Outcomes the coordinator expects
 
 - Success → the shell pushes, opens the draft from the title and body (footer already in the body), sets `active_draft_pr`, marks the find `in_pr`, reviews once, optionally fixes, pings, and removes the checkout
-- Implementer non-zero, or a plan with no commits → find marked `deferred`; stamp burned; no second pick; no PR
+- Implementer non-zero, or a plan with no commits → find marked `deferred`; progress cleared; day not stamped; no PR from this process
 - Planner `not_thin` → find marked `too_large`; no implementer; no PR

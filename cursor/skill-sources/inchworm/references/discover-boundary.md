@@ -2,12 +2,13 @@
 
 After scouts → curator → pick, either a find is selected or none remains.
 
-## Preflight (before the stamp)
+## Preflight (before progress)
 
-Scouts cost agent calls and the stamp burns the day, so the conditions the day
-depends on are checked while nothing has been spent yet: `wt` on `PATH`, an
-`origin` remote, a successful `git fetch origin --prune`, and a resolvable
-trunk (`origin/<base_branch>`, default `main`).
+Scouts cost agent calls, so the conditions the day depends on are checked while
+nothing has been spent yet: `wt` on `PATH`, an `origin` remote, a successful
+`git fetch origin --prune`, and a resolvable trunk (`origin/<base_branch>`,
+default `main`). Progress is recorded after that. `last_run_date` is written
+when a draft PR opens, or when this discover selects nothing.
 
 A preflight failure is an unattempted day, not a failed one:
 
@@ -35,6 +36,6 @@ implement time, so fixture repos without a remote still run.
 
 - Do not pass `--yolo`, `--force`, or `--trust` to the agent
 - Do not open a draft PR before implement succeeds
-- Do not pick a second find if implement later fails (stamp already burned)
+- Do not pick a second find in this process. A later tick may, because a run with no draft PR does not stamp the day
 
 If no open finds remain after merge, print a clear none / no eligible find message and exit successfully.

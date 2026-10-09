@@ -10,7 +10,7 @@ publishes the draft itself.
 - Branch name: `<branch_prefix>/<slug>-<YYYYMMDD>` (see [authored-output](authored-output.md); date from `INCHWORM_NOW` / today)
 - Base from the freshly fetched trunk, `origin/<base_branch>` (`--create --base=origin/<base_branch>` when the branch is new; attach without `--create` when it already exists)
 - If a stale directory already sits at the target path, `--clobber` (or remove/recreate) and still succeed
-- `origin` missing, `git fetch origin --prune` failing, or the trunk unresolvable is caught by preflight before the stamp (see [discover-boundary](discover-boundary.md)); reaching implement without a base is a soft-fail that leaves the find `open`
+- `origin` missing, `git fetch origin --prune` failing, or the trunk unresolvable is caught by preflight before progress is recorded (see [discover-boundary](discover-boundary.md)); reaching implement without a base is a soft-fail that leaves the find `open`
 
 ## Deterministic fixtures (`INCHWORM_IMPLEMENT_FIXTURE`)
 
@@ -50,8 +50,8 @@ On failure (planner or implementer non-zero, missing plan, no commits, a rewrite
 that cannot be published, `too_large`, or inability to resolve the trunk):
 
 - Do **not** call `gh pr create` (or stop if create already failed)
-- Leave `active_draft_pr` null
-- Do **not** pick a second find — the day's stamp is already burned
+- Leave `active_draft_pr` null and do **not** stamp `last_run_date`
+- Do **not** pick a second find in this process. Clear progress so a later tick can pick again
 - Do not launch any later stage or ping a nonexistent draft
 - Alert the human (the same notify channel as the ping, carrying the reason and no PR URL) — a day that ends without a draft is never log-only
 - If a worktree was created for this attempt, clean it up (keep any branch it created)

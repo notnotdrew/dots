@@ -12,6 +12,10 @@ base_branch: ""
 state:
   last_run_date: null
   active_draft_pr: null
+  progress: null
+  progress_find: null
+  progress_on: null
+  progress_pid: null
 ```
 
 ## `guidance`
@@ -37,8 +41,14 @@ Set this when a repo renames its trunk. The preflight fetch prunes, so a trunk t
 
 Coordinator-owned. Do not hand-edit unless recovering from a stuck run.
 
-- `last_run_date` — local calendar day of the last core run (gated or `now`)
+- `last_run_date` — local calendar day a draft PR was opened, or discover selected nothing
 - `active_draft_pr` — URL of the open draft PR from the last run, if any
+- `progress` — `discover`, `plan`, `implement`, or `review` while that pid is alive; null when the run has finished
+- `progress_find` — find id for the in-flight phase
+- `progress_on` — local calendar day progress was written
+- `progress_pid` — pid of the inchworm process holding the lock
+
+A tick skips while `progress` is set, `progress_on` is today, and `progress_pid` is alive. A dead pid or an older date is cleared.
 
 ## Draft gate
 
