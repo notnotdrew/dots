@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# Coordinator init: write slowfriday/, register cwd, ensure the global gitignore entry.
+#
+# Usage:
+#   slowfriday init
+
+set -euo pipefail
+
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME
+readonly SCRIPT_DIR
+
+readonly YAML_HELPER="${SCRIPT_DIR}/lib/slowfriday_yaml.rb"
+readonly CONFIG_DIR="${SLOWFRIDAY_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/slowfriday}"
+readonly CONFIG_FILE="${CONFIG_DIR}/config.yml"
+readonly GITIGNORE_GLOBAL="${SLOWFRIDAY_GITIGNORE_GLOBAL:-$HOME/.gitignore_global}"
+
+die() {
+  printf '%s: error: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: slowfriday <init>
+
+  init    Write the slowfriday directory, register cwd, and ensure the gitignore entry
+EOF
+}
+
+# Prefer mise Ruby when PATH is minimal and the shell has not been initialized.
+resolve_mise() {
+  local candidate
+  if command -v mise >/dev/null 2>&1; then
+    command -v mise
+    return 0
+  fi
+  for candidate in \
+    "${HOME}/.local/bin/mise" \
+    /opt/homebrew/bin/mise \
+    /usr/local/bin/mise
+  do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ruby_yaml() {
+  local mise_bin
+  if mise_bin=$(resolve_mise); then
+    "$mise_bin" exec -- ruby "$YAML_HELPER" "$@"
+  else
+    ruby "$YAML_HELPER" "$@"
+  fi
+}
+
+ensure_gitignore_entry() {
+  local file=$1
+  local line="slowfriday/"
+  touch "$file"
+  if ! grep -Fxq -- "$line" "$file"; then
+    printf '%s\n' "$line" >>"$file"
+  fi
+}
+
+write_guide() {
+  local path=$1
+  [[ -f "$path" ]] && return 0
+  cat >"$path" <<'EOF'
+# Guide
+
+This file is the procedure the Friday run follows.
+EOF
+}
+
+write_log() {
+  local path=$1
+  [[ -s "$path" ]] && return 0
+  printf '%s\n' '# Log' >"$path"
+}
+
+cmd_init() {
+  local repo_root dir
+
+  repo_root=$(pwd) || die "could not resolve the current directory"
+  [[ "$repo_root" == /* ]] || die "current directory is not absolute: $repo_root"
+
+  dir="${repo_root}/slowfriday"
+  mkdir -p "${dir}/notes"
+  write_guide "${dir}/guide.md"
+  write_log "${dir}/log.md"
+  ruby_yaml ensure_repo_config "${dir}/config.yml"
+
+  mkdir -p "$CONFIG_DIR"
+  ruby_yaml ensure_global "$CONFIG_FILE"
+  ruby_yaml register_repo "$CONFIG_FILE" "$repo_root"
+  ensure_gitignore_entry "$GITIGNORE_GLOBAL"
+
+  printf 'slowfriday: initialized %s\n' "$repo_root"
+  printf 'slowfriday: registered in %s\n' "$CONFIG_FILE"
+}
+
+main() {
+  if [[ $# -lt 1 ]]; then
+    usage >&2
+    exit 1
+  fi
+
+  case "$1" in
+    -h|--help)
+      usage
+      ;;
+    init)
+      shift
+      cmd_init "$@"
+      ;;
+    *)
+      usage >&2
+      die "unknown command: $1"
+      ;;
+  esac
+}
+
+main "$@"

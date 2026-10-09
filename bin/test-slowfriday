@@ -1,0 +1,453 @@
+#!/usr/bin/env bash
+# Init harness for slowfriday. Failures are recorded; the suite does not exit
+# on the first one. Tests set SLOWFRIDAY_CONFIG_DIR and
+# SLOWFRIDAY_GITIGNORE_GLOBAL so they never touch the real home config.
+
+set -u
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+DOTS=$(CDPATH= cd "$SCRIPT_DIR/.." && pwd)
+SLOWFRIDAY="$DOTS/bin/slowfriday"
+YAML_HELPER="$DOTS/bin/lib/slowfriday_yaml.rb"
+DOCS_FILE="$DOTS/docs/slowfriday.md"
+
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-slowfriday.XXXXXX") || exit 1
+TEST_ROOT=$(CDPATH= cd "$TEST_ROOT" && pwd)
+trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+tests_run=0
+tests_failed=0
+
+# --- helpers -----------------------------------------------------------------
+
+pass() {
+  printf '%s\n' "ok - $1"
+}
+
+fail() {
+  printf '%s\n' "not ok - $1"
+  if [[ $# -gt 1 ]]; then
+    shift
+    printf '%s\n' "$@"
+  fi
+  tests_failed=$((tests_failed + 1))
+}
+
+run_test() {
+  if [[ -n "${SLOWFRIDAY_TEST_FILTER:-}" ]]; then
+    case "$1" in
+      *"$SLOWFRIDAY_TEST_FILTER"*) ;;
+      *) return 0 ;;
+    esac
+  fi
+  tests_run=$((tests_run + 1))
+  "$@"
+}
+
+write_yaml_helpers() {
+  cat >"$TEST_ROOT/yaml_repo_count.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+wanted = ARGV.fetch(1)
+data = YAML.load_file(path)
+repos = data.is_a?(Hash) ? (data["repos"] || data[:repos] || []) : []
+paths = Array(repos).map do |entry|
+  entry.is_a?(Hash) ? (entry["path"] || entry[:path]).to_s : entry.to_s
+end
+print paths.count { |repo_path| repo_path == wanted }
+RUBY
+
+  cat >"$TEST_ROOT/yaml_set_trunk.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+trunk = ARGV.fetch(1)
+data = YAML.load_file(path)
+data = {} unless data.is_a?(Hash)
+data["trunk"] = trunk
+File.write(path, YAML.dump(data))
+RUBY
+
+  cat >"$TEST_ROOT/yaml_expect.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+spec = ARGV.fetch(1)
+key_path, kind = spec.split("=", 2)
+keys = key_path.split(".")
+data = YAML.load_file(path)
+missing = false
+value = keys.reduce(data) do |current, key|
+  unless current.is_a?(Hash) && (current.key?(key) || current.key?(key.to_sym))
+    missing = true
+    break nil
+  end
+
+  current.key?(key) ? current[key] : current[key.to_sym]
+end
+
+ok =
+  case kind
+  when "absent"
+    missing
+  when "blank"
+    !missing && value.is_a?(String) && value.empty?
+  when /\Aint:(-?\d+)\z/
+    !missing && value.is_a?(Integer) && value == Regexp.last_match(1).to_i
+  when "bool:true"
+    !missing && value.equal?(true)
+  when "bool:false"
+    !missing && value.equal?(false)
+  when /\Astr:(.*)\z/
+    !missing && value.is_a?(String) && value == Regexp.last_match(1)
+  when /\Aarray:(.*)\z/
+    expected = Regexp.last_match(1).empty? ? [] : Regexp.last_match(1).split(",")
+    !missing && value.is_a?(Array) && value == expected
+  else
+    warn "unknown expect spec: #{spec}"
+    false
+  end
+
+unless ok
+  warn "expected #{spec} at #{key_path}, missing=#{missing} value=#{value.inspect} class=#{value.class}"
+  exit 1
+end
+RUBY
+
+  cat >"$TEST_ROOT/yaml_add_repo.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+repo_path = ARGV.fetch(1)
+data = YAML.load_file(path)
+data = {} unless data.is_a?(Hash)
+repos = data["repos"]
+repos = [] unless repos.is_a?(Array)
+repos << { "path" => repo_path }
+data["repos"] = repos
+File.write(path, YAML.dump(data))
+RUBY
+}
+
+yaml_repo_occurrences() {
+  mise exec -- ruby "$TEST_ROOT/yaml_repo_count.rb" "$1" "$2"
+}
+
+yaml_set_trunk() {
+  mise exec -- ruby "$TEST_ROOT/yaml_set_trunk.rb" "$1" "$2"
+}
+
+yaml_expect() {
+  mise exec -- ruby "$TEST_ROOT/yaml_expect.rb" "$1" "$2"
+}
+
+yaml_add_repo() {
+  mise exec -- ruby "$TEST_ROOT/yaml_add_repo.rb" "$1" "$2"
+}
+
+files_match() {
+  cmp -s "$1" "$2"
+}
+
+make_repo() {
+  local repo_dir=$1
+  mkdir -p "$repo_dir"
+  git -C "$repo_dir" init -q
+  git -C "$repo_dir" config user.email "fixture@example.com"
+  git -C "$repo_dir" config user.name "Fixture Author"
+  printf '%s\n' "# fixture" >"$repo_dir/README.md"
+  git -C "$repo_dir" add README.md
+  git -C "$repo_dir" commit -q -m "fixture"
+  git -C "$repo_dir" branch -M main
+}
+
+run_init() {
+  local repo_dir=$1
+  local config_dir=$2
+  local gitignore_file=$3
+  (
+    cd "$repo_dir" || exit 1
+    export SLOWFRIDAY_CONFIG_DIR="$config_dir"
+    export SLOWFRIDAY_GITIGNORE_GLOBAL="$gitignore_file"
+    "$SLOWFRIDAY" init
+  )
+}
+
+# --- tests -------------------------------------------------------------------
+
+test_init_creates_files_registry_and_gitignore() {
+  local test_name="init creates guide, config, log, and notes; registers once; appends gitignore"
+  local config_dir="$TEST_ROOT/init-config"
+  local gitignore_file="$TEST_ROOT/init-gitignore"
+  local repo_dir="$TEST_ROOT/init-repo"
+  local out_file="$TEST_ROOT/init-out.txt"
+  local status problems count
+  local repo_yml global_yml
+
+  mkdir -p "$config_dir"
+  printf '%s\n' '# keep' >"$gitignore_file"
+  make_repo "$repo_dir"
+
+  run_init "$repo_dir" "$config_dir" "$gitignore_file" >"$out_file" 2>&1
+  status=$?
+
+  if [[ "$status" -ne 0 ]]; then
+    fail "$test_name" "expected exit 0, got $status" "output:" "$(cat "$out_file")"
+    return
+  fi
+
+  repo_yml="$repo_dir/slowfriday/config.yml"
+  global_yml="$config_dir/config.yml"
+  problems=""
+
+  if [[ ! -f "$repo_dir/slowfriday/guide.md" ]]; then
+    problems="${problems}missing guide.md"$'\n'
+  elif ! grep -F -q -- 'This file is the procedure the Friday run follows.' "$repo_dir/slowfriday/guide.md"; then
+    problems="${problems}guide.md missing the procedure sentence"$'\n'
+  fi
+
+  if [[ ! -f "$repo_dir/slowfriday/log.md" ]]; then
+    problems="${problems}missing log.md"$'\n'
+  elif [[ ! -s "$repo_dir/slowfriday/log.md" ]]; then
+    problems="${problems}log.md is empty"$'\n'
+  fi
+
+  if [[ ! -d "$repo_dir/slowfriday/notes" ]]; then
+    problems="${problems}missing notes/"$'\n'
+  fi
+
+  if [[ ! -f "$repo_yml" ]]; then
+    problems="${problems}missing $repo_yml"$'\n'
+  else
+    if ! yaml_expect "$repo_yml" "version=int:1"; then
+      problems="${problems}expected version integer 1"$'\n'
+    fi
+    if ! yaml_expect "$repo_yml" "trunk=blank"; then
+      problems="${problems}expected trunk to be a blank string"$'\n'
+    fi
+    if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+      problems="${problems}expected progress_pid to be absent"$'\n'
+    fi
+  fi
+
+  if [[ ! -f "$global_yml" ]]; then
+    problems="${problems}missing $global_yml"$'\n'
+  else
+    if ! yaml_expect "$global_yml" "version=int:1"; then
+      problems="${problems}expected global version integer 1"$'\n'
+    fi
+    if ! yaml_expect "$global_yml" "defaults.runtime=str:cursor-cli"; then
+      problems="${problems}expected defaults.runtime string cursor-cli"$'\n'
+    fi
+    if ! yaml_expect "$global_yml" "defaults.schedule.window_local=str:08:00-16:00"; then
+      problems="${problems}expected window string 08:00-16:00"$'\n'
+    fi
+    if ! yaml_expect "$global_yml" "defaults.schedule.days=array:fri"; then
+      problems="${problems}expected schedule days array [fri]"$'\n'
+    fi
+    if ! yaml_expect "$global_yml" "defaults.schedule.catch_up_missed_days=bool:false"; then
+      problems="${problems}expected catch_up_missed_days boolean false"$'\n'
+    fi
+    count=$(yaml_repo_occurrences "$global_yml" "$repo_dir" 2>/dev/null || printf '0')
+    if [[ "$count" != "1" ]]; then
+      problems="${problems}expected repos to contain absolute path exactly once, got count=$count: $repo_dir"$'\n'
+    fi
+  fi
+
+  printf '%s\n' '# keep' 'slowfriday/' >"$TEST_ROOT/expected-gitignore"
+  if ! files_match "$TEST_ROOT/expected-gitignore" "$gitignore_file"; then
+    problems="${problems}gitignore is not the pre-existing line followed by slowfriday/:$(cat "$gitignore_file")"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_init_is_idempotent() {
+  local test_name="second init keeps one registry entry, one gitignore line, and existing contents"
+  local config_dir="$TEST_ROOT/init-idem-config"
+  local gitignore_file="$TEST_ROOT/init-idem-gitignore"
+  local repo_dir="$TEST_ROOT/init-idem-repo"
+  local out_file="$TEST_ROOT/init-idem-out.txt"
+  local guide_sentence="Harbor lights stay on for this test."
+  local log_sentence="watch the checkout line"
+  local note_sentence="old friday stays"
+  local status count other_count
+
+  mkdir -p "$config_dir"
+  printf '%s\n' '# keep' >"$gitignore_file"
+  make_repo "$repo_dir"
+
+  run_init "$repo_dir" "$config_dir" "$gitignore_file" >"$out_file" 2>&1
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "$test_name" "first init expected exit 0, got $status" "output:" "$(cat "$out_file")"
+    return
+  fi
+
+  printf '%s\n' "$guide_sentence" >"$repo_dir/slowfriday/guide.md"
+  printf '%s\n' "$log_sentence" >"$repo_dir/slowfriday/log.md"
+  printf '%s\n' "$note_sentence" >"$repo_dir/slowfriday/notes/0101.md"
+  yaml_set_trunk "$repo_dir/slowfriday/config.yml" "develop"
+  yaml_add_repo "$config_dir/config.yml" "$TEST_ROOT/other-repo"
+  printf '%s\n' "$guide_sentence" >"$TEST_ROOT/expected-guide"
+  printf '%s\n' "$log_sentence" >"$TEST_ROOT/expected-log"
+  printf '%s\n' "$note_sentence" >"$TEST_ROOT/expected-note"
+  printf '%s\n' '# keep' 'slowfriday/' >"$TEST_ROOT/expected-gitignore-idem"
+
+  run_init "$repo_dir" "$config_dir" "$gitignore_file" >>"$out_file" 2>&1
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "$test_name" "second init expected exit 0, got $status" "output:" "$(cat "$out_file")"
+    return
+  fi
+
+  count=$(yaml_repo_occurrences "$config_dir/config.yml" "$repo_dir" 2>/dev/null || printf '0')
+  other_count=$(yaml_repo_occurrences "$config_dir/config.yml" "$TEST_ROOT/other-repo" 2>/dev/null || printf '0')
+
+  if [[ "$count" != "1" ]]; then
+    fail "$test_name" "expected repo path exactly once, got count=$count" "output:" "$(cat "$out_file")"
+    return
+  fi
+  if [[ "$other_count" != "1" ]]; then
+    fail "$test_name" "second init dropped the other registered repo, count=$other_count"
+    return
+  fi
+  if ! files_match "$TEST_ROOT/expected-gitignore-idem" "$gitignore_file"; then
+    fail "$test_name" "gitignore was rewritten:" "$(cat "$gitignore_file")"
+    return
+  fi
+  if ! files_match "$TEST_ROOT/expected-guide" "$repo_dir/slowfriday/guide.md"; then
+    fail "$test_name" "guide.md bytes changed"
+    return
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "trunk=str:develop"; then
+    fail "$test_name" "config.yml trunk changed"
+    return
+  fi
+  if ! files_match "$TEST_ROOT/expected-log" "$repo_dir/slowfriday/log.md"; then
+    fail "$test_name" "log.md bytes changed"
+    return
+  fi
+  if ! files_match "$TEST_ROOT/expected-note" "$repo_dir/slowfriday/notes/0101.md"; then
+    fail "$test_name" "existing note bytes changed"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_docs_manual_step_and_script_silence() {
+  local test_name="docs name the dots-private symlink step; the script does not"
+  local problems=""
+
+  if [[ ! -f "$DOCS_FILE" ]]; then
+    fail "$test_name" "missing $DOCS_FILE"
+    return
+  fi
+  if ! grep -F -q -- 'Move `slowfriday/` into `~/dots-private` and replace the checkout path with a symlink.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say to move slowfriday/ into ~/dots-private and replace the checkout path with a symlink"$'\n'
+  fi
+  if grep -F -q -- 'dots-private' "$SLOWFRIDAY"; then
+    problems="${problems}bin/slowfriday contains dots-private"$'\n'
+  fi
+  if grep -F -q -- 'dots-private' "$YAML_HELPER"; then
+    problems="${problems}bin/lib/slowfriday_yaml.rb contains dots-private"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_usage_on_missing_and_unknown_command() {
+  local test_name="missing and unknown commands print usage on stderr and exit non-zero"
+  local stdout_file="$TEST_ROOT/usage-stdout.txt"
+  local stderr_file="$TEST_ROOT/usage-stderr.txt"
+  local status problems=""
+
+  "$SLOWFRIDAY" >"$stdout_file" 2>"$stderr_file"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}missing command exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'Usage: slowfriday <init>' "$stderr_file"; then
+    problems="${problems}missing command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if [[ -s "$stdout_file" ]]; then
+    problems="${problems}missing command wrote to stdout"$'\n'
+  fi
+
+  "$SLOWFRIDAY" no-such >"$stdout_file" 2>"$stderr_file"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}unknown command exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'Usage: slowfriday <init>' "$stderr_file"; then
+    problems="${problems}unknown command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if [[ -s "$stdout_file" ]]; then
+    problems="${problems}unknown command wrote to stdout"$'\n'
+  fi
+
+  "$SLOWFRIDAY" -h >"$stdout_file" 2>"$stderr_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}-h exited $status"$'\n'
+  fi
+  if ! grep -F -q -- 'Write the slowfriday directory, register cwd, and ensure the gitignore entry' "$stdout_file"; then
+    problems="${problems}-h usage does not say init writes the directory, registers cwd, and ensures the gitignore entry"$'\n'
+  fi
+
+  "$SLOWFRIDAY" --help >"$stdout_file" 2>"$stderr_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}--help exited $status"$'\n'
+  fi
+  if ! grep -F -q -- 'Write the slowfriday directory, register cwd, and ensure the gitignore entry' "$stdout_file"; then
+    problems="${problems}--help usage does not say init writes the directory, registers cwd, and ensures the gitignore entry"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
+# --- main --------------------------------------------------------------------
+
+write_yaml_helpers
+
+printf '%s\n' "# slowfriday tests"
+printf '%s\n' "# slowfriday binary: $SLOWFRIDAY$([[ -x "$SLOWFRIDAY" ]] && printf ' (present)' || printf ' (MISSING)')"
+
+run_test test_init_creates_files_registry_and_gitignore
+run_test test_init_is_idempotent
+run_test test_docs_manual_step_and_script_silence
+run_test test_usage_on_missing_and_unknown_command
+
+if [[ "$tests_failed" -ne 0 ]]; then
+  printf '%s\n' "$tests_failed of $tests_run slowfriday tests failed"
+  exit 1
+fi
+
+printf '%s\n' "all $tests_run slowfriday tests passed"
+exit 0
