@@ -55,6 +55,7 @@ projects/*/*
 !agents/**
 # Skill bodies. skills/* entries are symlinks at these, so Cursor's
 # "Sync Skills for Cloud Agents" walk does not see or trash them.
+# mirror-cursor-skills publishes real copies into the agent store.
 !skill-sources/
 !skill-sources/**
 

@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Link each skill-sources body into ~/.cursor/skills and ~/.codex/skills,
+# then copy those skills into Cursor's agent store as real directories.
+# The skills/ entries stay symlinks. Cursor's cloud sync only walks real
+# directories under ~/.cursor/skills, then trashes each one it copies, and
+# that path is this repo. The store watcher uploads real folders it finds
+# under the user mount's files/skills.
+set -euo pipefail
+
+script_name=$(basename "$0")
+sources_root="${HOME}/.cursor/skill-sources"
+skills_root="${HOME}/.cursor/skills"
+codex_skills_root="${HOME}/.codex/skills"
+store_root="${HOME}/Library/Application Support/Cursor/AgentStores/cursor_agent_stores"
+wait_seconds=90
+
+die() {
+  printf '%s: %s\n' "$script_name" "$*" >&2
+  exit 1
+}
+
+ensure_link() {
+  local dest=$1
+  local target=$2
+
+  if [[ -L "$dest" ]]; then
+    local current
+    current=$(readlink "$dest")
+    [[ "$current" == "$target" ]] || die "${dest} points at ${current}, expected ${target}"
+    return
+  fi
+  if [[ -e "$dest" ]]; then
+    die "${dest} exists and is not a symlink"
+  fi
+  ln -s "$target" "$dest"
+  printf '%s: linked %s\n' "$script_name" "$dest"
+}
+
+[[ -d "$sources_root" ]] || die "missing ${sources_root}"
+[[ -d "$skills_root" ]] || die "missing ${skills_root}"
+[[ -d "$codex_skills_root" ]] || die "missing ${codex_skills_root}"
+command -v rsync >/dev/null 2>&1 || die "rsync is required"
+command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required"
+
+shopt -s nullglob
+for source in "$sources_root"/*; do
+  name=$(basename "$source")
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "unexpected skill name: ${name}"
+  [[ -f "${source}/SKILL.md" ]] || continue
+  ensure_link "${skills_root}/${name}" "../skill-sources/${name}"
+  ensure_link "${codex_skills_root}/${name}" "../../cursor/skill-sources/${name}"
+done
+
+mounts=()
+for candidate in "$store_root"/*; do
+  base=$(basename "$candidate")
+  [[ "$base" =~ ^(t[1-9][0-9]*-)?u[1-9][0-9]*$ ]] || continue
+  [[ -d "$candidate/files" ]] || continue
+  mounts+=("$candidate")
+done
+
+if (( ${#mounts[@]} != 1 )); then
+  die "expected one user agent store under ${store_root}, found ${#mounts[@]}"
+fi
+
+mount="${mounts[0]}"
+dest_root="${mount}/files/skills"
+
+if [[ -L "$dest_root" || -L "${mount}/files" || -L "$mount" ]]; then
+  die "refusing to write through a symlink at ${dest_root}"
+fi
+
+mkdir -p "$dest_root"
+
+store_real=$(cd "$store_root" && pwd -P)
+dest_real=$(cd "$dest_root" && pwd -P)
+[[ "$dest_real" == "$store_real"/* ]] || die "destination escaped the agent store: ${dest_root}"
+
+synced=()
+skipped=()
+
+for entry in "$skills_root"/*; do
+  name=$(basename "$entry")
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "unexpected skill name: ${name}"
+  if [[ -L "$entry" && ! -e "$entry" ]]; then
+    skipped+=("$name")
+    printf '%s: skip broken link %s\n' "$script_name" "$name" >&2
+    continue
+  fi
+  [[ -f "$entry/SKILL.md" ]] || continue
+  rsync -aL --delete "${entry}/" "${dest_root}/${name}/"
+  synced+=("$name")
+done
+
+if (( ${#synced[@]} == 0 )); then
+  die "no skills with SKILL.md under ${skills_root}"
+fi
+
+for existing in "$dest_root"/*; do
+  [[ -d "$existing" ]] || continue
+  name=$(basename "$existing")
+  keep=0
+  for published in "${synced[@]}"; do
+    if [[ "$published" == "$name" ]]; then
+      keep=1
+      break
+    fi
+  done
+  if (( keep == 0 )); then
+    rm -rf "$existing"
+    printf '%s: removed %s\n' "$script_name" "$name"
+  fi
+done
+
+db="${mount}/.sync/index.sqlite"
+if [[ ! -f "$db" ]]; then
+  printf '%s: mirrored %s skills; Cursor will upload them the next time it is open\n' \
+    "$script_name" "${#synced[@]}"
+  exit 0
+fi
+
+sql_list=$(printf "'skills/%s/SKILL.md'," "${synced[@]}")
+sql_list=${sql_list%,}
+
+pending=1
+deadline=$((SECONDS + wait_seconds))
+while (( SECONDS < deadline )); do
+  live=$(sqlite3 "$db" "SELECT COUNT(*) FROM files WHERE state = 'live' AND rel_path IN (${sql_list});")
+  if [[ "$live" == "${#synced[@]}" ]]; then
+    pending=0
+    break
+  fi
+  sleep 2
+done
+
+if (( pending != 0 )); then
+  die "mirrored ${#synced[@]} skills, but Cursor has not indexed all of them yet"
+fi
+
+printf '%s: %s skills are in the agent store\n' "$script_name" "${#synced[@]}"
+if (( ${#skipped[@]} > 0 )); then
+  printf '%s: skipped %s broken links: %s\n' "$script_name" "${#skipped[@]}" "${skipped[*]}"
+fi

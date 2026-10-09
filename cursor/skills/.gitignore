@@ -4,6 +4,6 @@
 #
 # Tracked skills in this directory are symlinks to ../skill-sources.
 # Cursor skill sync only descends real directories, then trashes them.
-# Keep new tracked skills as symlinks too.
+# Keep new tracked skills as symlinks too. Publish with mirror-cursor-skills.
 using-screensteps-staging-api
 triaging-screensteps-on-call

@@ -9,18 +9,14 @@ This skill teaches how to create effective Codex skills following Codex's curren
 
 ## Quick Start
 
-Create the skill body in `~/.cursor/skill-sources/`, then link it from `~/.cursor/skills/` and `~/.codex/skills/`:
+Create the skill body in `~/.cursor/skill-sources/`, then run `mirror-cursor-skills`. It links that directory from `~/.cursor/skills/` and `~/.codex/skills/`, then copies it into Cursor's agent store:
 
 ```text
-~/.cursor/skill-sources/my-skill-name/
+~/.cursor/skills/my-skill-name -> ../skill-sources/my-skill-name
+~/.codex/skills/my-skill-name -> ../../cursor/skill-sources/my-skill-name
 ```
 
-```sh
-ln -s ../skill-sources/my-skill-name ~/.cursor/skills/my-skill-name
-ln -s ../../cursor/skill-sources/my-skill-name ~/.codex/skills/my-skill-name
-```
-
-Keep those `skills/` entries as symlinks. Cursor's cloud sync deletes real directories it copies out of `~/.cursor/skills/`.
+Keep those `skills/` entries as symlinks. Cursor's cloud sync only walks real directories under `~/.cursor/skills/`, then deletes each one it copies, and that path is this repo. The script leaves the bodies where they are.
 
 ````markdown
 # ~/.cursor/skill-sources/my-skill-name/SKILL.md
