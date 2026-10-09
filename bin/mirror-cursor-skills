@@ -5,9 +5,16 @@
 # directories under ~/.cursor/skills, then trashes each one it copies, and
 # that path is this repo. The store watcher uploads real folders it finds
 # under the user mount's files/skills.
+#
+#   mirror-cursor-skills              mirror once
+#   mirror-cursor-skills --install    install the twice-daily LaunchAgent
+#   mirror-cursor-skills --uninstall  unload and remove the LaunchAgent
 set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script_name=$(basename "$0")
+launchd_label="com.drew.mirror-cursor-skills"
+launchd_plist="${MIRROR_CURSOR_SKILLS_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/${launchd_label}.plist}"
 sources_root="${HOME}/.cursor/skill-sources"
 skills_root="${HOME}/.cursor/skills"
 codex_skills_root="${HOME}/.codex/skills"
@@ -18,6 +25,127 @@ die() {
   printf '%s: %s\n' "$script_name" "$*" >&2
   exit 1
 }
+
+usage() {
+  cat <<EOF
+Usage: $script_name [--install|--uninstall]
+
+Mirror Cursor skills once. With --install, generate and load a LaunchAgent
+that runs at 09:00 and 17:00 local time.
+
+  --install     write and load ~/Library/LaunchAgents/${launchd_label}.plist
+  --uninstall   boot out the agent and remove that plist
+EOF
+}
+
+resolve_launchd_template() {
+  local candidate dir
+  if [[ -n "${MIRROR_CURSOR_SKILLS_LAUNCHD_TEMPLATE:-}" &&
+        -f "${MIRROR_CURSOR_SKILLS_LAUNCHD_TEMPLATE}" ]]; then
+    printf '%s\n' "$MIRROR_CURSOR_SKILLS_LAUNCHD_TEMPLATE"
+    return 0
+  fi
+  for candidate in \
+    "${SCRIPT_DIR}/../launchd/${launchd_label}.plist.template" \
+    "${HOME}/dots/launchd/${launchd_label}.plist.template"
+  do
+    if [[ -f "$candidate" ]]; then
+      dir="$(CDPATH= cd "$(dirname "$candidate")" && pwd)"
+      printf '%s/%s\n' "$dir" "$(basename "$candidate")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+launchd_path() {
+  printf '%s' "/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+write_launchd_plist() {
+  local template=$1
+  local dest=$2
+  local script=$3
+  local agent_path tmp
+  agent_path="$(launchd_path)"
+  mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/mirror-cursor-skills-plist.XXXXXX")"
+  sed \
+    -e "s|@HOME@|${HOME}|g" \
+    -e "s|@PATH@|${agent_path}|g" \
+    -e "s|@SCRIPT@|${script}|g" \
+    "$template" >"$tmp"
+  mv "$tmp" "$dest"
+}
+
+reload_launchd_agent() {
+  local plist=$1
+  local uid
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/${launchd_label}" 2>/dev/null || true
+  if [[ -L "$plist" ]]; then
+    rm -f "$plist"
+  fi
+  launchctl bootstrap "gui/${uid}" "$plist"
+}
+
+cmd_install() {
+  local template script
+  script="${HOME}/bin/${script_name}"
+  [[ -x "$script" ]] || die "missing executable $script (symlink ~/bin from dots)"
+  if ! template="$(resolve_launchd_template)"; then
+    die "missing launchd plist template (expected launchd/${launchd_label}.plist.template)"
+  fi
+  write_launchd_plist "$template" "$launchd_plist" "$script"
+  reload_launchd_agent "$launchd_plist"
+  printf 'loaded %s (daily at 09:00 and 17:00)\n' "$launchd_label"
+  printf 'logs: %s/Library/Logs/mirror-cursor-skills.out.log\n' "$HOME"
+}
+
+cmd_uninstall() {
+  local uid
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/${launchd_label}" 2>/dev/null || true
+  if [[ -e "$launchd_plist" || -L "$launchd_plist" ]]; then
+    rm -f "$launchd_plist"
+  fi
+  printf 'unloaded %s\n' "$launchd_label"
+}
+
+mode=run
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --install)
+      mode=install
+      shift
+      ;;
+    --uninstall)
+      mode=uninstall
+      shift
+      ;;
+    -*)
+      die "unknown option: $1"
+      ;;
+    *)
+      die "unexpected argument: $1"$'\n'"$(usage)"
+      ;;
+  esac
+done
+
+case "$mode" in
+  install)
+    cmd_install
+    exit 0
+    ;;
+  uninstall)
+    cmd_uninstall
+    exit 0
+    ;;
+esac
 
 ensure_link() {
   local dest=$1

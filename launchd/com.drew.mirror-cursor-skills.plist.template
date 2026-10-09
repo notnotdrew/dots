@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.drew.mirror-cursor-skills</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>@PATH@</string>
+		<key>HOME</key>
+		<string>@HOME@</string>
+		<key>LANG</key>
+		<string>en_US.UTF-8</string>
+		<key>LC_ALL</key>
+		<string>en_US.UTF-8</string>
+	</dict>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>@SCRIPT@</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>17</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
+	<key>StandardOutPath</key>
+	<string>@HOME@/Library/Logs/mirror-cursor-skills.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/Library/Logs/mirror-cursor-skills.err.log</string>
+</dict>
+</plist>
