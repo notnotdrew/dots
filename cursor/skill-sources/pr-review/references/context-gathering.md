@@ -6,6 +6,15 @@ Write `context-brief.md` into the handed-off `WorkDirectory`. A targeted Git fet
 
 Match changed paths with [language-skill-mapping.md](language-skill-mapping.md) and record the matched skill paths plus unmatched languages. Do not open the matched skills.
 
+## Order Of Work
+
+Issue independent commands and reads together, not one at a time. A command or read that needs another's output waits for it. Work in this order:
+
+1. Issue the GitHub queries together, then the Git comparison commands together. A Git command that needs nothing from GitHub may join the GitHub batch.
+2. Read the changed source files and their immediate boundaries together.
+3. Consult associated Linear evidence, then record risk signals and readiness inputs.
+4. Confirm the head is still the one gathered.
+
 ## Confirm PR Identity Before Gathering Evidence
 
 Run the `gh-pr-parse` script the handoff names against `PRURL` and keep the parsed values separate from shell code. Require its `OWNER`, `REPO`, and `PR_NUMBER` to equal the handoff's `PRIdentity`; a mismatch is a material limitation, not something to reconcile here. The URL identifies the target repository even when the current checkout has a different remote.
@@ -14,7 +23,7 @@ Treat owner, repository, and PR number as identity. Commit IDs are observed evid
 
 ## Gather GitHub Evidence
 
-Query the PR explicitly in the resolved repository so URL and numeric inputs behave consistently:
+Query the PR explicitly in the resolved repository so URL and numeric inputs behave consistently. These five commands are independent; issue them together:
 
 ```bash
 gh pr view "$PR_NUMBER" --repo "$OWNER/$REPO" \
@@ -46,13 +55,11 @@ Record at least:
 
 Treat reviews and comments as evidence, not conclusions. Reopen the cited code or command result before relying on a technical claim from discussion.
 
-After repository context is gathered, query `headRefOid` again. If it differs from the initially observed head, do not combine evidence from the two revisions. Repeat gathering against one stable head when practical; otherwise record unstable scope and fail readiness with concrete remediation.
-
 ## Establish the Actual Comparison
 
 Run Git commands from the PR-head checkout. Confirm that the observed GitHub head object exists locally and that the checkout represents it. Resolve the GitHub base object locally. If it is absent, identify the authenticated Git remote whose repository matches `OWNER/REPO`, fetch only `refs/heads/$BASE_REF_NAME`, and then require the observed `baseRefOid` to exist. Do not assume a remote named `origin`, and do not substitute the fetched branch tip when it differs from the observed object ID.
 
-Compute and record the actual merge-base:
+Compute and record the actual merge-base, then issue the four commands that use it together:
 
 ```bash
 MERGE_BASE=$(git merge-base "$HEAD_REF_OID" "$BASE_REF_OID")
@@ -83,7 +90,7 @@ Record in `SincePriorHead`: the prior head, whether the current head descends fr
 
 ## Read Changed Source and Immediate Boundaries
 
-Read every changed source file in full from the PR-head checkout. Use the patch to locate changed behavior and the full file to understand local invariants, imports, error handling, and conventions.
+Read every changed source file in full from the PR-head checkout, together with the immediate boundary files the patch already identifies. Read a boundary found only from those files in a following batch. Use the patch to locate changed behavior and the full file to understand local invariants, imports, error handling, and conventions.
 
 Skip these as primary review targets by default:
 
@@ -170,6 +177,10 @@ Preserve these limitations explicitly:
 - **Excluded sources or inaccessible evidence:** name the excluded or inaccessible material and assess its effect on coverage instead of omitting it from the brief.
 
 Represent non-material limitations in `Known Gaps` and the relevant coverage records. A material limitation that prevents a defensible recommendation produces aggregate `UNABLE TO REVIEW` under the review contracts.
+
+## Confirm The Head Before Returning
+
+After the evidence above is recorded, query `headRefOid` again. If it differs from the initially observed head, do not combine evidence from the two revisions. Repeat gathering against one stable head when practical; otherwise record unstable scope and fail readiness with concrete remediation.
 
 ## Immediate Phase Boundaries
 
