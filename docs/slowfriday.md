@@ -19,6 +19,12 @@ The registry is version 1. The defaults are runtime `cursor-cli`, Fridays (`fri`
 
 Init is idempotent. A second init keeps a single registry entry and a single gitignore line. It does not replace guide, log, or config contents that are already there. Notes already in the directory stay.
 
+## Run
+
+`slowfriday run` considers each registered repository on Friday, from 08:00 until 16:00 local time. 08:00 is inside the window. 16:00 is outside. Outside the window it skips the repo and does not query.
+
+`slowfriday/notes/<yymmdd>.md` is the weekly stamp. `yymmdd` is the local date as six digits. When that note exists, the repo is skipped. A live `progress_pid` in `slowfriday/config.yml` blocks another run. A pid whose process is gone is cleared, and the tick continues. If preflight or the queries fail, the note is not written, so the week stays unstamped and a later Friday tick can retry.
+
 ## After init
 
 Move `slowfriday/` into `~/dots-private` and replace the checkout path with a symlink. Same kind of step as inchworm. The script does not do it.

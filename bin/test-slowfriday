@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Init harness for slowfriday. Failures are recorded; the suite does not exit
-# on the first one. Tests set SLOWFRIDAY_CONFIG_DIR and
-# SLOWFRIDAY_GITIGNORE_GLOBAL so they never touch the real home config.
+# Harness for slowfriday init and run. Failures are recorded; the suite does
+# not exit on the first one. Tests set SLOWFRIDAY_CONFIG_DIR and
+# SLOWFRIDAY_NOW so they never touch the real home config.
 
 set -u
 
@@ -13,7 +13,21 @@ DOCS_FILE="$DOTS/docs/slowfriday.md"
 
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-slowfriday.XXXXXX") || exit 1
 TEST_ROOT=$(CDPATH= cd "$TEST_ROOT" && pwd)
-trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+cleanup() {
+  local pid
+  if [[ -n "${TEST_ROOT:-}" && -f "$TEST_ROOT/sleeper-pid" ]]; then
+    pid=$(cat "$TEST_ROOT/sleeper-pid")
+    if [[ -n "$pid" ]]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  fi
+  if [[ -n "${TEST_ROOT:-}" ]]; then
+    rm -rf "$TEST_ROOT"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
 
 tests_run=0
 tests_failed=0
@@ -140,6 +154,20 @@ repos << { "path" => repo_path }
 data["repos"] = repos
 File.write(path, YAML.dump(data))
 RUBY
+
+  cat >"$TEST_ROOT/yaml_set_progress_pid.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+pid = Integer(ARGV.fetch(1))
+data = YAML.load_file(path)
+data = {} unless data.is_a?(Hash)
+data["progress_pid"] = pid
+File.write(path, YAML.dump(data))
+RUBY
 }
 
 yaml_repo_occurrences() {
@@ -158,6 +186,10 @@ yaml_add_repo() {
   mise exec -- ruby "$TEST_ROOT/yaml_add_repo.rb" "$1" "$2"
 }
 
+yaml_set_progress_pid() {
+  mise exec -- ruby "$TEST_ROOT/yaml_set_progress_pid.rb" "$1" "$2"
+}
+
 files_match() {
   cmp -s "$1" "$2"
 }
@@ -168,6 +200,7 @@ make_repo() {
   git -C "$repo_dir" init -q
   git -C "$repo_dir" config user.email "fixture@example.com"
   git -C "$repo_dir" config user.name "Fixture Author"
+  git -C "$repo_dir" config commit.gpgsign false
   printf '%s\n' "# fixture" >"$repo_dir/README.md"
   git -C "$repo_dir" add README.md
   git -C "$repo_dir" commit -q -m "fixture"
@@ -184,6 +217,154 @@ run_init() {
     export SLOWFRIDAY_GITIGNORE_GLOBAL="$gitignore_file"
     "$SLOWFRIDAY" init
   )
+}
+
+install_query_stub() {
+  cat >"$TEST_ROOT/query_snapshot.rb" <<'RUBY'
+# frozen_string_literal: true
+
+require "yaml"
+
+repo = ARGV.fetch(0)
+out = ARGV.fetch(1)
+data = YAML.load_file(File.join(repo, "slowfriday", "config.yml"))
+pid = data["progress_pid"]
+version = data["version"]
+trunk = data["trunk"]
+line =
+  if pid.is_a?(Integer) && pid.positive? && version.is_a?(Integer) && trunk.is_a?(String)
+    "int:#{pid} version:#{version} trunk:#{trunk}"
+  else
+    "bad pid=#{pid.inspect} class=#{pid.class} version=#{version.inspect} trunk=#{trunk.inspect}"
+  end
+File.open(out, "a") { |file| file.puts line }
+RUBY
+
+  cat >"$TEST_ROOT/query-stub" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$1" >>"\$SLOWFRIDAY_QUERY_LOG"
+if [[ -n "\${SLOWFRIDAY_PID_SNAPSHOT:-}" ]]; then
+  mise exec -- ruby "$TEST_ROOT/query_snapshot.rb" "\$1" "\$SLOWFRIDAY_PID_SNAPSHOT"
+fi
+exit "\${SLOWFRIDAY_QUERY_STATUS:-0}"
+EOF
+  chmod +x "$TEST_ROOT/query-stub"
+}
+
+reset_run_env() {
+  RUN_QUERIES=
+  RUN_QUERY_LOG=
+  RUN_QUERY_STATUS=
+  RUN_PID_SNAPSHOT=
+  RUN_PREFLIGHT=
+}
+
+prepare_registered_repo() {
+  local repo_dir=$1
+  local config_dir=$2
+  local gitignore_file="$config_dir/gitignore"
+  local out status
+  mkdir -p "$config_dir"
+  if [[ ! -f "$gitignore_file" ]]; then
+    printf '%s\n' '# keep' >"$gitignore_file"
+  fi
+  if [[ ! -e "$repo_dir/.git" ]]; then
+    make_repo "$repo_dir"
+  fi
+  out=$(run_init "$repo_dir" "$config_dir" "$gitignore_file" 2>&1)
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf 'prepare_registered_repo failed (%s): %s\n' "$status" "$out" >&2
+    return "$status"
+  fi
+}
+
+prepare_registered_plain_dir() {
+  local repo_dir=$1
+  local config_dir=$2
+  local gitignore_file="$config_dir/gitignore"
+  local out status
+  mkdir -p "$config_dir" "$repo_dir"
+  if [[ ! -f "$gitignore_file" ]]; then
+    printf '%s\n' '# keep' >"$gitignore_file"
+  fi
+  out=$(run_init "$repo_dir" "$config_dir" "$gitignore_file" 2>&1)
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf 'prepare_registered_plain_dir failed (%s): %s\n' "$status" "$out" >&2
+    return "$status"
+  fi
+}
+
+invoke_run() {
+  local config_dir=$1
+  local now=$2
+  local out_file=$3
+  (
+    cd "$TEST_ROOT" || exit 1
+    export SLOWFRIDAY_CONFIG_DIR="$config_dir"
+    export SLOWFRIDAY_NOW="$now"
+    export SLOWFRIDAY_GITIGNORE_GLOBAL="$TEST_ROOT/gitignore-unused"
+    if [[ -n "${RUN_QUERIES:-}" ]]; then
+      export SLOWFRIDAY_QUERIES="$RUN_QUERIES"
+    else
+      unset SLOWFRIDAY_QUERIES
+    fi
+    if [[ -n "${RUN_QUERY_LOG:-}" ]]; then
+      export SLOWFRIDAY_QUERY_LOG="$RUN_QUERY_LOG"
+    else
+      unset SLOWFRIDAY_QUERY_LOG
+    fi
+    if [[ -n "${RUN_QUERY_STATUS:-}" ]]; then
+      export SLOWFRIDAY_QUERY_STATUS="$RUN_QUERY_STATUS"
+    else
+      unset SLOWFRIDAY_QUERY_STATUS
+    fi
+    if [[ -n "${RUN_PID_SNAPSHOT:-}" ]]; then
+      export SLOWFRIDAY_PID_SNAPSHOT="$RUN_PID_SNAPSHOT"
+    else
+      unset SLOWFRIDAY_PID_SNAPSHOT
+    fi
+    if [[ -n "${RUN_PREFLIGHT:-}" ]]; then
+      export SLOWFRIDAY_PREFLIGHT_FIXTURE="$RUN_PREFLIGHT"
+    else
+      unset SLOWFRIDAY_PREFLIGHT_FIXTURE
+    fi
+    unset SLOWFRIDAY_REPO
+    "$SLOWFRIDAY" run
+  ) >"$out_file" 2>&1
+}
+
+path_count_in_log() {
+  local log=$1
+  local path=$2
+  local count
+  if [[ ! -f "$log" ]]; then
+    printf '0'
+    return 0
+  fi
+  count=$(grep -F -x -c -- "$path" "$log" || true)
+  printf '%s' "$count"
+}
+
+snapshot_int_count() {
+  local file=$1
+  local count
+  if [[ ! -f "$file" ]]; then
+    printf '0'
+    return 0
+  fi
+  count=$(grep -E -c '^int:[1-9][0-9]* version:1 trunk:$' "$file" || true)
+  printf '%s' "$count"
+}
+
+use_query_stub() {
+  local log=$1
+  local snapshot=${2:-}
+  RUN_QUERIES="$TEST_ROOT/query-stub"
+  RUN_QUERY_LOG="$log"
+  RUN_PID_SNAPSHOT="$snapshot"
 }
 
 # --- tests -------------------------------------------------------------------
@@ -388,7 +569,7 @@ test_usage_on_missing_and_unknown_command() {
   if [[ "$status" -eq 0 ]]; then
     problems="${problems}missing command exited 0"$'\n'
   fi
-  if ! grep -F -q -- 'Usage: slowfriday <init>' "$stderr_file"; then
+  if ! grep -F -q -- 'Usage: slowfriday <init|run>' "$stderr_file"; then
     problems="${problems}missing command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
   fi
   if [[ -s "$stdout_file" ]]; then
@@ -400,7 +581,7 @@ test_usage_on_missing_and_unknown_command() {
   if [[ "$status" -eq 0 ]]; then
     problems="${problems}unknown command exited 0"$'\n'
   fi
-  if ! grep -F -q -- 'Usage: slowfriday <init>' "$stderr_file"; then
+  if ! grep -F -q -- 'Usage: slowfriday <init|run>' "$stderr_file"; then
     problems="${problems}unknown command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
   fi
   if [[ -s "$stdout_file" ]]; then
@@ -432,9 +613,660 @@ test_usage_on_missing_and_unknown_command() {
   pass "$test_name"
 }
 
+test_run_success_leaves_week_unstamped_and_queries_again() {
+  local test_name="Friday query success leaves the note absent and a second run queries again"
+  local config_dir="$TEST_ROOT/run-ok-config"
+  local repo_dir="$TEST_ROOT/run-ok-repo"
+  local log="$TEST_ROOT/run-ok-log"
+  local snapshot="$TEST_ROOT/run-ok-snapshot"
+  local out_file="$TEST_ROOT/run-ok-out.txt"
+  local repo_yml count ints status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/slowfriday/config.yml"
+  use_query_stub "$log" "$snapshot"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  ints=$(snapshot_int_count "$snapshot")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}first run expected the query once, got $count"$'\n'
+  fi
+  if [[ "$ints" != "1" ]]; then
+    problems="${problems}first run expected an integer progress_pid during the query, got $ints"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}first run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}first run left progress_pid set"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}first run dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}first run dropped the blank trunk"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  ints=$(snapshot_int_count "$snapshot")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}second run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "2" ]]; then
+    problems="${problems}second run expected the query again, got count $count"$'\n'
+  fi
+  if [[ "$ints" != "2" ]]; then
+    problems="${problems}second run expected another integer progress_pid, got $ints"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}second run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}second run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_skips_when_current_note_exists() {
+  local test_name="existing notes/261009.md skips queries and keeps the file bytes"
+  local config_dir="$TEST_ROOT/run-stamped-config"
+  local repo_dir="$TEST_ROOT/run-stamped-repo"
+  local log="$TEST_ROOT/run-stamped-log"
+  local out_file="$TEST_ROOT/run-stamped-out.txt"
+  local note="$repo_dir/slowfriday/notes/261009.md"
+  local expected="$TEST_ROOT/run-stamped-expected"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'already stamped this week' >"$note"
+  cp "$note" "$expected"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}queries ran despite the stamp, count=$count"$'\n'
+  fi
+  if ! files_match "$expected" "$note"; then
+    problems="${problems}notes/261009.md bytes changed"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_query_failure_retries_on_the_next_tick() {
+  local test_name="query failure leaves the week unstamped and a later success is invoked"
+  local config_dir="$TEST_ROOT/run-fail-config"
+  local repo_a="$TEST_ROOT/run-fail-repo-a"
+  local repo_b="$TEST_ROOT/run-fail-repo-b"
+  local log="$TEST_ROOT/run-fail-log"
+  local snapshot="$TEST_ROOT/run-fail-snapshot"
+  local out_file="$TEST_ROOT/run-fail-out.txt"
+  local status count_a count_b ints problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_a" "$config_dir" || {
+    fail "$test_name" "prepare repo a failed"
+    return
+  }
+  prepare_registered_repo "$repo_b" "$config_dir" || {
+    fail "$test_name" "prepare repo b failed"
+    return
+  }
+  use_query_stub "$log" "$snapshot"
+  RUN_QUERY_STATUS=1
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count_a=$(path_count_in_log "$log" "$repo_a")
+  count_b=$(path_count_in_log "$log" "$repo_b")
+  ints=$(snapshot_int_count "$snapshot")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}failed queries expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count_a" != "1" || "$count_b" != "1" ]]; then
+    problems="${problems}both repos should be queried once, got a=$count_a b=$count_b"$'\n'
+  fi
+  if [[ "$ints" != "2" ]]; then
+    problems="${problems}expected an integer progress_pid during each query, got $ints"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ -e "$repo_a/slowfriday/notes/261009.md" || -e "$repo_b/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}query failure wrote a stamp note"$'\n'
+  fi
+  if ! yaml_expect "$repo_a/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}repo a left progress_pid set"$'\n'
+  fi
+  if ! yaml_expect "$repo_b/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}repo b left progress_pid set"$'\n'
+  fi
+
+  RUN_QUERY_STATUS=0
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count_a=$(path_count_in_log "$log" "$repo_a")
+  count_b=$(path_count_in_log "$log" "$repo_b")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}retry expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count_a" != "2" || "$count_b" != "2" ]]; then
+    problems="${problems}retry should query both repos again, got a=$count_a b=$count_b"$'\n'
+  fi
+  if [[ -e "$repo_a/slowfriday/notes/261009.md" || -e "$repo_b/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}retry wrote a stamp note"$'\n'
+  fi
+  if ! yaml_expect "$repo_a/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid on repo a"$'\n'
+  fi
+  if ! yaml_expect "$repo_b/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid on repo b"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_preflight_fixture_failure_retries_when_cleared() {
+  local test_name="preflight fixture failure skips queries and a later run queries"
+  local config_dir="$TEST_ROOT/run-preflight-config"
+  local repo_dir="$TEST_ROOT/run-preflight-repo"
+  local log="$TEST_ROOT/run-preflight-log"
+  local snapshot="$TEST_ROOT/run-preflight-snapshot"
+  local out_file="$TEST_ROOT/run-preflight-out.txt"
+  local repo_yml="$repo_dir/slowfriday/config.yml"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_query_stub "$log" "$snapshot"
+  RUN_QUERY_STATUS=0
+  RUN_PREFLIGHT=fail
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}preflight failure expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}preflight failure invoked queries, count=$count"$'\n'
+  fi
+  if [[ -e "$snapshot" ]]; then
+    problems="${problems}preflight failure wrote a pid snapshot"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}preflight failure wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}preflight failure left progress_pid set"$'\n'
+  fi
+
+  RUN_PREFLIGHT=
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}retry expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}retry expected the query once, got $count"$'\n'
+  fi
+  if [[ "$(snapshot_int_count "$snapshot")" != "1" ]]; then
+    problems="${problems}retry did not record an integer progress_pid"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}retry wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_live_pid_blocks_queries() {
+  local test_name="a live progress_pid blocks queries and stays in the config"
+  local config_dir="$TEST_ROOT/run-live-config"
+  local repo_dir="$TEST_ROOT/run-live-repo"
+  local log="$TEST_ROOT/run-live-log"
+  local out_file="$TEST_ROOT/run-live-out.txt"
+  local repo_yml holder status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/slowfriday/config.yml"
+  sleep 120 &
+  holder=$!
+  printf '%s\n' "$holder" >"$TEST_ROOT/sleeper-pid"
+  yaml_set_progress_pid "$repo_yml" "$holder"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  rm -f "$TEST_ROOT/sleeper-pid"
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}queries ran while the pid was alive, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}live pid wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=int:$holder"; then
+    problems="${problems}live pid was not left as integer $holder"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}live skip dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}live skip dropped trunk"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_stale_pid_is_cleared_and_queries_run() {
+  local test_name="a dead progress_pid is cleared and queries run"
+  local config_dir="$TEST_ROOT/run-stale-config"
+  local repo_dir="$TEST_ROOT/run-stale-repo"
+  local log="$TEST_ROOT/run-stale-log"
+  local snapshot="$TEST_ROOT/run-stale-snapshot"
+  local out_file="$TEST_ROOT/run-stale-out.txt"
+  local repo_yml="$repo_dir/slowfriday/config.yml"
+  local stale_pid=99999999
+  local status count problems=""
+
+  reset_run_env
+  if kill -0 "$stale_pid" 2>/dev/null; then
+    fail "$test_name" "pid $stale_pid is alive; cannot use it as a stale lock"
+    return
+  fi
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  yaml_set_progress_pid "$repo_yml" "$stale_pid"
+  use_query_stub "$log" "$snapshot"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}expected the query once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}stale pid run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}stale pid was not cleared"$'\n'
+  fi
+  if grep -F -q -- "int:${stale_pid} " "$snapshot" 2>/dev/null; then
+    problems="${problems}queries ran while the stale pid was still stored"$'\n'
+  fi
+  if [[ "$(snapshot_int_count "$snapshot")" != "1" ]]; then
+    problems="${problems}expected an integer progress_pid during the query"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_skips_thursday_and_saturday() {
+  local test_name="Thursday and Saturday skip without querying and say not Friday"
+  local config_dir="$TEST_ROOT/run-weekday-config"
+  local repo_dir="$TEST_ROOT/run-weekday-repo"
+  local log="$TEST_ROOT/run-weekday-log"
+  local out_file="$TEST_ROOT/run-weekday-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-08T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}Thursday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}Thursday invoked queries, count=$count"$'\n'
+  fi
+  if ! grep -F -q -- "not Friday" "$out_file"; then
+    problems="${problems}Thursday output did not say not Friday"$'\n'
+  fi
+  if ! grep -F -q -- "$repo_dir" "$out_file"; then
+    problems="${problems}Thursday output did not include the repo path"$'\n'
+  fi
+  if grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}Thursday was reported as outside the window"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261008.md" || -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}Thursday wrote a note"$'\n'
+  fi
+
+  : >"$out_file"
+  invoke_run "$config_dir" "2026-10-10T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}Saturday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}Saturday invoked queries, count=$count"$'\n'
+  fi
+  if ! grep -F -q -- "not Friday" "$out_file"; then
+    problems="${problems}Saturday output did not say not Friday"$'\n'
+  fi
+  if ! grep -F -q -- "$repo_dir" "$out_file"; then
+    problems="${problems}Saturday output did not include the repo path"$'\n'
+  fi
+  if grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}Saturday was reported as outside the window"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261010.md" ]]; then
+    problems="${problems}Saturday wrote a note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_window_edges() {
+  local test_name="Friday window skips 07:59 and 16:00 and queries 08:00 and 15:30"
+  local config_dir="$TEST_ROOT/run-window-config"
+  local repo_dir="$TEST_ROOT/run-window-repo"
+  local log="$TEST_ROOT/run-window-log"
+  local out_file="$TEST_ROOT/run-window-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T07:59:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}07:59 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}07:59 invoked queries, count=$count"$'\n'
+  fi
+  if ! grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}07:59 did not say outside the window"$'\n'
+  fi
+  if grep -F -q -- "not Friday" "$out_file"; then
+    problems="${problems}07:59 was reported as not Friday"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T16:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}16:00 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}16:00 invoked queries, count=$count"$'\n'
+  fi
+  if ! grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}16:00 did not say outside the window"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T08:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}08:00 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}08:00 expected the query once, got $count"$'\n'
+  fi
+  if grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}08:00 was reported as outside the window"$'\n'
+  fi
+  if grep -F -q -- "not Friday" "$out_file"; then
+    problems="${problems}08:00 was reported as not Friday"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T15:30:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}15:30 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "2" ]]; then
+    problems="${problems}15:30 expected a second query, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}inside-window run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}inside-window run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_two_repos_queries_only_the_unstamped_one() {
+  local test_name="only the repo without notes/261009.md is queried"
+  local config_dir="$TEST_ROOT/run-two-config"
+  local stamped="$TEST_ROOT/run-two-stamped"
+  local open="$TEST_ROOT/run-two-open"
+  local log="$TEST_ROOT/run-two-log"
+  local out_file="$TEST_ROOT/run-two-out.txt"
+  local note="$stamped/slowfriday/notes/261009.md"
+  local expected="$TEST_ROOT/run-two-expected"
+  local status stamped_count open_count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$stamped" "$config_dir" || {
+    fail "$test_name" "prepare stamped repo failed"
+    return
+  }
+  prepare_registered_repo "$open" "$config_dir" || {
+    fail "$test_name" "prepare open repo failed"
+    return
+  }
+  printf '%s\n' 'this week is done' >"$note"
+  cp "$note" "$expected"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  stamped_count=$(path_count_in_log "$log" "$stamped")
+  open_count=$(path_count_in_log "$log" "$open")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$stamped_count" != "0" ]]; then
+    problems="${problems}stamped repo was queried, count=$stamped_count"$'\n'
+  fi
+  if [[ "$open_count" != "1" ]]; then
+    problems="${problems}unstamped repo expected one query, got $open_count"$'\n'
+  fi
+  if ! files_match "$expected" "$note"; then
+    problems="${problems}stamped note bytes changed"$'\n'
+  fi
+  if [[ -e "$open/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}unstamped repo gained notes/261009.md"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_older_note_does_not_stamp_this_week() {
+  local test_name="notes/261002.md is not the 2026-10-09 stamp and is left unchanged"
+  local config_dir="$TEST_ROOT/run-old-config"
+  local repo_dir="$TEST_ROOT/run-old-repo"
+  local log="$TEST_ROOT/run-old-log"
+  local out_file="$TEST_ROOT/run-old-out.txt"
+  local note="$repo_dir/slowfriday/notes/261002.md"
+  local expected="$TEST_ROOT/run-old-expected"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'an older Friday stays put' >"$note"
+  cp "$note" "$expected"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}older note should not stamp this Friday, query count=$count"$'\n'
+  fi
+  if ! files_match "$expected" "$note"; then
+    problems="${problems}notes/261002.md bytes changed"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_plain_directory_fails_preflight() {
+  local test_name="a directory that is not a git work tree fails preflight without a fixture"
+  local config_dir="$TEST_ROOT/run-plain-config"
+  local repo_dir="$TEST_ROOT/run-plain-repo"
+  local log="$TEST_ROOT/run-plain-log"
+  local out_file="$TEST_ROOT/run-plain-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_plain_dir "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  if git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    fail "$test_name" "fixture directory is inside a work tree, so preflight would pass"
+    return
+  fi
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}queries ran, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}preflight failure wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}preflight failure left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
+install_query_stub
 
 printf '%s\n' "# slowfriday tests"
 printf '%s\n' "# slowfriday binary: $SLOWFRIDAY$([[ -x "$SLOWFRIDAY" ]] && printf ' (present)' || printf ' (MISSING)')"
@@ -443,6 +1275,17 @@ run_test test_init_creates_files_registry_and_gitignore
 run_test test_init_is_idempotent
 run_test test_docs_manual_step_and_script_silence
 run_test test_usage_on_missing_and_unknown_command
+run_test test_run_success_leaves_week_unstamped_and_queries_again
+run_test test_run_skips_when_current_note_exists
+run_test test_run_query_failure_retries_on_the_next_tick
+run_test test_run_preflight_fixture_failure_retries_when_cleared
+run_test test_run_live_pid_blocks_queries
+run_test test_run_stale_pid_is_cleared_and_queries_run
+run_test test_run_skips_thursday_and_saturday
+run_test test_run_window_edges
+run_test test_run_two_repos_queries_only_the_unstamped_one
+run_test test_run_older_note_does_not_stamp_this_week
+run_test test_run_plain_directory_fails_preflight
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run slowfriday tests failed"

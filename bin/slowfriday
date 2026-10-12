@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Coordinator init: write slowfriday/, register cwd, ensure the global gitignore entry.
+# Coordinator: init a repo, and gate the Friday run across registered repos.
 #
 # Usage:
 #   slowfriday init
+#   slowfriday run
 
 set -euo pipefail
 
@@ -23,9 +24,10 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: slowfriday <init>
+Usage: slowfriday <init|run>
 
   init    Write the slowfriday directory, register cwd, and ensure the gitignore entry
+  run     Consider each registered repository on Friday
 EOF
 }
 
@@ -83,6 +85,143 @@ write_log() {
   printf '%s\n' '# Log' >"$path"
 }
 
+# SLOWFRIDAY_NOW=YYYY-MM-DDTHH:MM:SS, otherwise the local clock.
+current_now() {
+  if [[ -n "${SLOWFRIDAY_NOW:-}" ]]; then
+    printf '%s\n' "$SLOWFRIDAY_NOW"
+  else
+    date '+%Y-%m-%dT%H:%M:%S'
+  fi
+}
+
+# Print: date weekday hour minute (weekday: 1=Mon .. 7=Sun).
+parse_clock() {
+  ruby_yaml parse_now "$(current_now)"
+}
+
+# %y%m%d from YYYY-MM-DD. 2026-10-09 → 261009.
+yymmdd_from_today() {
+  local today=$1
+  printf '%s%s%s\n' "${today:2:2}" "${today:5:2}" "${today:8:2}"
+}
+
+# SLOWFRIDAY_REPO overrides the registry for one path.
+list_registered_repos() {
+  if [[ -n "${SLOWFRIDAY_REPO:-}" ]]; then
+    printf '%s\n' "$SLOWFRIDAY_REPO"
+    return 0
+  fi
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    return 0
+  fi
+  ruby_yaml list_repos "$CONFIG_FILE"
+}
+
+# Repo whose progress_pid this process wrote. The EXIT trap clears only that
+# file, so a skip of someone else's live pid leaves their lock alone.
+CURRENT_PROGRESS_YML=""
+
+release_progress() {
+  local repo_yml
+  repo_yml=${CURRENT_PROGRESS_YML:-}
+  [[ -n "$repo_yml" ]] || return 0
+  CURRENT_PROGRESS_YML=""
+  if [[ -f "$repo_yml" ]]; then
+    ruby_yaml clear_progress_pid "$repo_yml" || true
+  fi
+}
+
+# Fail closed for the fixture, or when this path is not inside a work tree.
+preflight_repo() {
+  local repo_path=$1
+  if [[ "${SLOWFRIDAY_PREFLIGHT_FIXTURE:-}" == "fail" ]]; then
+    return 1
+  fi
+  git -C "$repo_path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# One repo. Skips and query failures return 0 so the caller can keep going.
+# The weekly stamp is the note file. This step never writes it.
+consider_repo() {
+  local repo_path=$1
+  local today=$2
+  local weekday=$3
+  local hour=$4
+  local minute=$5
+  local mins yymmdd repo_yml note_path state pid query_status
+
+  # 1=Mon .. 7=Sun. Friday is 5.
+  if [[ "$weekday" -ne 5 ]]; then
+    printf 'slowfriday: skip %s — not Friday\n' "$repo_path"
+    return 0
+  fi
+
+  # 08:00 inclusive, 16:00 exclusive.
+  mins=$((10#$hour * 60 + 10#$minute))
+  if [[ "$mins" -lt $((8 * 60)) || "$mins" -ge $((16 * 60)) ]]; then
+    printf 'slowfriday: skip %s — outside the window\n' "$repo_path"
+    return 0
+  fi
+
+  repo_yml="${repo_path}/slowfriday/config.yml"
+  if [[ ! -f "$repo_yml" ]]; then
+    printf 'slowfriday: skip %s — not initialized\n' "$repo_path"
+    return 0
+  fi
+
+  yymmdd=$(yymmdd_from_today "$today")
+  note_path="${repo_path}/slowfriday/notes/${yymmdd}.md"
+  if [[ -f "$note_path" ]]; then
+    printf 'slowfriday: skip %s — week already stamped\n' "$repo_path"
+    return 0
+  fi
+
+  state=$(ruby_yaml progress_pid_state "$repo_yml")
+  case "$state" in
+    absent)
+      ;;
+    pid:*)
+      pid=${state#pid:}
+      if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null; then
+        printf 'slowfriday: skip %s — in progress\n' "$repo_path"
+        return 0
+      fi
+      printf 'slowfriday: %s — cleared a stale progress pid\n' "$repo_path"
+      ruby_yaml clear_progress_pid "$repo_yml"
+      ;;
+    stale)
+      printf 'slowfriday: %s — cleared a stale progress pid\n' "$repo_path"
+      ruby_yaml clear_progress_pid "$repo_yml"
+      ;;
+    *)
+      die "unexpected progress pid state for ${repo_path}: ${state}"
+      ;;
+  esac
+
+  if ! preflight_repo "$repo_path"; then
+    printf 'slowfriday: skip %s — preflight failed; the next tick retries\n' "$repo_path"
+    return 0
+  fi
+
+  CURRENT_PROGRESS_YML=$repo_yml
+  ruby_yaml set_progress_pid "$repo_yml" "$$"
+
+  query_status=0
+  if [[ -n "${SLOWFRIDAY_QUERIES:-}" ]]; then
+    "$SLOWFRIDAY_QUERIES" "$repo_path" || query_status=$?
+  fi
+  release_progress
+
+  if [[ "$query_status" -ne 0 ]]; then
+    printf 'slowfriday: skip %s — queries failed; the week is unstamped\n' "$repo_path"
+    return 0
+  fi
+
+  printf 'slowfriday: %s — week left unstamped\n' "$repo_path"
+  return 0
+}
+
 cmd_init() {
   local repo_root dir
 
@@ -104,6 +243,24 @@ cmd_init() {
   printf 'slowfriday: registered in %s\n' "$CONFIG_FILE"
 }
 
+cmd_run() {
+  local today weekday hour minute repo_path
+
+  trap release_progress EXIT
+  read -r today weekday hour minute <<<"$(parse_clock)"
+  if [[ -z "$today" || -z "$weekday" || -z "$hour" || -z "$minute" ]]; then
+    die "could not read the clock"
+  fi
+
+  while IFS= read -r repo_path || [[ -n "${repo_path:-}" ]]; do
+    [[ -z "$repo_path" ]] && continue
+    # Drop the previous repo's pid before the next one starts.
+    release_progress
+    consider_repo "$repo_path" "$today" "$weekday" "$hour" "$minute"
+  done < <(list_registered_repos)
+  release_progress
+}
+
 main() {
   if [[ $# -lt 1 ]]; then
     usage >&2
@@ -117,6 +274,10 @@ main() {
     init)
       shift
       cmd_init "$@"
+      ;;
+    run)
+      shift
+      cmd_run "$@"
       ;;
     *)
       usage >&2
