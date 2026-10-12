@@ -252,12 +252,144 @@ EOF
   chmod +x "$TEST_ROOT/query-stub"
 }
 
+install_herdr_mock() {
+  cat >"$TEST_ROOT/herdr-mock" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+log=${SLOWFRIDAY_HERDR_LOG:?}
+root=${SLOWFRIDAY_HERDR_ROOT:?}
+printf '%s\n' "$*" >>"$log"
+
+group=${1:-}
+action=${2:-}
+if [[ $# -ge 2 ]]; then
+  shift 2
+fi
+
+cwd=
+branch=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cwd)
+      [[ $# -ge 2 ]] || exit 1
+      cwd=$2
+      shift 2
+      ;;
+    --branch)
+      [[ $# -ge 2 ]] || exit 1
+      branch=$2
+      shift 2
+      ;;
+    --base)
+      [[ $# -ge 2 ]] || exit 1
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+plant_slowfriday() {
+  local checkout=$1
+  local repo=$2
+  local dest="${checkout}/slowfriday"
+  local plant=${SLOWFRIDAY_HERDR_PLANT:-}
+  case "$plant" in
+    copy)
+      if [[ -L "$dest" ]]; then
+        rm -f "$dest"
+      elif [[ -e "$dest" ]]; then
+        rm -rf "$dest"
+      fi
+      mkdir -p "$dest"
+      printf '%s\n' 'copied-only' >"$dest/copied-only.txt"
+      ;;
+    symlink)
+      if [[ -L "$dest" ]]; then
+        rm -f "$dest"
+      elif [[ -e "$dest" ]]; then
+        rm -rf "$dest"
+      fi
+      ln -s "${repo}/slowfriday" "$dest"
+      local ino
+      ino=$(stat -f '%i' "$dest" 2>/dev/null || stat -c '%i' "$dest")
+      printf '%s\n' "$ino" >"${log}.symlink-inode"
+      ;;
+  esac
+}
+
+if [[ "$group" == "worktree" && "$action" == "create" ]]; then
+  [[ -n "$cwd" && -n "$branch" ]] || exit 1
+  slug=$(printf '%s' "$cwd" | tr '/:' '__')
+  state="${root}/state/${slug}"
+  branch_slug=${branch//\//-}
+  checkout="${root}/checkouts/${slug}/${branch_slug}"
+  mkdir -p "$state" "$checkout"
+  printf '%s\n' "$branch" >"$state/branch"
+  printf '%s\n' "$checkout" >"$state/path"
+  plant_slowfriday "$checkout" "$cwd"
+  status=${SLOWFRIDAY_HERDR_CREATE_STATUS:-0}
+  if [[ "$status" == "0" ]]; then
+    printf '{"result":{"worktree":{"path":"%s"}}}\n' "$checkout"
+  else
+    printf '%s\n' '{"result":{"worktree":{"path":""}}}'
+  fi
+  exit "$status"
+fi
+
+if [[ "$group" == "worktree" && "$action" == "list" ]]; then
+  [[ -n "$cwd" ]] || exit 1
+  slug=$(printf '%s' "$cwd" | tr '/:' '__')
+  state="${root}/state/${slug}"
+  mode=${SLOWFRIDAY_HERDR_LIST:-match}
+  if [[ "$mode" == "empty" || ! -f "$state/branch" || ! -f "$state/path" ]]; then
+    printf '%s\n' '{"result":{"worktrees":[]}}'
+    exit 0
+  fi
+  listed_branch=$(cat "$state/branch")
+  listed_path=$(cat "$state/path")
+  printf '{"result":{"worktrees":[{"branch":"%s","path":"%s"}]}}\n' "$listed_branch" "$listed_path"
+  exit 0
+fi
+
+printf '%s\n' '{"result":{}}'
+exit 0
+EOF
+  chmod +x "$TEST_ROOT/herdr-mock"
+}
+
 reset_run_env() {
   RUN_QUERIES=
   RUN_QUERY_LOG=
   RUN_QUERY_STATUS=
   RUN_PID_SNAPSHOT=
   RUN_PREFLIGHT=
+  RUN_HERDR_LOG=
+  RUN_HERDR_CREATE_STATUS=
+  RUN_HERDR_LIST=
+  RUN_HERDR_PLANT=
+}
+
+bare_origin_for() {
+  printf '%s.origin.git' "$1"
+}
+
+attach_bare_origin() {
+  local repo_dir=$1
+  local origin
+  origin=$(bare_origin_for "$repo_dir")
+  git -C "$repo_dir" config commit.gpgsign false || return 1
+  if [[ ! -d "$origin" ]]; then
+    git init -q --bare "$origin" || return 1
+    git -C "$origin" symbolic-ref HEAD refs/heads/main || return 1
+    git -C "$origin" config commit.gpgsign false || return 1
+  fi
+  if ! git -C "$repo_dir" remote get-url origin >/dev/null 2>&1; then
+    git -C "$repo_dir" remote add origin "$origin" || return 1
+  fi
+  git -C "$repo_dir" push -q origin main
 }
 
 prepare_registered_repo() {
@@ -277,6 +409,10 @@ prepare_registered_repo() {
   if [[ "$status" -ne 0 ]]; then
     printf 'prepare_registered_repo failed (%s): %s\n' "$status" "$out" >&2
     return "$status"
+  fi
+  if ! attach_bare_origin "$repo_dir"; then
+    printf 'prepare_registered_repo failed to attach origin\n' >&2
+    return 1
   fi
 }
 
@@ -331,6 +467,33 @@ invoke_run() {
     else
       unset SLOWFRIDAY_PREFLIGHT_FIXTURE
     fi
+    if [[ ! -x "$TEST_ROOT/herdr-mock" ]]; then
+      printf 'herdr mock is not executable\n' >&2
+      exit 1
+    fi
+    mkdir -p "$TEST_ROOT/herdr-worktrees"
+    export SLOWFRIDAY_HERDR="$TEST_ROOT/herdr-mock"
+    export SLOWFRIDAY_HERDR_ROOT="$TEST_ROOT/herdr-worktrees"
+    if [[ -n "${RUN_HERDR_LOG:-}" ]]; then
+      export SLOWFRIDAY_HERDR_LOG="$RUN_HERDR_LOG"
+    else
+      export SLOWFRIDAY_HERDR_LOG="$TEST_ROOT/herdr-default.log"
+    fi
+    if [[ -n "${RUN_HERDR_CREATE_STATUS:-}" ]]; then
+      export SLOWFRIDAY_HERDR_CREATE_STATUS="$RUN_HERDR_CREATE_STATUS"
+    else
+      unset SLOWFRIDAY_HERDR_CREATE_STATUS
+    fi
+    if [[ -n "${RUN_HERDR_LIST:-}" ]]; then
+      export SLOWFRIDAY_HERDR_LIST="$RUN_HERDR_LIST"
+    else
+      unset SLOWFRIDAY_HERDR_LIST
+    fi
+    if [[ -n "${RUN_HERDR_PLANT:-}" ]]; then
+      export SLOWFRIDAY_HERDR_PLANT="$RUN_HERDR_PLANT"
+    else
+      unset SLOWFRIDAY_HERDR_PLANT
+    fi
     unset SLOWFRIDAY_REPO
     "$SLOWFRIDAY" run
   ) >"$out_file" 2>&1
@@ -365,6 +528,68 @@ use_query_stub() {
   RUN_QUERIES="$TEST_ROOT/query-stub"
   RUN_QUERY_LOG="$log"
   RUN_PID_SNAPSHOT="$snapshot"
+}
+
+publish_branch() {
+  local repo_dir=$1
+  local branch=$2
+  git -C "$repo_dir" branch "$branch" main || return 1
+  git -C "$repo_dir" push -q origin "$branch"
+}
+
+# Print the new commit. Does not fetch in the registered repo.
+advance_bare_branch() {
+  local repo_dir=$1
+  local branch=$2
+  local origin side
+  origin=$(bare_origin_for "$repo_dir")
+  side=$(mktemp -d "${TEST_ROOT}/side.XXXXXX") || return 1
+  git clone -q "$origin" "$side" || return 1
+  git -C "$side" config user.email "fixture@example.com" || return 1
+  git -C "$side" config user.name "Fixture Author" || return 1
+  git -C "$side" config commit.gpgsign false || return 1
+  git -C "$side" checkout -q "$branch" || return 1
+  printf '%s\n' "advance ${branch}" >>"$side/README.md" || return 1
+  git -C "$side" add README.md || return 1
+  git -C "$side" commit -q -m "advance ${branch}" || return 1
+  git -C "$side" push -q origin "HEAD:${branch}" || return 1
+  git -C "$side" rev-parse HEAD
+}
+
+worktree_from_output() {
+  local out=$1
+  local repo=$2
+  local prefix="slowfriday: ${repo} — worktree "
+  local line
+  line=$(grep -F "$prefix" "$out" | tail -n 1 || true)
+  if [[ -z "$line" ]]; then
+    printf ''
+    return 0
+  fi
+  printf '%s' "${line#"$prefix"}"
+}
+
+count_named() {
+  local name=$1
+  shift
+  local count
+  count=$(find -P "$@" -name "$name" -print 2>/dev/null | wc -l | tr -d '[:space:]')
+  if [[ -z "$count" ]]; then
+    printf '0'
+  else
+    printf '%s' "$count"
+  fi
+}
+
+link_inode() {
+  local path=$1
+  local ino
+  ino=$(stat -f '%i' "$path" 2>/dev/null || true)
+  if [[ "$ino" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$ino"
+    return 0
+  fi
+  stat -c '%i' "$path"
 }
 
 # --- tests -------------------------------------------------------------------
@@ -971,10 +1196,11 @@ test_run_stale_pid_is_cleared_and_queries_run() {
 }
 
 test_run_skips_thursday_and_saturday() {
-  local test_name="Thursday and Saturday skip without querying and say not Friday"
+  local test_name="Thursday and Saturday skip without querying or calling herdr and say not Friday"
   local config_dir="$TEST_ROOT/run-weekday-config"
   local repo_dir="$TEST_ROOT/run-weekday-repo"
   local log="$TEST_ROOT/run-weekday-log"
+  local herdr_log="$TEST_ROOT/run-weekday-herdr"
   local out_file="$TEST_ROOT/run-weekday-out.txt"
   local status count problems=""
 
@@ -985,6 +1211,7 @@ test_run_skips_thursday_and_saturday() {
   }
   use_query_stub "$log"
   RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
 
   invoke_run "$config_dir" "2026-10-08T10:00:00" "$out_file"
   status=$?
@@ -994,6 +1221,9 @@ test_run_skips_thursday_and_saturday() {
   fi
   if [[ "$count" != "0" ]]; then
     problems="${problems}Thursday invoked queries, count=$count"$'\n'
+  fi
+  if [[ -s "$herdr_log" ]]; then
+    problems="${problems}Thursday called herdr"$'\n'"$(cat "$herdr_log")"$'\n'
   fi
   if ! grep -F -q -- "not Friday" "$out_file"; then
     problems="${problems}Thursday output did not say not Friday"$'\n'
@@ -1017,6 +1247,9 @@ test_run_skips_thursday_and_saturday() {
   fi
   if [[ "$count" != "0" ]]; then
     problems="${problems}Saturday invoked queries, count=$count"$'\n'
+  fi
+  if [[ -s "$herdr_log" ]]; then
+    problems="${problems}Saturday called herdr"$'\n'"$(cat "$herdr_log")"$'\n'
   fi
   if ! grep -F -q -- "not Friday" "$out_file"; then
     problems="${problems}Saturday output did not say not Friday"$'\n'
@@ -1263,10 +1496,456 @@ test_run_plain_directory_fails_preflight() {
   pass "$test_name"
 }
 
+test_run_fetches_main_and_links_slowfriday() {
+  local test_name="Friday fetch updates stale origin/main, opens drew/slowfriday-261009, and links slowfriday"
+  local config_dir="$TEST_ROOT/run-deliver-config"
+  local repo_dir="$TEST_ROOT/run-deliver-repo"
+  local log="$TEST_ROOT/run-deliver-log"
+  local herdr_log="$TEST_ROOT/run-deliver-herdr"
+  local out_file="$TEST_ROOT/run-deliver-out.txt"
+  local sentinel="$repo_dir/slowfriday/durable-sentinel.txt"
+  local old new stale after head wt expected problems=""
+  local status count
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'durable sentinel' >"$sentinel"
+  old=$(git -C "$repo_dir" rev-parse origin/main)
+  new=$(advance_bare_branch "$repo_dir" main) || {
+    fail "$test_name" "could not advance origin/main"
+    return
+  }
+  stale=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$stale" != "$old" || "$new" == "$old" ]]; then
+    fail "$test_name" "origin/main was not stale before the run (old=$old new=$new stale=$stale)"
+    return
+  fi
+
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
+  RUN_HERDR_PLANT=copy
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  after=$(git -C "$repo_dir" rev-parse origin/main)
+  head=$(git -C "$repo_dir" rev-parse HEAD)
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  expected="worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main"
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$after" != "$new" ]]; then
+    problems="${problems}origin/main did not match the new commit (after=$after new=$new)"$'\n'
+  fi
+  if [[ "$head" != "$old" ]]; then
+    problems="${problems}fetch moved local HEAD"$'\n'
+  fi
+  if ! grep -F -x -q -- "$expected" "$herdr_log"; then
+    problems="${problems}herdr log missing the create invocation"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if grep -F -q -- '--focus' "$herdr_log"; then
+    problems="${problems}herdr log contains --focus"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" ]]; then
+    problems="${problems}printed worktree is missing: ${wt}"$'\n'
+  else
+    if [[ ! -L "$wt/slowfriday" ]]; then
+      problems="${problems}worktree slowfriday is not a symlink"$'\n'
+    fi
+    if [[ "$(readlink "$wt/slowfriday")" != "$repo_dir/slowfriday" ]]; then
+      problems="${problems}symlink target is $(readlink "$wt/slowfriday")"$'\n'
+    fi
+    if [[ "$(count_named copied-only.txt "$wt" "$repo_dir")" != "0" ]]; then
+      problems="${problems}copied-only.txt is still present without following links"$'\n'
+    fi
+    if [[ "$(count_named durable-sentinel.txt "$repo_dir")" != "1" ]]; then
+      problems="${problems}registered sentinel count is not 1"$'\n'
+    fi
+    if [[ "$(count_named durable-sentinel.txt "$wt")" != "0" ]]; then
+      problems="${problems}sentinel is visible from the worktree without following links"$'\n'
+    fi
+    if [[ ! -f "$sentinel" ]]; then
+      problems="${problems}registered sentinel is gone"$'\n'
+    fi
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}expected the query once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_trunk_develop_fetches_that_base() {
+  local test_name="trunk develop fetches origin/develop and passes it as the worktree base"
+  local config_dir="$TEST_ROOT/run-develop-config"
+  local repo_dir="$TEST_ROOT/run-develop-repo"
+  local log="$TEST_ROOT/run-develop-log"
+  local herdr_log="$TEST_ROOT/run-develop-herdr"
+  local out_file="$TEST_ROOT/run-develop-out.txt"
+  local old new stale after expected problems=""
+  local status count
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  publish_branch "$repo_dir" develop || {
+    fail "$test_name" "could not publish develop"
+    return
+  }
+  old=$(git -C "$repo_dir" rev-parse origin/develop)
+  new=$(advance_bare_branch "$repo_dir" develop) || {
+    fail "$test_name" "could not advance origin/develop"
+    return
+  }
+  stale=$(git -C "$repo_dir" rev-parse origin/develop)
+  if [[ "$stale" != "$old" || "$new" == "$old" ]]; then
+    fail "$test_name" "origin/develop was not stale before the run"
+    return
+  fi
+  yaml_set_trunk "$repo_dir/slowfriday/config.yml" "develop"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  after=$(git -C "$repo_dir" rev-parse origin/develop)
+  expected="worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/develop"
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$after" != "$new" ]]; then
+    problems="${problems}origin/develop did not match the new commit (after=$after new=$new)"$'\n'
+  fi
+  if ! grep -F -x -q -- "$expected" "$herdr_log"; then
+    problems="${problems}herdr log missing the develop create invocation"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if grep -F -q -- '--focus' "$herdr_log"; then
+    problems="${problems}herdr log contains --focus"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}expected the query once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}run wrote notes/261009.md"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_without_origin_retries_until_origin_exists() {
+  local test_name="a repo with no origin retries later and a later origin runs the delivery"
+  local config_dir="$TEST_ROOT/run-no-origin-config"
+  local repo_dir="$TEST_ROOT/run-no-origin-repo"
+  local log="$TEST_ROOT/run-no-origin-log"
+  local herdr_log="$TEST_ROOT/run-no-origin-herdr"
+  local out_file="$TEST_ROOT/run-no-origin-out.txt"
+  local origin status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  origin=$(bare_origin_for "$repo_dir")
+  git -C "$repo_dir" remote remove origin || {
+    fail "$test_name" "could not remove origin"
+    return
+  }
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}missing origin expected exit 0, got $status"$'\n'
+  fi
+  if [[ -s "$herdr_log" ]]; then
+    problems="${problems}missing origin called herdr"$'\n'"$(cat "$herdr_log")"'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}missing origin invoked queries, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}missing origin wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}missing origin left progress_pid set"$'\n'
+  fi
+  if ! grep -F -q -- "the next tick retries" "$out_file"; then
+    problems="${problems}missing origin did not say the next tick retries"$'\n'
+  fi
+
+  git -C "$repo_dir" remote add origin "$origin" || {
+    fail "$test_name" "could not add origin" "$problems"
+    return
+  }
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}retry expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -F -q -- "worktree create" "$herdr_log"; then
+    problems="${problems}retry did not call herdr"$'\n'
+  fi
+  if ! grep -F -q -- "--cwd ${repo_dir}" "$herdr_log"; then
+    problems="${problems}retry herdr log missing --cwd"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}retry expected the query once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}retry wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_herdr_create_failure_without_branch_retries() {
+  local test_name="herdr create failure with no listed branch skips queries until a later success"
+  local config_dir="$TEST_ROOT/run-herdr-fail-config"
+  local repo_dir="$TEST_ROOT/run-herdr-fail-repo"
+  local log="$TEST_ROOT/run-herdr-fail-log"
+  local herdr_log="$TEST_ROOT/run-herdr-fail-herdr"
+  local out_file="$TEST_ROOT/run-herdr-fail-out.txt"
+  local status count creates problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
+  RUN_HERDR_CREATE_STATUS=1
+  RUN_HERDR_LIST=empty
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main" "$herdr_log" || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}failed create expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$creates" != "1" ]]; then
+    problems="${problems}failed create expected one create invocation, got $creates"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! grep -F -q -- "worktree list --cwd ${repo_dir}" "$herdr_log"; then
+    problems="${problems}failed create did not list worktrees"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}failed create invoked queries, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}failed create wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}failed create left progress_pid set"$'\n'
+  fi
+  if ! grep -F -q -- "the next tick retries" "$out_file"; then
+    problems="${problems}failed create did not say the next tick retries"$'\n'
+  fi
+
+  RUN_HERDR_CREATE_STATUS=
+  RUN_HERDR_LIST=
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main" "$herdr_log" || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}retry expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$creates" != "2" ]]; then
+    problems="${problems}retry expected a second create, got $creates"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}retry expected the query once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}retry wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_herdr_create_failure_recovers_listed_branch() {
+  local test_name="herdr create failure recovers the listed branch, links slowfriday, and queries once"
+  local config_dir="$TEST_ROOT/run-herdr-recover-config"
+  local repo_dir="$TEST_ROOT/run-herdr-recover-repo"
+  local log="$TEST_ROOT/run-herdr-recover-log"
+  local herdr_log="$TEST_ROOT/run-herdr-recover-herdr"
+  local out_file="$TEST_ROOT/run-herdr-recover-out.txt"
+  local sentinel="$repo_dir/slowfriday/durable-sentinel.txt"
+  local status count wt problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'durable sentinel' >"$sentinel"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
+  RUN_HERDR_CREATE_STATUS=1
+  RUN_HERDR_LIST=match
+  RUN_HERDR_PLANT=copy
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if ! grep -F -q -- "worktree create" "$herdr_log"; then
+    problems="${problems}create was not attempted"$'\n'
+  fi
+  if ! grep -F -q -- "worktree list --cwd ${repo_dir}" "$herdr_log"; then
+    problems="${problems}list was not attempted"$'\n'
+  fi
+  if [[ -z "$wt" || ! -L "$wt/slowfriday" ]]; then
+    problems="${problems}recovered worktree slowfriday is not a symlink (${wt})"$'\n'
+  elif [[ "$(readlink "$wt/slowfriday")" != "$repo_dir/slowfriday" ]]; then
+    problems="${problems}symlink target is $(readlink "$wt/slowfriday")"$'\n'
+  fi
+  if [[ -n "$wt" && "$(count_named copied-only.txt "$wt" "$repo_dir")" != "0" ]]; then
+    problems="${problems}copied directory remained"$'\n'
+  fi
+  if [[ ! -f "$sentinel" ]]; then
+    problems="${problems}registered sentinel is gone"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}expected the query once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}run wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_existing_slowfriday_symlink_is_left() {
+  local test_name="an existing slowfriday symlink to the registered directory is left in place"
+  local config_dir="$TEST_ROOT/run-link-config"
+  local repo_dir="$TEST_ROOT/run-link-repo"
+  local log="$TEST_ROOT/run-link-log"
+  local herdr_log="$TEST_ROOT/run-link-herdr"
+  local out_file="$TEST_ROOT/run-link-out.txt"
+  local sentinel="$repo_dir/slowfriday/durable-sentinel.txt"
+  local status wt before after problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'durable sentinel' >"$sentinel"
+  use_query_stub "$log"
+  RUN_QUERY_STATUS=0
+  RUN_HERDR_LOG=$herdr_log
+  RUN_HERDR_PLANT=symlink
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  before=$(cat "${herdr_log}.symlink-inode" 2>/dev/null || true)
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ -z "$wt" || ! -L "$wt/slowfriday" ]]; then
+    problems="${problems}worktree slowfriday is not a symlink (${wt})"$'\n'
+  else
+    after=$(link_inode "$wt/slowfriday")
+    if [[ "$(readlink "$wt/slowfriday")" != "$repo_dir/slowfriday" ]]; then
+      problems="${problems}symlink target is $(readlink "$wt/slowfriday")"$'\n'
+    fi
+    if [[ -L "$repo_dir/slowfriday" ]]; then
+      problems="${problems}registered slowfriday became a symlink"$'\n'
+    fi
+    if [[ -z "$before" || "$before" != "$after" ]]; then
+      problems="${problems}symlink was replaced (before=$before after=$after)"$'\n'
+    fi
+    if [[ -d "$wt/slowfriday" && ! -L "$wt/slowfriday" ]]; then
+      problems="${problems}worktree slowfriday is a copied directory"$'\n'
+    fi
+  fi
+  if [[ ! -f "$sentinel" ]]; then
+    problems="${problems}registered sentinel is gone"$'\n'
+  fi
+  if [[ "$(count_named durable-sentinel.txt "$repo_dir")" != "1" ]]; then
+    problems="${problems}sentinel is not only in the registered tree"$'\n'
+  fi
+  if [[ "$(path_count_in_log "$log" "$repo_dir")" != "1" ]]; then
+    problems="${problems}expected the query once"$'\n'
+  fi
+  if [[ -e "$repo_dir/slowfriday/notes/261009.md" ]]; then
+    problems="${problems}run wrote notes/261009.md"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
 install_query_stub
+install_herdr_mock
 
 printf '%s\n' "# slowfriday tests"
 printf '%s\n' "# slowfriday binary: $SLOWFRIDAY$([[ -x "$SLOWFRIDAY" ]] && printf ' (present)' || printf ' (MISSING)')"
@@ -1286,6 +1965,12 @@ run_test test_run_window_edges
 run_test test_run_two_repos_queries_only_the_unstamped_one
 run_test test_run_older_note_does_not_stamp_this_week
 run_test test_run_plain_directory_fails_preflight
+run_test test_run_fetches_main_and_links_slowfriday
+run_test test_run_trunk_develop_fetches_that_base
+run_test test_run_without_origin_retries_until_origin_exists
+run_test test_run_herdr_create_failure_without_branch_retries
+run_test test_run_herdr_create_failure_recovers_listed_branch
+run_test test_run_existing_slowfriday_symlink_is_left
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run slowfriday tests failed"

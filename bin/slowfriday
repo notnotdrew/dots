@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Coordinator: init a repo, and gate the Friday run across registered repos.
+# Coordinator: init a repo, gate the Friday run, and open that run in Herdr.
 #
 # Usage:
 #   slowfriday init
@@ -120,6 +120,7 @@ list_registered_repos() {
 # Repo whose progress_pid this process wrote. The EXIT trap clears only that
 # file, so a skip of someone else's live pid leaves their lock alone.
 CURRENT_PROGRESS_YML=""
+DELIVERED_WORKTREE=""
 
 release_progress() {
   local repo_yml
@@ -129,6 +130,131 @@ release_progress() {
   if [[ -f "$repo_yml" ]]; then
     ruby_yaml clear_progress_pid "$repo_yml" || true
   fi
+}
+
+retry_later() {
+  local repo_path=$1
+  local reason=$2
+  printf 'slowfriday: skip %s — %s; the next tick retries\n' "$repo_path" "$reason"
+}
+
+# Point the worktree's slowfriday entry at the registered directory path.
+# The target string stays that path; physical resolution would follow a symlink.
+install_slowfriday_link() {
+  local repo_path=$1
+  local worktree=$2
+  local registered="${repo_path}/slowfriday"
+  local dest="${worktree}/slowfriday"
+  local current=""
+
+  if [[ "$dest" == "$registered" || "$worktree" == "$repo_path" ]]; then
+    return 1
+  fi
+  if [[ ! -e "$registered" && ! -L "$registered" ]]; then
+    return 1
+  fi
+
+  if [[ -L "$dest" ]]; then
+    current=$(readlink "$dest") || return 1
+    if [[ "$current" == "$registered" ]]; then
+      return 0
+    fi
+    # Unlink the symlink itself. Do not pass -r or a trailing slash.
+    rm -f "$dest" || return 1
+  elif [[ -d "$dest" ]]; then
+    ruby_yaml remove_copied_dir "$dest" "$registered" || return 1
+  elif [[ -e "$dest" ]]; then
+    rm -f "$dest" || return 1
+  fi
+
+  ln -s "$registered" "$dest"
+}
+
+# Fetch trunk, open drew/slowfriday-<yymmdd>, and share the registered directory.
+# On failure the caller clears progress_pid and skips queries. Prints nothing.
+deliver_worktree() {
+  local repo_path=$1
+  local yymmdd=$2
+  local repo_abs trunk branch herdr path create_status json_file list_file
+
+  DELIVERED_WORKTREE=""
+  repo_abs=$repo_path
+  if [[ "$repo_abs" != /* ]]; then
+    if ! repo_abs=$(CDPATH= cd "$repo_path" && pwd); then
+      retry_later "$repo_path" "delivery failed"
+      return 1
+    fi
+  fi
+
+  if ! trunk=$(ruby_yaml trunk_name "${repo_abs}/slowfriday/config.yml"); then
+    retry_later "$repo_path" "delivery failed"
+    return 1
+  fi
+  if [[ ! "$trunk" =~ ^[A-Za-z0-9._/-]+$ || "$trunk" == *..* ]]; then
+    retry_later "$repo_path" "delivery failed"
+    return 1
+  fi
+
+  if ! GIT_TERMINAL_PROMPT=0 git -C "$repo_abs" fetch origin --prune >/dev/null 2>&1; then
+    retry_later "$repo_path" "could not fetch origin"
+    return 1
+  fi
+  if ! git -C "$repo_abs" rev-parse --verify --quiet "refs/remotes/origin/${trunk}^{commit}" >/dev/null 2>&1; then
+    retry_later "$repo_path" "missing origin/${trunk}"
+    return 1
+  fi
+
+  branch="drew/slowfriday-${yymmdd}"
+  herdr=${SLOWFRIDAY_HERDR:-herdr}
+  json_file=$(mktemp "${TMPDIR:-/tmp}/slowfriday-herdr.XXXXXX") || {
+    retry_later "$repo_path" "delivery failed"
+    return 1
+  }
+  list_file=$(mktemp "${TMPDIR:-/tmp}/slowfriday-herdr.XXXXXX") || {
+    rm -f "$json_file"
+    retry_later "$repo_path" "delivery failed"
+    return 1
+  }
+
+  create_status=0
+  if ! "$herdr" worktree create \
+    --cwd "$repo_abs" \
+    --branch "$branch" \
+    --base "origin/${trunk}" \
+    >"$json_file" 2>/dev/null; then
+    create_status=1
+  fi
+
+  path=""
+  if [[ "$create_status" -eq 0 ]]; then
+    path=$(ruby_yaml herdr_create_path "$json_file" 2>/dev/null || true)
+    if [[ "$path" != /* || ! -d "$path" || "$path" == "$repo_abs" ]]; then
+      path=""
+    fi
+  fi
+
+  if [[ -z "$path" ]]; then
+    if "$herdr" worktree list --cwd "$repo_abs" >"$list_file" 2>/dev/null; then
+      path=$(ruby_yaml herdr_list_path "$list_file" "$branch" 2>/dev/null || true)
+    fi
+    if [[ "$path" != /* || ! -d "$path" || "$path" == "$repo_abs" ]]; then
+      path=""
+    fi
+  fi
+
+  rm -f "$json_file" "$list_file"
+
+  if [[ -z "$path" ]]; then
+    retry_later "$repo_path" "delivery failed"
+    return 1
+  fi
+  if ! install_slowfriday_link "$repo_abs" "$path"; then
+    retry_later "$repo_path" "delivery failed"
+    return 1
+  fi
+
+  DELIVERED_WORKTREE=$path
+  return 0
 }
 
 # Fail closed for the fixture, or when this path is not inside a work tree.
@@ -206,6 +332,12 @@ consider_repo() {
 
   CURRENT_PROGRESS_YML=$repo_yml
   ruby_yaml set_progress_pid "$repo_yml" "$$"
+
+  if ! deliver_worktree "$repo_path" "$yymmdd"; then
+    release_progress
+    return 0
+  fi
+  printf 'slowfriday: %s — worktree %s\n' "$repo_path" "$DELIVERED_WORKTREE"
 
   query_status=0
   if [[ -n "${SLOWFRIDAY_QUERIES:-}" ]]; then
