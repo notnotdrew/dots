@@ -39,8 +39,8 @@ Softer tells (tips, not bans):
 - Skip openers that grade the question ("Good question") unless it is genuinely earned. "Good catch" on a real catch is fine.
 - Skip over-precision that only proves you checked. Keep the precision the point needs.
 - Past a couple of sentences, one idea per short paragraph.
-- Confirm understanding when the thread is easy to misread ("If I'm following correctly…", "Just to confirm…"). Not every time. Sometimes the ask is the whole comment.
-- Soften with a real question: "What do you think of …?" not fake slang or missing punctuation.
+- Confirm understanding when the thread is easy to misread ("If I'm following correctly…", "Just to confirm…"). Not every time.
+- Ask a question only when you want an answer you do not have. A point you already hold goes in as a statement. Hedge in place (`I think`, `if I'm reading this right`) rather than turning it into a question.
 - Italics for contrast when two labels are easy to mix (`trial` vs `non-trialing`, *additional* vs *different*).
 - `@mention` the person you are actually asking. "The question behind my question:" is in-bounds when the surface question is not the real one.
 
@@ -90,14 +90,17 @@ Wrap code identifiers in backticks where they render (GitHub PR comments). Never
 
 **Reviewer comments** (raising a point on someone else's PR):
 
-- The ask alone is often the whole comment ("What do you think of reusing `X` here?"). A brief why only when the ask cannot stand without it, grounded in the code.
-- Soften. Prefer a question even when fairly sure. Name the exact symbol.
-- Uncertain risk: lead with the question, then the non-obvious mechanism and what it would cause. Leave the fix to the author.
+Drew's published review comments are usually several rewrites past the agent's draft. Write the version he would publish, not a draft for him to strip down.
+
+- State the issue and why it matters, grounded in the code. That is usually the whole comment. Name the exact symbol.
+- A fix is optional. Leave it to the author unless it is specific and not obvious, and then say it as a plain statement (`` `X` already parses this. ``).
+- Never dress a suggestion as a question ("What do you think of…?", "Could we…?", "Should we…?", "Would it make sense to…?"). If you know what you would change, the question is a costume. Ask only when you are actually missing the answer ("Is this called before the lock?").
+- Uncertain risk: state the mechanism and what it would cause, hedged in place (`I think`, `if I'm reading this right`).
+- Plain beats warm. Do not soften a clear point into something the author has to decode.
 - When a bot or another reviewer already posted the point, own the confirmation in one sentence. Do not retell their finding, name the bot unless it helps, ask what they think, or suggest the fix. Coverage notes Drew cannot defend stay out.
 - When an agent found something Drew would not have found himself, credit is one short clause (`Cursor spotted the same issue in another class:`), then the finding in a blockquote or a couple of lines, then any hedge as its own spoken sentence (`So that might be out of scope.`). Do not add that he would not have found it. If he verified it, fold that into the same clause. Never narrate the analysis in his voice as though he traced it. Bullets are fine when there are several peers; they are not required.
 - Two points in one comment go on separate blank-separated lines.
-- Point at the change; do not spell out the full replacement unless it is not obvious.
-- Lead with intent less often here than in author replies. You are asking, not announcing.
+- Do not spell out the full replacement unless it is not obvious.
 
 **Author replies** (answering reviewers on your own PR):
 
@@ -161,13 +164,17 @@ A body is optional. Two short sentences that stop are better than a wrapped moti
 
 ## Examples
 
-**Reviewer, ask is the whole comment:**
+**Reviewer, the issue is the whole comment:**
 
-> What do you think of reusing `KeenInternal::ResponseParser` here?
+> This duplicates `KeenInternal::ResponseParser`, so the two will drift the next time the response shape changes.
 
-**Reviewer, confirm then ask:**
+**Reviewer, issue plus why:**
 
-> If I'm following correctly, these CK calls go out before we raise `UnchangedPublishError`. What do you think of skipping them on that path? They are mutations we are not rolling back.
+> These CK calls go out before we raise `UnchangedPublishError`, so an unchanged publish still mutates CK and nothing rolls it back.
+
+**Reviewer, a real question:**
+
+> Is `sync_account` ever called outside the job? If so, this skips the lock.
 
 **Reviewer, agreeing with a bot finding (the whole comment):**
 
@@ -237,7 +244,13 @@ A body is optional. Two short sentences that stop are better than a wrapped moti
 
 > Hey hey. Honestly this is super clean, love it. Just a thought, feel free to ignore: could we maybe reuse `X` here? No worries either way.
 
-Undressed, that comment is "What do you think of reusing `X` here?"
+Undressed, that comment is "This duplicates `X`."
+
+**Not this (a suggestion dressed as a question):**
+
+> What do you think of moving the CK calls after the `UnchangedPublishError` check? Would that make sense here?
+
+That is: "These CK calls run before the `UnchangedPublishError` check, so an unchanged publish still mutates CK."
 
 **Not this (dressed-up, not plain):**
 
