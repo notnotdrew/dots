@@ -383,10 +383,31 @@ for arg in "$@"; do
   i=$((i + 1))
 done
 
-if [[ "${SLOWFRIDAY_AGENT_WRITE:-}" == "note" ]]; then
-  printf '%s\n' 'distinctive-weekly-note' >"${SLOWFRIDAY_AGENT_NOTE:?}"
-  printf '%s\n' 'distinctive-log-line' >"${SLOWFRIDAY_AGENT_LOG_FILE:?}"
-fi
+case "${SLOWFRIDAY_AGENT_WRITE:-}" in
+  note)
+    printf '%s\n' 'distinctive-weekly-note' >"${SLOWFRIDAY_AGENT_NOTE:?}"
+    printf '%s\n' 'distinctive-log-line' >"${SLOWFRIDAY_AGENT_LOG_FILE:?}"
+    ;;
+  plan)
+    cat >"${SLOWFRIDAY_AGENT_NOTE:?}" <<'NOTE'
+Picked the checkout totals query.
+Readings: total time on the checkout request.
+Cause: the totals statement.
+Options: add an index, or rewrite the statement.
+Lens: Best Simple System for Now decided.
+Plan: change the statement in one pull request.
+NOTE
+    printf '%s\n' 'plan-watchlist' >"${SLOWFRIDAY_AGENT_LOG_FILE:?}"
+    ;;
+  quiet)
+    cat >"${SLOWFRIDAY_AGENT_NOTE:?}" <<'NOTE'
+Rechecked the top resources.
+Still watching the export job.
+Nothing is ready because the cause is not named.
+NOTE
+    printf '%s\n' 'quiet-watchlist' >"${SLOWFRIDAY_AGENT_LOG_FILE:?}"
+    ;;
+esac
 exit "${SLOWFRIDAY_AGENT_STATUS:-0}"
 EOF
   chmod +x "$TEST_ROOT/agent-mock"
@@ -409,6 +430,7 @@ reset_run_env() {
   RUN_AGENT_NOTE=
   RUN_AGENT_LOG_FILE=
   RUN_INCHWORM_DATA=
+  RUN_GH_LOG=
 }
 
 bare_origin_for() {
@@ -569,6 +591,13 @@ invoke_run() {
       export SLOWFRIDAY_INCHWORM_DATA="$TEST_ROOT/inchworm-empty"
     fi
     mkdir -p "$SLOWFRIDAY_INCHWORM_DATA"
+    if [[ -n "${RUN_GH_LOG:-}" ]]; then
+      export SLOWFRIDAY_GH_LOG="$RUN_GH_LOG"
+      export PATH="$TEST_ROOT/gh-bin:${PATH}"
+      command -v gh >"${RUN_GH_LOG}.which"
+    else
+      unset SLOWFRIDAY_GH_LOG
+    fi
     unset SLOWFRIDAY_REPO
     "$SLOWFRIDAY" run
   ) >"$out_file" 2>&1
@@ -709,6 +738,31 @@ link_inode() {
   stat -c '%i' "$path"
 }
 
+# Porcelain lines that are not the slowfriday directory.
+application_status() {
+  local repo=$1
+  local line path
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    path=${line:3}
+    case "$path" in
+      slowfriday|slowfriday/*) ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < <(git -C "$repo" status --porcelain)
+}
+
+install_gh_stub() {
+  mkdir -p "$TEST_ROOT/gh-bin"
+  cat >"$TEST_ROOT/gh-bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >>"${SLOWFRIDAY_GH_LOG:?}"
+exit 99
+EOF
+  chmod +x "$TEST_ROOT/gh-bin/gh"
+}
+
 # --- tests -------------------------------------------------------------------
 
 test_init_creates_files_registry_and_gitignore() {
@@ -738,8 +792,8 @@ test_init_creates_files_registry_and_gitignore() {
 
   if [[ ! -f "$repo_dir/slowfriday/guide.md" ]]; then
     problems="${problems}missing guide.md"$'\n'
-  elif ! grep -F -q -- 'This file is the procedure the Friday run follows.' "$repo_dir/slowfriday/guide.md"; then
-    problems="${problems}guide.md missing the procedure sentence"$'\n'
+  elif ! grep -F -q -- 'Use `pup` against Datadog APM for the `screensteps_live` service in production and rank resources by total time (latency times traffic).' "$repo_dir/slowfriday/guide.md"; then
+    problems="${problems}guide.md missing the screensteps_live total-time sentence"$'\n'
   fi
 
   if [[ ! -f "$repo_dir/slowfriday/log.md" ]]; then
@@ -2066,31 +2120,109 @@ test_run_existing_slowfriday_symlink_is_left() {
   pass "$test_name"
 }
 
-test_run_agent_writes_note_and_second_friday_skips() {
-  local test_name="orchestrator starts in the worktree, keeps the note it wrote, and a second Friday skips it"
-  local config_dir="$TEST_ROOT/run-agent-ok-config"
-  local repo_dir="$TEST_ROOT/run-agent-ok-repo"
-  local out_file="$TEST_ROOT/run-agent-ok-out.txt"
-  local agent_record="$TEST_ROOT/run-agent-ok-record"
-  local note="$repo_dir/slowfriday/notes/261009.md"
-  local log_file="$repo_dir/slowfriday/log.md"
-  local expected_note="$TEST_ROOT/run-agent-ok-expected-note"
-  local expected_log="$TEST_ROOT/run-agent-ok-expected-log"
-  local guide="${repo_dir}/slowfriday/guide.md"
-  local head_before head_after wt cwd argc status problems=""
+test_run_memory_resolves_outside_the_worktree() {
+  local test_name="a write through the worktree slowfriday symlink lands in the registered directory"
+  local config_dir="$TEST_ROOT/run-memory-config"
+  local repo_dir="$TEST_ROOT/run-memory-repo"
+  local out_file="$TEST_ROOT/run-memory-out.txt"
+  local agent_record="$TEST_ROOT/run-memory-record"
+  local registered="$repo_dir/slowfriday"
+  local marker="through-the-link.txt"
+  local wt target registered_phys worktree_phys status problems=""
 
   reset_run_env
   prepare_registered_repo "$repo_dir" "$config_dir" || {
     fail "$test_name" "prepare failed"
     return
   }
-  printf '%s\n' 'distinctive-weekly-note' >"$expected_note"
-  printf '%s\n' 'distinctive-log-line' >"$expected_log"
+  use_agent_mock "$agent_record"
+  RUN_HERDR_PLANT=copy
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}expected the agent once"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" ]]; then
+    problems="${problems}printed worktree is missing: ${wt}"$'\n'
+  elif [[ ! -L "$wt/slowfriday" ]]; then
+    problems="${problems}worktree slowfriday is not a symlink"$'\n'
+  else
+    target=$(readlink "$wt/slowfriday")
+    if [[ "$target" != "$registered" ]]; then
+      problems="${problems}symlink target is ${target}"$'\n'
+    fi
+    printf '%s\n' 'through the link' >"$wt/slowfriday/$marker"
+    if [[ ! -L "$wt/slowfriday" ]]; then
+      problems="${problems}worktree slowfriday stopped being a symlink after the write"$'\n'
+    fi
+    if [[ ! -f "$registered/$marker" ]]; then
+      problems="${problems}write through the symlink is missing from the registered directory"$'\n'
+    elif ! grep -F -x -q -- 'through the link' "$registered/$marker"; then
+      problems="${problems}registered file does not contain the write"$'\n'
+    fi
+    if [[ -L "$registered" ]]; then
+      problems="${problems}registered slowfriday is a symlink"$'\n'
+    fi
+    registered_phys=$(CDPATH= cd "$registered" && pwd -P) || registered_phys=""
+    worktree_phys=$(CDPATH= cd "$wt" && pwd -P) || worktree_phys=""
+    if [[ -z "$registered_phys" || -z "$worktree_phys" ]]; then
+      problems="${problems}could not resolve the registered directory or the worktree"$'\n'
+    else
+      case "$registered_phys/" in
+        "$worktree_phys"/*)
+          problems="${problems}registered slowfriday sits inside the worktree (${registered_phys})"$'\n'
+          ;;
+      esac
+    fi
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_agent_writes_note_and_second_friday_skips() {
+  local test_name="a plan note stamps the week, the next run skips the agent, and the Herdr worktree stays open"
+  local config_dir="$TEST_ROOT/run-agent-ok-config"
+  local repo_dir="$TEST_ROOT/run-agent-ok-repo"
+  local out_file="$TEST_ROOT/run-agent-ok-out.txt"
+  local agent_record="$TEST_ROOT/run-agent-ok-record"
+  local gh_log="$TEST_ROOT/run-agent-ok-gh.log"
+  local note="$repo_dir/slowfriday/notes/261009.md"
+  local log_file="$repo_dir/slowfriday/log.md"
+  local expected_note="$TEST_ROOT/run-agent-ok-expected-note"
+  local expected_log="$TEST_ROOT/run-agent-ok-expected-log"
+  local guide="${repo_dir}/slowfriday/guide.md"
+  local head_before head_after wt cwd argc app_status status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  cat >"$expected_note" <<'NOTE'
+Picked the checkout totals query.
+Readings: total time on the checkout request.
+Cause: the totals statement.
+Options: add an index, or rewrite the statement.
+Lens: Best Simple System for Now decided.
+Plan: change the statement in one pull request.
+NOTE
+  printf '%s\n' 'plan-watchlist' >"$expected_log"
   head_before=$(git -C "$repo_dir" rev-parse HEAD)
   use_agent_mock "$agent_record"
-  RUN_AGENT_WRITE=note
+  RUN_AGENT_WRITE=plan
   RUN_AGENT_NOTE=$note
   RUN_AGENT_LOG_FILE=$log_file
+  RUN_GH_LOG=$gh_log
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
@@ -2145,20 +2277,27 @@ test_run_agent_writes_note_and_second_friday_skips() {
     problems="${problems}argv contains --yolo, --force, or --trust"$'\n'
   fi
   if ! files_match "$expected_note" "$note"; then
-    problems="${problems}note bytes are not the agent's distinctive line"$'\n'
+    problems="${problems}plan note bytes differ"$'\n'
   fi
   if ! files_match "$expected_log" "$log_file"; then
-    problems="${problems}log bytes are not the agent's distinctive line"$'\n'
+    problems="${problems}log bytes are not the plan watchlist"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" ]]; then
+    problems="${problems}Herdr worktree from the first run is missing (${wt})"$'\n'
   fi
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
   head_after=$(git -C "$repo_dir" rev-parse HEAD)
+  app_status=$(application_status "$repo_dir")
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}second run expected exit 0, got $status"$'\n'
   fi
   if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
     problems="${problems}second Friday started the agent"$'\n'
+  fi
+  if ! grep -F -q -- "week already stamped" "$out_file"; then
+    problems="${problems}second run did not say the week was already stamped"$'\n'
   fi
   if ! files_match "$expected_note" "$note"; then
     problems="${problems}second run changed the note"$'\n'
@@ -2166,8 +2305,91 @@ test_run_agent_writes_note_and_second_friday_skips() {
   if ! files_match "$expected_log" "$log_file"; then
     problems="${problems}second run changed the log"$'\n'
   fi
+  if [[ -z "$wt" || ! -d "$wt" ]]; then
+    problems="${problems}Herdr worktree from the first run is gone (${wt})"$'\n'
+  fi
   if [[ "$head_before" != "$head_after" ]]; then
     problems="${problems}HEAD changed ($head_before -> $head_after)"$'\n'
+  fi
+  if [[ -n "$app_status" ]]; then
+    problems="${problems}git status shows application files:"$'\n'"${app_status}"$'\n'
+  fi
+  if [[ "$(cat "${gh_log}.which" 2>/dev/null || true)" != "$TEST_ROOT/gh-bin/gh" ]]; then
+    problems="${problems}gh stub was not first on PATH"$'\n'
+  fi
+  if [[ -s "$gh_log" ]]; then
+    problems="${problems}gh was executed"$'\n'"$(cat "$gh_log")"$'\n'
+  fi
+  if grep -E -q 'git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+commit|gh[[:space:]]+pr' "$SLOWFRIDAY"; then
+    problems="${problems}bin/slowfriday contains a git commit or gh pr call"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_quiet_note_stamps_the_week_and_keeps_the_worktree() {
+  local test_name="a quiet note stamps the week, the next run skips the agent, and the Herdr worktree stays open"
+  local config_dir="$TEST_ROOT/run-quiet-note-config"
+  local repo_dir="$TEST_ROOT/run-quiet-note-repo"
+  local out_file="$TEST_ROOT/run-quiet-note-out.txt"
+  local agent_record="$TEST_ROOT/run-quiet-note-record"
+  local note="$repo_dir/slowfriday/notes/261009.md"
+  local log_file="$repo_dir/slowfriday/log.md"
+  local expected_note="$TEST_ROOT/run-quiet-note-expected"
+  local wt status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  cat >"$expected_note" <<'NOTE'
+Rechecked the top resources.
+Still watching the export job.
+Nothing is ready because the cause is not named.
+NOTE
+  use_agent_mock "$agent_record"
+  RUN_AGENT_WRITE=quiet
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_LOG_FILE=$log_file
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}first run expected the agent once"$'\n'
+  fi
+  if ! files_match "$expected_note" "$note"; then
+    problems="${problems}quiet note bytes differ"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" ]]; then
+    problems="${problems}Herdr worktree is missing: ${wt}"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}second run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}second run started the agent"$'\n'
+  fi
+  if ! grep -F -q -- "week already stamped" "$out_file"; then
+    problems="${problems}second run did not say the week was already stamped"$'\n'
+  fi
+  if ! files_match "$expected_note" "$note"; then
+    problems="${problems}second run changed the quiet note"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" ]]; then
+    problems="${problems}Herdr worktree from the first run is gone (${wt})"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -2630,6 +2852,7 @@ write_yaml_helpers
 install_query_stub
 install_herdr_mock
 install_agent_mock
+install_gh_stub
 
 printf '%s\n' "# slowfriday tests"
 printf '%s\n' "# slowfriday binary: $SLOWFRIDAY$([[ -x "$SLOWFRIDAY" ]] && printf ' (present)' || printf ' (MISSING)')"
@@ -2655,7 +2878,9 @@ run_test test_run_without_origin_retries_until_origin_exists
 run_test test_run_herdr_create_failure_without_branch_retries
 run_test test_run_herdr_create_failure_recovers_listed_branch
 run_test test_run_existing_slowfriday_symlink_is_left
+run_test test_run_memory_resolves_outside_the_worktree
 run_test test_run_agent_writes_note_and_second_friday_skips
+run_test test_run_quiet_note_stamps_the_week_and_keeps_the_worktree
 run_test test_run_agent_quiet_success_retries
 run_test test_run_agent_failure_writes_nothing_and_retries
 run_test test_run_agent_prompt_names_open_slow_finds_only

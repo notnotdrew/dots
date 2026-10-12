@@ -78,7 +78,23 @@ write_guide() {
   cat >"$path" <<'EOF'
 # Guide
 
-This file is the procedure the Friday run follows.
+Use `pup` against Datadog APM for the `screensteps_live` service in production and rank resources by total time (latency times traffic). Do not rank by p95. Do not start from a slow-query list, Prosopite, or the MySQL slow log.
+
+The thing is a request or a job. Skip a single sample. Skip anything Inchworm already has an open slow find for.
+
+Read a trace for the top candidate that also looks worth it. If the time is SQL, name the statement from the trace. If it is many similar queries, say so. If the span is flat Ruby, say that profiling is off and stop there.
+
+Update the watchlist (`log.md`). Write a plan only after the cause is named. Otherwise the note explains why nothing is ready.
+
+A plan is written only when something repeats, matters, has a named cause, and a fix that survives the lenses. The lenses are Best Simple System for Now, simple-made-easy, and knot-or-untangle. Write one short comparison of the real options. A lens counts only when it separates them. The note names the pick and which lens decided it. If two lenses disagree, the note says so and still picks one.
+
+Stop at the plan. Do not edit the app, commit, or open a pull request.
+
+One orchestrator writes `log.md` and `notes/<yymmdd>.md`. It may delegate only a query pass, a code read, or a lens pass over options it already listed. Subagents do not write those files.
+
+A quiet Friday is finished. The note says what was rechecked, what is still being watched, and why nothing is ready.
+
+When the note plans, it says what was picked, the readings, the cause, the options, the lens that decided, and the plan as pull-request-sized steps.
 EOF
 }
 
