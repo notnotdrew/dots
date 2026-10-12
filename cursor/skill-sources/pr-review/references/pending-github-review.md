@@ -36,6 +36,12 @@ Start from retained, current-epoch findings in the published ledger and
 Drop candidates that duplicate an existing open review comment on the same
 anchor with the same claim. Prefer fewer comments.
 
+Drop a comment that says an event happens when the finding's evidence does not
+show a caller that can reach that state. A method body, or a command that
+feeds the method that state by hand, is not enough. If the only caller filters
+that state out, or nothing calls that caller, the comment is describing a path
+the application does not take.
+
 ## Per-Comment Pipeline
 
 For each selected candidate, run two independent subagents in order. Do not

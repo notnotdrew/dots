@@ -98,6 +98,8 @@ Also verify any candidate whose deduplication would otherwise hide a materially 
 
 Verification must test the normalized claim, not merely confirm that the cited code exists. Use the smallest decisive evidence set: reopen the relevant diff and full source context, then inspect directly related callers, models, tests, history, or command results when the claim depends on them. Before retaining any material claim, the synthesis reviewer must personally reopen its decisive evidence. Reviewer prose, agreement between reviewers, or a copied line anchor alone is not decisive evidence.
 
+A claim that a method runs, fails, or changes stored state is a claim that the application reaches that method in the state the claim describes. Name the caller chain and the state that reaches it. Reading the method body, or running the method with that state supplied by hand, does not prove the event. If the only caller cannot supply that state, or nothing in the application calls that caller, narrow the claim to the case that can be reached, or dismiss it. Keep the uncalled or filtered-out path in evidence. Do not verify it as behavior that happens, and do not mark it blocking.
+
 Do not require a reproduced runtime failure when static evidence proves the behavior. Do not claim a command was run when only its prior output was supplied. Record unexecuted checks and inaccessible evidence as verification or coverage gaps.
 
 ## Bounded Synthesis Handoff
