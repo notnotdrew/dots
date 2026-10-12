@@ -360,6 +360,38 @@ EOF
   chmod +x "$TEST_ROOT/herdr-mock"
 }
 
+install_agent_mock() {
+  cat >"$TEST_ROOT/agent-mock" <<'EOF'
+#!/usr/bin/env bash
+set -u
+
+record=${SLOWFRIDAY_AGENT_RECORD:?}
+mkdir -p "$record"
+count_file="$record/count"
+if [[ -f "$count_file" ]]; then
+  count=$(cat "$count_file")
+else
+  count=0
+fi
+count=$((count + 1))
+printf '%s\n' "$count" >"$count_file"
+printf '%s\n' "$PWD" >"$record/cwd-$count"
+printf '%s\n' "$#" >"$record/argc-$count"
+i=0
+for arg in "$@"; do
+  printf '%s' "$arg" >"$record/arg-$count-$i"
+  i=$((i + 1))
+done
+
+if [[ "${SLOWFRIDAY_AGENT_WRITE:-}" == "note" ]]; then
+  printf '%s\n' 'distinctive-weekly-note' >"${SLOWFRIDAY_AGENT_NOTE:?}"
+  printf '%s\n' 'distinctive-log-line' >"${SLOWFRIDAY_AGENT_LOG_FILE:?}"
+fi
+exit "${SLOWFRIDAY_AGENT_STATUS:-0}"
+EOF
+  chmod +x "$TEST_ROOT/agent-mock"
+}
+
 reset_run_env() {
   RUN_QUERIES=
   RUN_QUERY_LOG=
@@ -370,6 +402,13 @@ reset_run_env() {
   RUN_HERDR_CREATE_STATUS=
   RUN_HERDR_LIST=
   RUN_HERDR_PLANT=
+  RUN_AGENT=
+  RUN_AGENT_RECORD=
+  RUN_AGENT_STATUS=
+  RUN_AGENT_WRITE=
+  RUN_AGENT_NOTE=
+  RUN_AGENT_LOG_FILE=
+  RUN_INCHWORM_DATA=
 }
 
 bare_origin_for() {
@@ -494,6 +533,42 @@ invoke_run() {
     else
       unset SLOWFRIDAY_HERDR_PLANT
     fi
+    if [[ ! -x "$TEST_ROOT/agent-mock" ]]; then
+      printf 'agent mock is not executable\n' >&2
+      exit 1
+    fi
+    export SLOWFRIDAY_AGENT="${RUN_AGENT:-$TEST_ROOT/agent-mock}"
+    if [[ -n "${RUN_AGENT_RECORD:-}" ]]; then
+      export SLOWFRIDAY_AGENT_RECORD="$RUN_AGENT_RECORD"
+    else
+      export SLOWFRIDAY_AGENT_RECORD="$TEST_ROOT/agent-record-unused"
+    fi
+    if [[ -n "${RUN_AGENT_STATUS:-}" ]]; then
+      export SLOWFRIDAY_AGENT_STATUS="$RUN_AGENT_STATUS"
+    else
+      unset SLOWFRIDAY_AGENT_STATUS
+    fi
+    if [[ -n "${RUN_AGENT_WRITE:-}" ]]; then
+      export SLOWFRIDAY_AGENT_WRITE="$RUN_AGENT_WRITE"
+    else
+      unset SLOWFRIDAY_AGENT_WRITE
+    fi
+    if [[ -n "${RUN_AGENT_NOTE:-}" ]]; then
+      export SLOWFRIDAY_AGENT_NOTE="$RUN_AGENT_NOTE"
+    else
+      unset SLOWFRIDAY_AGENT_NOTE
+    fi
+    if [[ -n "${RUN_AGENT_LOG_FILE:-}" ]]; then
+      export SLOWFRIDAY_AGENT_LOG_FILE="$RUN_AGENT_LOG_FILE"
+    else
+      unset SLOWFRIDAY_AGENT_LOG_FILE
+    fi
+    if [[ -n "${RUN_INCHWORM_DATA:-}" ]]; then
+      export SLOWFRIDAY_INCHWORM_DATA="$RUN_INCHWORM_DATA"
+    else
+      export SLOWFRIDAY_INCHWORM_DATA="$TEST_ROOT/inchworm-empty"
+    fi
+    mkdir -p "$SLOWFRIDAY_INCHWORM_DATA"
     unset SLOWFRIDAY_REPO
     "$SLOWFRIDAY" run
   ) >"$out_file" 2>&1
@@ -528,6 +603,48 @@ use_query_stub() {
   RUN_QUERIES="$TEST_ROOT/query-stub"
   RUN_QUERY_LOG="$log"
   RUN_PID_SNAPSHOT="$snapshot"
+}
+
+use_agent_mock() {
+  local record=$1
+  RUN_AGENT="$TEST_ROOT/agent-mock"
+  RUN_AGENT_RECORD="$record"
+}
+
+agent_invocation_count() {
+  local record=$1
+  local count
+  if [[ ! -f "$record/count" ]]; then
+    printf '0'
+    return 0
+  fi
+  count=$(cat "$record/count")
+  printf '%s' "$count"
+}
+
+agent_argv_forbidden() {
+  local record=$1
+  local n=$2
+  local argc i
+  if [[ ! -f "$record/argc-$n" ]]; then
+    return 1
+  fi
+  argc=$(cat "$record/argc-$n")
+  i=0
+  while [[ "$i" -lt "$argc" ]]; do
+    if grep -F -q -e '--yolo' -e '--force' -e '--trust' "$record/arg-$n-$i"; then
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# Inchworm's finds directory: first 16 hex chars of sha256(absolute repo path).
+inchworm_finds_path() {
+  local data_dir=$1
+  local repo=$2
+  mise exec -- ruby -e 'require "digest"; repo = File.expand_path(ARGV[0]); hash = Digest::SHA256.hexdigest(repo)[0, 16]; puts File.join(ARGV[1], hash, "finds.md")' "$repo" "$data_dir"
 }
 
 publish_branch() {
@@ -845,6 +962,7 @@ test_run_success_leaves_week_unstamped_and_queries_again() {
   local log="$TEST_ROOT/run-ok-log"
   local snapshot="$TEST_ROOT/run-ok-snapshot"
   local out_file="$TEST_ROOT/run-ok-out.txt"
+  local agent_record="$TEST_ROOT/run-ok-agent"
   local repo_yml count ints status problems=""
 
   reset_run_env
@@ -854,6 +972,7 @@ test_run_success_leaves_week_unstamped_and_queries_again() {
   }
   repo_yml="$repo_dir/slowfriday/config.yml"
   use_query_stub "$log" "$snapshot"
+  use_agent_mock "$agent_record"
   RUN_QUERY_STATUS=0
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
@@ -865,6 +984,9 @@ test_run_success_leaves_week_unstamped_and_queries_again() {
   fi
   if [[ "$count" != "1" ]]; then
     problems="${problems}first run expected the query once, got $count"$'\n'
+  fi
+  if [[ -f "$agent_record/count" ]]; then
+    problems="${problems}query run started the agent"$'\n'
   fi
   if [[ "$ints" != "1" ]]; then
     problems="${problems}first run expected an integer progress_pid during the query, got $ints"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
@@ -900,6 +1022,9 @@ test_run_success_leaves_week_unstamped_and_queries_again() {
   fi
   if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
     problems="${problems}second run left progress_pid set"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "0" ]]; then
+    problems="${problems}query seam started the agent"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -1941,11 +2066,343 @@ test_run_existing_slowfriday_symlink_is_left() {
   pass "$test_name"
 }
 
+test_run_agent_writes_note_and_second_friday_skips() {
+  local test_name="orchestrator starts in the worktree, keeps the note it wrote, and a second Friday skips it"
+  local config_dir="$TEST_ROOT/run-agent-ok-config"
+  local repo_dir="$TEST_ROOT/run-agent-ok-repo"
+  local out_file="$TEST_ROOT/run-agent-ok-out.txt"
+  local agent_record="$TEST_ROOT/run-agent-ok-record"
+  local note="$repo_dir/slowfriday/notes/261009.md"
+  local log_file="$repo_dir/slowfriday/log.md"
+  local expected_note="$TEST_ROOT/run-agent-ok-expected-note"
+  local expected_log="$TEST_ROOT/run-agent-ok-expected-log"
+  local guide="${repo_dir}/slowfriday/guide.md"
+  local head_before head_after wt cwd argc status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'distinctive-weekly-note' >"$expected_note"
+  printf '%s\n' 'distinctive-log-line' >"$expected_log"
+  head_before=$(git -C "$repo_dir" rev-parse HEAD)
+  use_agent_mock "$agent_record"
+  RUN_AGENT_WRITE=note
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_LOG_FILE=$log_file
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  cwd=$(cat "$agent_record/cwd-1" 2>/dev/null || true)
+  argc=$(cat "$agent_record/argc-1" 2>/dev/null || true)
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}first run expected the agent once"$'\n'
+  fi
+  if [[ -z "$wt" || "$cwd" != "$wt" ]]; then
+    problems="${problems}agent cwd is not the delivered worktree (cwd=$cwd worktree=$wt)"$'\n'
+  fi
+  if [[ "$cwd" == "$repo_dir" ]]; then
+    problems="${problems}agent started in the registered checkout"$'\n'
+  fi
+  if [[ "$argc" != "2" ]]; then
+    problems="${problems}expected argv length 2, got $argc"$'\n'
+  fi
+  if [[ "$(cat "$agent_record/arg-1-0" 2>/dev/null || true)" != "-p" ]]; then
+    problems="${problems}first argument is not -p"$'\n'
+  fi
+  if [[ ! -f "$agent_record/arg-1-1" ]]; then
+    problems="${problems}prompt was not recorded"$'\n'
+  else
+    if ! grep -F -q -- "$guide" "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing the registered guide path"$'\n'
+    fi
+    if ! grep -F -q -- "$log_file" "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing the registered log path"$'\n'
+    fi
+    if ! grep -F -q -- "$note" "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing the registered notes/261009.md path"$'\n'
+    fi
+    if ! grep -F -q -- "It may delegate only a query pass, a code read, or a lens pass over options it already listed." "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing the delegation sentence"$'\n'
+    fi
+    if ! grep -F -q -- "It must not edit or commit application files." "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing the application-files sentence"$'\n'
+    fi
+    if ! grep -F -q -- "Subagents do not." "$agent_record/arg-1-1"; then
+      problems="${problems}prompt does not say subagents do not write the log and note"$'\n'
+    fi
+    if ! grep -F -q -- "It must not open a pull request." "$agent_record/arg-1-1"; then
+      problems="${problems}prompt does not say not to open a pull request"$'\n'
+    fi
+  fi
+  if agent_argv_forbidden "$agent_record" 1; then
+    problems="${problems}argv contains --yolo, --force, or --trust"$'\n'
+  fi
+  if ! files_match "$expected_note" "$note"; then
+    problems="${problems}note bytes are not the agent's distinctive line"$'\n'
+  fi
+  if ! files_match "$expected_log" "$log_file"; then
+    problems="${problems}log bytes are not the agent's distinctive line"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  head_after=$(git -C "$repo_dir" rev-parse HEAD)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}second run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}second Friday started the agent"$'\n'
+  fi
+  if ! files_match "$expected_note" "$note"; then
+    problems="${problems}second run changed the note"$'\n'
+  fi
+  if ! files_match "$expected_log" "$log_file"; then
+    problems="${problems}second run changed the log"$'\n'
+  fi
+  if [[ "$head_before" != "$head_after" ]]; then
+    problems="${problems}HEAD changed ($head_before -> $head_after)"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_agent_quiet_success_retries() {
+  local test_name="agent exit 0 with no note leaves the week unstamped and a later run starts the agent again"
+  local config_dir="$TEST_ROOT/run-agent-quiet-config"
+  local repo_dir="$TEST_ROOT/run-agent-quiet-repo"
+  local out_file="$TEST_ROOT/run-agent-quiet-out.txt"
+  local agent_record="$TEST_ROOT/run-agent-quiet-record"
+  local note="$repo_dir/slowfriday/notes/261009.md"
+  local status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_agent_mock "$agent_record"
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}first run expected the agent once"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}quiet agent wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}first run left progress_pid set"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}second run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "2" ]]; then
+    problems="${problems}later run did not start the agent again"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}later run wrote notes/261009.md"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_agent_failure_writes_nothing_and_retries() {
+  local test_name="agent failure with no note leaves the week unstamped and a later run starts the agent again"
+  local config_dir="$TEST_ROOT/run-agent-fail-config"
+  local repo_dir="$TEST_ROOT/run-agent-fail-repo"
+  local out_file="$TEST_ROOT/run-agent-fail-out.txt"
+  local agent_record="$TEST_ROOT/run-agent-fail-record"
+  local note="$repo_dir/slowfriday/notes/261009.md"
+  local status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_agent_mock "$agent_record"
+  RUN_AGENT_STATUS=1
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}failed agent expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}first run expected the agent once"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}failed agent wrote notes/261009.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
+    problems="${problems}failed agent left progress_pid set"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}later run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "2" ]]; then
+    problems="${problems}later run did not start the agent again"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}later run wrote notes/261009.md"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_agent_prompt_names_open_slow_finds_only() {
+  local test_name="prompt names the open slow find and omits a closed slow find and an open smell find"
+  local config_dir="$TEST_ROOT/run-agent-finds-config"
+  local repo_dir="$TEST_ROOT/run-agent-finds-repo"
+  local data_dir="$TEST_ROOT/run-agent-finds-inchworm"
+  local out_file="$TEST_ROOT/run-agent-finds-out.txt"
+  local agent_record="$TEST_ROOT/run-agent-finds-record"
+  local finds_path problems=""
+  local status
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  finds_path=$(inchworm_finds_path "$data_dir" "$repo_dir") || {
+    fail "$test_name" "could not resolve finds.md"
+    return
+  }
+  mkdir -p "$(dirname "$finds_path")"
+  cat >"$finds_path" <<'EOF'
+# Inchworm finds
+
+## F-slow-one
+- status: open
+- source: slow
+- rank: 1
+- title: Checkout totals
+- summary: totals are slow
+
+## F-slow-closed
+- status: closed
+- source: slow
+- rank: 2
+- title: Retired ledger export
+- summary: already done
+
+## F-smell-open
+- status: open
+- source: smell
+- rank: 3
+- title: Unused helper smell
+- summary: leftover helper
+EOF
+  use_agent_mock "$agent_record"
+  RUN_INCHWORM_DATA=$data_dir
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
+    problems="${problems}expected the agent once"$'\n'
+  fi
+  if [[ ! -f "$agent_record/arg-1-1" ]]; then
+    problems="${problems}prompt was not recorded"$'\n'
+  else
+    if ! grep -F -q -- 'F-slow-one' "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing F-slow-one"$'\n'
+    fi
+    if ! grep -F -q -- 'Checkout totals' "$agent_record/arg-1-1"; then
+      problems="${problems}prompt missing Checkout totals"$'\n'
+    fi
+    if grep -F -q -- 'Retired ledger export' "$agent_record/arg-1-1"; then
+      problems="${problems}prompt names the closed slow find"$'\n'
+    fi
+    if grep -F -q -- 'Unused helper smell' "$agent_record/arg-1-1"; then
+      problems="${problems}prompt names the open smell find"$'\n'
+    fi
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_agent_prompt_says_when_no_slow_finds() {
+  local test_name="a missing finds file tells the agent there are no open slow finds"
+  local config_dir="$TEST_ROOT/run-agent-nofinds-config"
+  local repo_dir="$TEST_ROOT/run-agent-nofinds-repo"
+  local data_dir="$TEST_ROOT/run-agent-nofinds-inchworm"
+  local out_file="$TEST_ROOT/run-agent-nofinds-out.txt"
+  local agent_record="$TEST_ROOT/run-agent-nofinds-record"
+  local status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  mkdir -p "$data_dir"
+  if [[ -e "$(inchworm_finds_path "$data_dir" "$repo_dir")" ]]; then
+    fail "$test_name" "finds.md already exists"
+    return
+  fi
+  use_agent_mock "$agent_record"
+  RUN_INCHWORM_DATA=$data_dir
+
+  invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ ! -f "$agent_record/arg-1-1" ]]; then
+    problems="${problems}prompt was not recorded"$'\n'
+  elif ! grep -F -q -- "There are no open slow finds." "$agent_record/arg-1-1"; then
+    problems="${problems}prompt does not say there are no open slow finds"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
 install_query_stub
 install_herdr_mock
+install_agent_mock
 
 printf '%s\n' "# slowfriday tests"
 printf '%s\n' "# slowfriday binary: $SLOWFRIDAY$([[ -x "$SLOWFRIDAY" ]] && printf ' (present)' || printf ' (MISSING)')"
@@ -1971,6 +2428,11 @@ run_test test_run_without_origin_retries_until_origin_exists
 run_test test_run_herdr_create_failure_without_branch_retries
 run_test test_run_herdr_create_failure_recovers_listed_branch
 run_test test_run_existing_slowfriday_symlink_is_left
+run_test test_run_agent_writes_note_and_second_friday_skips
+run_test test_run_agent_quiet_success_retries
+run_test test_run_agent_failure_writes_nothing_and_retries
+run_test test_run_agent_prompt_names_open_slow_finds_only
+run_test test_run_agent_prompt_says_when_no_slow_finds
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run slowfriday tests failed"

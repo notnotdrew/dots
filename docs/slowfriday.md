@@ -27,6 +27,8 @@ Init is idempotent. A second init keeps a single registry entry and a single git
 
 An eligible run fetches the configured trunk (`trunk` blank means main) and opens `drew/slowfriday-<yymmdd>` with `herdr worktree create --cwd`, `--branch`, and `--base origin/<trunk>`. The worktree's `slowfriday/` entry becomes a symlink to the registered checkout's directory. If the fetch or the Herdr open fails, the note is not written and a later tick retries.
 
+The orchestrator runs in the dated worktree. It follows the registered guide, and it writes the log and the weekly note itself.
+
 ## After init
 
 Move `slowfriday/` into `~/dots-private` and replace the checkout path with a symlink. Same kind of step as inchworm. The script does not do it.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Coordinator: init a repo, gate the Friday run, and open that run in Herdr.
+# Coordinator: init a repo, gate the Friday run, open that run in Herdr,
+# and start the orchestrator in the dated worktree.
 #
 # Usage:
 #   slowfriday init
@@ -257,6 +258,77 @@ deliver_worktree() {
   return 0
 }
 
+# ${SLOWFRIDAY_INCHWORM_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/inchworm}
+inchworm_data_dir() {
+  if [[ -n "${SLOWFRIDAY_INCHWORM_DATA:-}" ]]; then
+    printf '%s\n' "$SLOWFRIDAY_INCHWORM_DATA"
+    return 0
+  fi
+  if [[ -n "${XDG_DATA_HOME:-}" ]]; then
+    printf '%s\n' "${XDG_DATA_HOME}/inchworm"
+    return 0
+  fi
+  printf '%s\n' "${HOME}/.local/share/inchworm"
+}
+
+# Prompt for the one orchestrator. Paths are the registered checkout.
+# The coordinator does not write the log or the weekly note.
+orchestrator_prompt() {
+  local repo=$1
+  local yymmdd=$2
+  local guide="${repo}/slowfriday/guide.md"
+  local log="${repo}/slowfriday/log.md"
+  local note="${repo}/slowfriday/notes/${yymmdd}.md"
+  local finds finds_block
+
+  finds=$(ruby_yaml open_slow_finds "$(inchworm_data_dir)" "$repo") || return 1
+  if [[ -z "$finds" ]]; then
+    finds_block="There are no open slow finds."
+  else
+    finds_block="Open Inchworm slow finds:
+${finds}"
+  fi
+
+  cat <<EOF
+You are the Slowfriday orchestrator.
+
+Follow the guide at ${guide}.
+
+Write the log at ${log} and the weekly note at ${note} itself. Subagents do not.
+
+It may delegate only a query pass, a code read, or a lens pass over options it already listed.
+
+It must not edit or commit application files.
+It must not open a pull request.
+
+${finds_block}
+
+If an open Inchworm slow find is the same thing, say so in the note and do not plan that fix again.
+EOF
+}
+
+# cwd is the delivered worktree. Arguments are only -p and the prompt.
+run_orchestrator() {
+  local repo_path=$1
+  local yymmdd=$2
+  local worktree=$3
+  local repo_abs prompt agent status
+
+  repo_abs=$repo_path
+  if [[ "$repo_abs" != /* ]]; then
+    repo_abs=$(CDPATH= cd "$repo_path" && pwd) || return 1
+  fi
+
+  prompt=$(orchestrator_prompt "$repo_abs" "$yymmdd") || return 1
+  agent=${SLOWFRIDAY_AGENT:-agent}
+  status=0
+  (
+    cd "$worktree" || exit 1
+    "$agent" -p "$prompt"
+  ) || status=$?
+  return "$status"
+}
+
 # Fail closed for the fixture, or when this path is not inside a work tree.
 preflight_repo() {
   local repo_path=$1
@@ -267,15 +339,16 @@ preflight_repo() {
   return 0
 }
 
-# One repo. Skips and query failures return 0 so the caller can keep going.
-# The weekly stamp is the note file. This step never writes it.
+# One repo. Skips, query failures, and agent failures return 0 so the caller
+# can keep going. The weekly stamp is the note file. The coordinator never
+# writes the log or the note, and a failed agent does not delete one.
 consider_repo() {
   local repo_path=$1
   local today=$2
   local weekday=$3
   local hour=$4
   local minute=$5
-  local mins yymmdd repo_yml note_path state pid query_status
+  local mins yymmdd repo_yml note_path state pid query_status agent_status
 
   # 1=Mon .. 7=Sun. Friday is 5.
   if [[ "$weekday" -ne 5 ]]; then
@@ -339,17 +412,30 @@ consider_repo() {
   fi
   printf 'slowfriday: %s — worktree %s\n' "$repo_path" "$DELIVERED_WORKTREE"
 
-  query_status=0
+  # SLOWFRIDAY_QUERIES is the test seam. When it is set, do not launch an agent.
   if [[ -n "${SLOWFRIDAY_QUERIES:-}" ]]; then
+    query_status=0
     "$SLOWFRIDAY_QUERIES" "$repo_path" || query_status=$?
-  fi
-  release_progress
-
-  if [[ "$query_status" -ne 0 ]]; then
-    printf 'slowfriday: skip %s — queries failed; the week is unstamped\n' "$repo_path"
+    release_progress
+    if [[ "$query_status" -ne 0 ]]; then
+      printf 'slowfriday: skip %s — queries failed; the week is unstamped\n' "$repo_path"
+      return 0
+    fi
+    printf 'slowfriday: %s — week left unstamped\n' "$repo_path"
     return 0
   fi
 
+  agent_status=0
+  run_orchestrator "$repo_path" "$yymmdd" "$DELIVERED_WORKTREE" || agent_status=$?
+  release_progress
+
+  if [[ -f "$note_path" ]]; then
+    return 0
+  fi
+  if [[ "$agent_status" -ne 0 ]]; then
+    printf 'slowfriday: skip %s — agent failed; the week is unstamped\n' "$repo_path"
+    return 0
+  fi
   printf 'slowfriday: %s — week left unstamped\n' "$repo_path"
   return 0
 }

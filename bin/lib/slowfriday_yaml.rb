@@ -8,6 +8,7 @@ require "yaml"
 require "fileutils"
 require "json"
 require "time"
+require "digest"
 
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
@@ -167,6 +168,46 @@ def remove_nofollow(path, idents)
   File.unlink(path)
 end
 
+# Inchworm stores finds.md under the first 16 hex chars of the sha256 of the
+# absolute repo path. A missing file yields no finds.
+def finds_md_path(data_dir, repo_path)
+  absolute = File.expand_path(repo_path)
+  digest = Digest::SHA256.hexdigest(absolute)[0, 16]
+  File.join(data_dir, digest, "finds.md")
+end
+
+def parse_finds_md(path)
+  return [] unless File.file?(path)
+
+  finds = []
+  current = nil
+  File.foreach(path, encoding: Encoding::UTF_8) do |line|
+    if (match = line.match(/\A##\s+F-(.+)\s*\z/))
+      finds << current if current
+      current = { "id" => match[1].strip, "status" => "", "source" => "", "title" => "" }
+      next
+    end
+    next unless current
+
+    if (field = line.match(/\A-\s*status:\s*(.*?)\s*\z/i))
+      current["status"] = field[1].strip
+    elsif (field = line.match(/\A-\s*source:\s*(.*?)\s*\z/i))
+      current["source"] = field[1].strip
+    elsif (field = line.match(/\A-\s*title:\s*(.*?)\s*\z/i))
+      current["title"] = field[1].strip
+    end
+  end
+  finds << current if current
+  finds
+end
+
+# status open and source slow only. Closed slow finds and other sources are omitted.
+def open_slow_finds(finds)
+  finds.select do |find|
+    find["status"].to_s.downcase == "open" && find["source"].to_s == "slow"
+  end
+end
+
 # absent | pid:<positive integer> | stale
 def progress_pid_state(data)
   return "absent" unless data.is_a?(Hash)
@@ -259,6 +300,13 @@ when "herdr_list_path"
 
 when "remove_copied_dir"
   remove_copied_dir(ARGV.fetch(1), ARGV.fetch(2))
+
+when "open_slow_finds"
+  data_dir = ARGV.fetch(1)
+  repo_path = ARGV.fetch(2)
+  open_slow_finds(parse_finds_md(finds_md_path(data_dir, repo_path))).each do |find|
+    printf "F-%s: %s\n", find["id"], find["title"]
+  end
 
 when "parse_now"
   # Print: date weekday hour minute  (weekday: 1=Mon .. 7=Sun)
