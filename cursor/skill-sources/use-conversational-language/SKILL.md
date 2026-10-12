@@ -92,10 +92,11 @@ Wrap code identifiers in backticks where they render (GitHub PR comments). Never
 
 Drew's published review comments are usually several rewrites past the agent's draft. Write the version he would publish, not a draft for him to strip down.
 
-- State the issue and why it matters, grounded in the code. That is usually the whole comment. Name the exact symbol.
+- State the issue and why it matters. That is usually the whole comment.
+- Don't get bogged down in the details. Go a level or two up and describe the problem simply. Name the symbol when it is the thing; skip the trace of how it happens.
 - A fix is optional. Leave it to the author unless it is specific and not obvious, and then say it as a plain statement (`` `X` already parses this. ``).
 - Never dress a suggestion as a question ("What do you think of…?", "Could we…?", "Should we…?", "Would it make sense to…?"). If you know what you would change, the question is a costume. Ask only when you are actually missing the answer ("Is this called before the lock?").
-- Uncertain risk: state the mechanism and what it would cause, hedged in place (`I think`, `if I'm reading this right`).
+- Uncertain risk: say what would go wrong, hedged in place (`I think`, `if I'm reading this right`). One concrete fact if the risk is not obvious.
 - Plain beats warm. Do not soften a clear point into something the author has to decode.
 - When a bot or another reviewer already posted the point, own the confirmation in one sentence. Do not retell their finding, name the bot unless it helps, ask what they think, or suggest the fix. Coverage notes Drew cannot defend stay out.
 - When an agent found something Drew would not have found himself, credit is one short clause (`Cursor spotted the same issue in another class:`), then the finding in a blockquote or a couple of lines, then any hedge as its own spoken sentence (`So that might be out of scope.`). Do not add that he would not have found it. If he verified it, fold that into the same clause. Never narrate the analysis in his voice as though he traced it. Bullets are fine when there are several peers; they are not required.
@@ -251,6 +252,12 @@ Undressed, that comment is "This duplicates `X`."
 > What do you think of moving the CK calls after the `UnchangedPublishError` check? Would that make sense here?
 
 That is: "These CK calls run before the `UnchangedPublishError` check, so an unchanged publish still mutates CK."
+
+**Not this (bogged down in the mechanism):**
+
+> `publish` calls `ck.update` on line 40, then `ck.touch` on line 44, then raises `UnchangedPublishError` on line 51 when the checksum matches. Neither call is inside a transaction, and `CkClient#update` posts immediately, so the rollback in `ensure` never reaches them.
+
+A level up, that is the issue-plus-why example above.
 
 **Not this (dressed-up, not plain):**
 
