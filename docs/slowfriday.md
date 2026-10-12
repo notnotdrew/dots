@@ -29,6 +29,12 @@ An eligible run fetches the configured trunk (`trunk` blank means main) and open
 
 The orchestrator runs in the dated worktree. It follows the registered guide, and it writes the log and the weekly note itself.
 
+## LaunchAgent
+
+`slowfriday launchd-setup` installs a LaunchAgent that ticks `slowfriday run` on Friday from 08:00–15:30, every 30 minutes.
+
+Grant Full Disk Access only to the runner path that command prints. A rebuilt runner needs the grant added again.
+
 ## After init
 
 Move `slowfriday/` into `~/dots-private` and replace the checkout path with a symlink. Same kind of step as inchworm. The script does not do it.

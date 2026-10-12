@@ -5,6 +5,7 @@
 # Usage:
 #   slowfriday init
 #   slowfriday run
+#   slowfriday launchd-setup [--no-open] [--no-reload]
 
 set -euo pipefail
 
@@ -29,6 +30,7 @@ Usage: slowfriday <init|run>
 
   init    Write the slowfriday directory, register cwd, and ensure the gitignore entry
   run     Consider each registered repository on Friday
+  launchd-setup   Install the Friday LaunchAgent [--no-open] [--no-reload]
 EOF
 }
 
@@ -440,6 +442,200 @@ consider_repo() {
   return 0
 }
 
+# FDA-scoped LaunchAgent executable: a private copy of bash (not /bin/bash).
+# TCC attributes Full Disk Access to this binary only — not every bash script.
+LAUNCHD_RUNNER="${SLOWFRIDAY_LAUNCHD_RUNNER:-${XDG_DATA_HOME:-$HOME/.local/share}/slowfriday/slowfriday-launchd}"
+LAUNCHD_PLIST="${SLOWFRIDAY_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/com.slowfriday.plist}"
+LAUNCHD_LABEL="com.slowfriday"
+# Apple Silicon: do not copy /bin/bash. It is x86_64+arm64e; keeping the
+# platform signature hits a launch constraint, and re-signing it hits the
+# preview arm64e ABI check. Homebrew bash is thin arm64. Ad-hoc re-signing as
+# com.slowfriday.launchd gives the copy a cdhash distinct from its source so the
+# FDA grant covers only this runner.
+LAUNCHD_RUNNER_IDENTIFIER="com.slowfriday.launchd"
+LAUNCHD_RUNNER_SOURCE="/opt/homebrew/bin/bash"
+
+resolve_launchd_template() {
+  local candidate dir
+  if [[ -n "${SLOWFRIDAY_LAUNCHD_TEMPLATE:-}" && -f "${SLOWFRIDAY_LAUNCHD_TEMPLATE}" ]]; then
+    printf '%s\n' "$SLOWFRIDAY_LAUNCHD_TEMPLATE"
+    return 0
+  fi
+  for candidate in \
+    "${SCRIPT_DIR}/../launchd/com.slowfriday.plist.template" \
+    "${HOME}/dots/launchd/com.slowfriday.plist.template"
+  do
+    if [[ -f "$candidate" ]]; then
+      dir=$(CDPATH= cd "$(dirname "$candidate")" && pwd)
+      printf '%s/%s\n' "$dir" "$(basename "$candidate")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+launchd_agent_path() {
+  # Prefer mise ruby latest, Homebrew, user bins, then system.
+  local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+  printf '%s' \
+    "${data_home}/mise/installs/ruby/latest/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+write_launchd_plist() {
+  local template=$1
+  local dest=$2
+  local runner=$3
+  local slowfriday_bin=$4
+  local agent_path
+  local tmp
+
+  agent_path=$(launchd_agent_path)
+  mkdir -p "$(dirname "$dest")"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/slowfriday-plist.XXXXXX")
+  # Portable placeholders — no machine-specific paths in the repo template.
+  sed \
+    -e "s|@HOME@|${HOME}|g" \
+    -e "s|@PATH@|${agent_path}|g" \
+    -e "s|@LAUNCHD_RUNNER@|${runner}|g" \
+    -e "s|@SLOWFRIDAY_BIN@|${slowfriday_bin}|g" \
+    "$template" >"$tmp"
+  mv "$tmp" "$dest"
+}
+
+launchd_runner_identifier() {
+  local runner=$1
+  [[ -x "$runner" ]] || return 1
+  # --verbose is required; plain --display omits the Identifier line.
+  codesign --display --verbose=2 "$runner" 2>&1 | sed -n 's/^Identifier=//p'
+}
+
+build_launchd_runner() {
+  local runner=$1
+  local bash_src=$2
+
+  mkdir -p "$(dirname "$runner")"
+  cp "$bash_src" "$runner"
+  chmod 755 "$runner"
+
+  codesign --remove-signature "$runner" >/dev/null 2>&1 || true
+  if ! codesign --force --sign - --identifier "$LAUNCHD_RUNNER_IDENTIFIER" "$runner" >/dev/null 2>&1; then
+    die "could not ad-hoc sign $runner (is codesign available?)"
+  fi
+  if ! codesign --verify "$runner" >/dev/null 2>&1; then
+    die "ad-hoc signature on $runner did not verify"
+  fi
+  # Catch an unrunnable runner here rather than at the next Friday tick.
+  if ! "$runner" -c 'exit 0' >/dev/null 2>&1; then
+    die "runner $runner (from $bash_src) cannot execute after signing"
+  fi
+}
+
+reload_launchd_agent() {
+  local plist=$1
+  local uid
+  uid=$(id -u)
+  launchctl bootout "gui/${uid}/${LAUNCHD_LABEL}" 2>/dev/null || true
+  # Replace a stale symlink to the old repo plist with the generated file.
+  if [[ -L "$plist" ]]; then
+    rm -f "$plist"
+  fi
+  launchctl bootstrap "gui/${uid}" "$plist"
+}
+
+cmd_launchd_setup() {
+  local runner_dir
+  local bash_src
+  local open_settings=1
+  local do_reload=1
+  local runner_rebuilt=0
+  local template slowfriday_bin
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-open)
+        open_settings=0
+        shift
+        ;;
+      --no-reload)
+        do_reload=0
+        shift
+        ;;
+      -h|--help)
+        printf '%s\n' "Usage: slowfriday launchd-setup [--no-open] [--no-reload]"
+        return 0
+        ;;
+      *)
+        die "unknown launchd-setup option: $1"
+        ;;
+    esac
+  done
+
+  bash_src="$LAUNCHD_RUNNER_SOURCE"
+  if [[ ! -x "$bash_src" ]]; then
+    die "missing $bash_src (try: brew install bash)"
+  fi
+  if ! lipo -archs "$bash_src" 2>/dev/null | tr ' ' '\n' | grep -qx arm64; then
+    die "$bash_src must include an arm64 slice (Apple Silicon only)"
+  fi
+
+  if ! template=$(resolve_launchd_template); then
+    die "missing launchd plist template (expected launchd/com.slowfriday.plist.template)"
+  fi
+
+  runner_dir=$(dirname "$LAUNCHD_RUNNER")
+  mkdir -p "$runner_dir"
+  # Rebuilding changes the cdhash and revokes the Full Disk Access grant, so
+  # reuse an already correctly signed runner across repeat setup runs.
+  if [[ "$(launchd_runner_identifier "$LAUNCHD_RUNNER" 2>/dev/null)" == "$LAUNCHD_RUNNER_IDENTIFIER" ]]; then
+    runner_rebuilt=0
+  else
+    build_launchd_runner "$LAUNCHD_RUNNER" "$bash_src"
+    runner_rebuilt=1
+  fi
+
+  slowfriday_bin="${SCRIPT_DIR}/slowfriday"
+  if [[ -L "$LAUNCHD_PLIST" ]]; then
+    rm -f "$LAUNCHD_PLIST"
+  fi
+  write_launchd_plist "$template" "$LAUNCHD_PLIST" "$LAUNCHD_RUNNER" "$slowfriday_bin"
+
+  if [[ "$runner_rebuilt" -eq 1 ]]; then
+    printf 'slowfriday: launchd runner → %s (rebuilt, ad-hoc signed as %s)\n' \
+      "$LAUNCHD_RUNNER" "$LAUNCHD_RUNNER_IDENTIFIER"
+  else
+    printf 'slowfriday: launchd runner → %s (reused; Full Disk Access grant intact)\n' \
+      "$LAUNCHD_RUNNER"
+  fi
+  printf 'slowfriday: launchd plist  → %s\n' "$LAUNCHD_PLIST"
+  printf 'slowfriday: ProgramArguments:\n'
+  printf '  %s\n' "$LAUNCHD_RUNNER"
+  printf '  %s\n' "$slowfriday_bin"
+  printf '  run\n'
+  printf '\n'
+  printf 'Grant Full Disk Access to ONLY this binary (not /bin/bash):\n'
+  printf '  %s\n' "$LAUNCHD_RUNNER"
+  printf 'System Settings → Privacy & Security → Full Disk Access → +\n'
+  printf 'Then ⌘⇧G and paste the path above.\n'
+  if [[ "$runner_rebuilt" -eq 1 ]]; then
+    printf 'The runner was re-signed, so any previous grant no longer applies —\n'
+    printf 'remove the stale entry and re-add the path above.\n'
+  fi
+
+  if [[ "$do_reload" -eq 1 ]]; then
+    if reload_launchd_agent "$LAUNCHD_PLIST"; then
+      printf 'slowfriday: LaunchAgent %s reloaded\n' "$LAUNCHD_LABEL"
+    else
+      printf 'slowfriday: warning: could not bootstrap %s (load manually)\n' "$LAUNCHD_LABEL" >&2
+    fi
+  fi
+
+  if [[ "$open_settings" -eq 1 ]]; then
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null \
+      || open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension" 2>/dev/null \
+      || true
+  fi
+}
+
 cmd_init() {
   local repo_root dir
 
@@ -496,6 +692,10 @@ main() {
     run)
       shift
       cmd_run "$@"
+      ;;
+    launchd-setup)
+      shift
+      cmd_launchd_setup "$@"
       ;;
     *)
       usage >&2
