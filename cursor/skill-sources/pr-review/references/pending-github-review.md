@@ -44,13 +44,16 @@ the application does not take.
 
 ## Per-Comment Pipeline
 
-For each selected candidate, run two independent subagents in order. Do not
-draft or post from the coordinator alone.
+Run two batches of independent subagents in order: verify every selected
+comment, then rewrite every confirmed comment. Do not draft or post from the
+coordinator alone.
 
 ### 1. Comment verifier
 
-Launch a fresh agent with [isolated-jobs.md](isolated-jobs.md). Give it the
-checkout, observed head, finding record, and proposed anchor. It must:
+Launch one fresh verifier per selected candidate, all in one concurrent batch,
+with [isolated-jobs.md](isolated-jobs.md). Give each the checkout, observed
+head, finding record, and proposed anchor. Wait for the whole batch before
+rewriting. Each verifier must:
 
 - re-read the relevant code at `ObservedHead`;
 - decide whether the claim is true on this PR, false, or uncertain;
@@ -70,7 +73,8 @@ CommentVerifyResult:
   DraftClaim: <one plain sentence of the verified claim, or empty when rejected>
 ```
 
-Reject `rejected` and `uncertain` candidates. Keep only `confirmed`.
+Drop `rejected` and `uncertain` candidates before rewriting. Keep only
+`confirmed`.
 
 Pre-existing confirmed issues may still be posted when they are worth making,
 but they must be flagged as pre-existing in the final comment body. Prefer
@@ -79,9 +83,10 @@ them.
 
 ### 2. Comment readability
 
-For each confirmed candidate, launch a second fresh agent that did not see the
-verifier's chain of thought beyond `DraftClaim`, `PreExisting`, `Anchor`, and
-`Evidence`. It loads `use-conversational-language` (reviewer-comment rules) and
+Launch one fresh readability agent per confirmed candidate, all in one
+concurrent batch. Each sees only its own comment's `DraftClaim`,
+`PreExisting`, `Anchor`, and `Evidence`, not the verifier's chain of thought or
+other comments. It loads `use-conversational-language` (reviewer-comment rules) and
 rewrites for humans:
 
 - plain, simple, clear;
@@ -103,7 +108,7 @@ drop the candidate.
 
 ## Assemble And Post
 
-After all candidates finish the pipeline:
+After the readability batch returns, post one pending review:
 
 1. Resolve the authenticated GitHub login with `gh api user --jq .login`.
 2. List existing reviews on the PR. If that user already has a `PENDING` review

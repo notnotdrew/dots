@@ -186,8 +186,9 @@ gatherer or reviewer transcripts.
 
 ## Pending-Review Comment Jobs
 
-After canonical artifacts publish, the coordinator may launch a comment verifier,
-then a comment readability agent, for each candidate comment, per
+After canonical artifacts publish, the coordinator launches one comment
+verifier per selected comment, all together, then one comment readability
+agent per confirmed comment, all together, per
 [pending-github-review.md](pending-github-review.md). Paste the return contract
 from that file into each handoff; the jobs do not open it. The coordinator alone
 posts the unpublished pending review.
