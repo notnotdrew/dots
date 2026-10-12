@@ -158,15 +158,9 @@ Focused reviewers never edit canonical artifacts, settle disagreements, derive v
 
 ## Concurrency
 
-Launch focused reviewers concurrently only when all of the following hold:
+While readiness is `ready`, launch every focused reviewer whose assignment is complete without another reviewer's output in one concurrent batch against the same observed head. Do not launch independent reviewers one at a time. Each assignment in the batch has explicit scope and primary boundary ownership and reads that head read-only, so no reviewer can change another's evidence.
 
-- readiness is currently `ready`;
-- each assignment is complete without another reviewer's output;
-- scopes and primary boundary ownership are explicit;
-- reviewers can operate read-only against the same observed head; and
-- concurrent work cannot change or invalidate another assignment's evidence.
-
-Sequence assignments when one depends on another's discovery, a boundary owner needs evidence that must first be resolved, readiness is being renewed, or shared mutable operations would interfere. Candidate comparison and verification begin only after all launched discovery reviewers have returned or their failures have been represented as coverage gaps. Concurrency is an execution property, not a reason to add reviewers or duplicate coverage.
+Start an assignment only after another reviewer's result returns when it needs that result, such as a boundary owner waiting on evidence another assignment must first resolve. Candidate comparison and synthesis begin only after every launched discovery reviewer has returned or its failure has been represented as a coverage gap. Concurrency is an execution property, not a reason to add reviewers or duplicate coverage.
 
 ## Optional Bugbot And Security Review
 

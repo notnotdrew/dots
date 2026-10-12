@@ -59,7 +59,7 @@ Apply every matching Standard selection rule and preserve coherent subsystem and
 
 For every overlap, record the shared behavior, distinct perspective, decisive evidence, primary boundary owner, and why combining the assignments would reduce independence or obscure coverage. Adjacent reviewers may corroborate one another, but votes and repeated prose are not verification.
 
-Do not create a fixed roster, one reviewer per PERFECT principle, or duplicate general review. Remove overlap whose scopes, evidence, and questions are materially identical. Launch independent assignments concurrently only under Standard's concurrency rules; sequence work when one result is needed to bound another.
+Do not create a fixed roster, one reviewer per PERFECT principle, or duplicate general review. Remove overlap whose scopes, evidence, and questions are materially identical. Launch every independent assignment in one concurrent batch under Standard's concurrency rule. Start an assignment that needs another result to bound it only after that result returns.
 
 Every handoff uses the Standard bounded shape, the same immutable observed head, explicit broader relationship scope, explicit exclusions, no delegation, no artifact mutation, and no recommendation. Each return must account for promised coverage even when it reports no candidate.
 

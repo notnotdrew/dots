@@ -157,7 +157,7 @@ Before launch:
 - ensure unmatched-language and check-execution gaps remain represented; and
 - create the complete bounded handoff required by `reviewer-orchestration.md`, including `MatchedStackSkills` from the gatherer.
 
-Launch independent focused reviewers concurrently in one batch only when their assignments are self-contained, their scopes and boundary ownership are explicit, they read the same immutable observed head, and no assignment depends on another's output. Sequence dependent assignments. Concurrency does not justify duplicate reviewers or Deep-style intentional overlap.
+Launch every independent focused reviewer in one concurrent batch under the concurrency rule in `reviewer-orchestration.md`. Start an assignment that needs another reviewer's result only after that result returns. Concurrency does not justify duplicate reviewers or Deep-style intentional overlap.
 
 Use Bugbot or Security Review only when it fits a selected bounded assignment. Follow its strict target, branch-diff, and one-retry contract. Tool absence is not a gap when another capable reviewer covers the concern.
 
