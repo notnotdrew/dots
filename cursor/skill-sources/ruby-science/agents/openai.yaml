@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ruby Science"
-  short_description: "Fix a Ruby or Rails code smell"
-  default_prompt: "Use ruby-science on this code"

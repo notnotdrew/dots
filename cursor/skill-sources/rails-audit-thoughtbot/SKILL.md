@@ -174,7 +174,3 @@ Prefer search and read tools over ad-hoc shell:
 **Input:** `rails-audit-thoughtbot audit controllers`
 
 **Output:** the same report, scoped to controllers.
-
-## After the report
-
-This skill writes the report and stops. Applying a finding is a separate explicit invoke: `ruby-science` for a smell, `testing-rails` for a test, `rails-antipatterns` for a Rails antipattern.
