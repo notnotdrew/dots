@@ -31,6 +31,16 @@ An eligible run fetches the trunk (blank means main), opens `drew/untangle-<yymm
 
 The orchestrator runs in the worktree. It follows the guide for the cursor's bucket only, may delegate a code read, and writes the log and the note. The coordinator keeps a note only when it opens with `plan` or `quiet`. A plan is recorded as the open plan and later runs skip. A quiet note is not an open plan.
 
+A quiet note advances the cursor and wraps after Removal. A plan leaves the cursor on that bucket.
+
+## Done
+
+`untangle done` clears the open plan and then advances. It reads `untangle/config.yml` in the current directory. With no open plan, it exits non-zero and leaves the cursor.
+
+## Status
+
+`untangle status` shows the cursor and the open plan when there is one. It reads `untangle/config.yml` in the current directory and does not change the file.
+
 ## After init
 
 Move `untangle/` into `~/dots-private` and replace the checkout path with a symlink. The script does not do that move.

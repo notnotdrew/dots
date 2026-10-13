@@ -232,6 +232,26 @@ def store_open_plan(data, note_path)
   data
 end
 
+# Drop open_plan. Other keys stay. The cursor is not touched.
+def clear_open_plan(data)
+  data = {} unless data.is_a?(Hash)
+  data.delete("open_plan")
+  data.delete(:open_plan)
+  data
+end
+
+# Missing or blank cursor counts as Language. Removal wraps to Language.
+# Other keys stay. open_plan is not touched.
+# Returns nil when the cursor is not one of the eight buckets.
+def advance_cursor(data)
+  data = {} unless data.is_a?(Hash)
+  index = BUCKETS.index(cursor_bucket(data))
+  return nil if index.nil?
+
+  data["cursor"] = BUCKETS[(index + 1) % BUCKETS.length]
+  data
+end
+
 # absent | pid:<positive integer> | stale
 def progress_pid_state(data)
   return "absent" unless data.is_a?(Hash)
@@ -337,6 +357,20 @@ when "open_plan_value"
 when "set_open_plan"
   repo_yml = ARGV.fetch(1)
   data = store_open_plan(load_yaml(repo_yml), ARGV.fetch(2))
+  dump_yaml(repo_yml, data)
+
+when "clear_open_plan"
+  repo_yml = ARGV.fetch(1)
+  data = clear_open_plan(load_yaml(repo_yml))
+  dump_yaml(repo_yml, data)
+
+when "advance_cursor"
+  repo_yml = ARGV.fetch(1)
+  data = advance_cursor(load_yaml(repo_yml))
+  if data.nil?
+    warn "invalid cursor"
+    exit 1
+  end
   dump_yaml(repo_yml, data)
 
 when "parse_now"

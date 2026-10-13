@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness for untangle init and run. Failures are recorded; the suite does not
+# Harness for untangle init, run, done, and status. Failures are recorded; the suite does not
 # exit on the first one. Tests set UNTANGLE_CONFIG_DIR and UNTANGLE_NOW so
 # they never touch the real home config. Init tests also set
 # UNTANGLE_GITIGNORE_GLOBAL.
@@ -643,6 +643,23 @@ invoke_run() {
   ) >"$out_file" 2>&1
 }
 
+# done and status read the current directory. Point config and the clock away
+# from the real home and from Wednesday so a registry walk cannot hide here.
+invoke_in_repo() {
+  local repo_dir=$1
+  local cmd=$2
+  local out_file=$3
+  local err_file=$4
+  mkdir -p "$TEST_ROOT/not-the-registry"
+  (
+    cd "$repo_dir" || exit 1
+    export UNTANGLE_CONFIG_DIR="$TEST_ROOT/not-the-registry"
+    export UNTANGLE_GITIGNORE_GLOBAL="$TEST_ROOT/not-the-gitignore"
+    export UNTANGLE_NOW="2026-10-13T10:00:00"
+    "$UNTANGLE" "$cmd"
+  ) >"$out_file" 2>"$err_file"
+}
+
 path_count_in_log() {
   local log=$1
   local path=$2
@@ -1039,6 +1056,18 @@ test_docs_manual_step_and_script_silence() {
   if ! grep -F -q -- 'A plan is recorded as the open plan and later runs skip. A quiet note is not an open plan.' "$DOCS_FILE"; then
     problems="${problems}docs do not say a plan is the open plan and a quiet note is not"$'\n'
   fi
+  if ! grep -F -q -- 'A quiet note advances the cursor and wraps after Removal.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a quiet note advances the cursor and wraps after Removal"$'\n'
+  fi
+  if ! grep -F -q -- 'A plan leaves the cursor on that bucket.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a plan leaves the cursor on that bucket"$'\n'
+  fi
+  if ! grep -F -q -- '`untangle done` clears the open plan and then advances.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say untangle done clears the open plan and then advances"$'\n'
+  fi
+  if ! grep -F -q -- '`untangle status` shows the cursor and the open plan when there is one.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say untangle status shows the cursor and the open plan when there is one"$'\n'
+  fi
   if grep -F -q -- 'dots-private' "$UNTANGLE"; then
     problems="${problems}bin/untangle contains dots-private"$'\n'
   fi
@@ -1065,24 +1094,42 @@ test_usage_on_missing_and_unknown_command() {
   if [[ "$status" -eq 0 ]]; then
     problems="${problems}missing command exited 0"$'\n'
   fi
-  if ! grep -F -q -- 'Usage: untangle <init|run>' "$stderr_file"; then
+  if ! grep -F -q -- 'Usage: untangle <init|run|done|status>' "$stderr_file"; then
     problems="${problems}missing command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
   fi
   if [[ -s "$stdout_file" ]]; then
     problems="${problems}missing command wrote to stdout"$'\n'
   fi
 
-  for cmd in done status launchd-setup no-such; do
+  for cmd in launchd-setup no-such; do
     "$UNTANGLE" "$cmd" >"$stdout_file" 2>"$stderr_file"
     status=$?
     if [[ "$status" -eq 0 ]]; then
       problems="${problems}unknown command ${cmd} exited 0"$'\n'
     fi
-    if ! grep -F -q -- 'Usage: untangle <init|run>' "$stderr_file"; then
+    if ! grep -F -q -- 'Usage: untangle <init|run|done|status>' "$stderr_file"; then
       problems="${problems}unknown command ${cmd} did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
+    fi
+    if ! grep -F -q -- "unknown command: ${cmd}" "$stderr_file"; then
+      problems="${problems}unknown command ${cmd} did not name itself"$'\n'"$(cat "$stderr_file")"$'\n'
     fi
     if [[ -s "$stdout_file" ]]; then
       problems="${problems}unknown command ${cmd} wrote to stdout"$'\n'
+    fi
+  done
+
+  mkdir -p "$TEST_ROOT/usage-empty"
+  for cmd in done status; do
+    invoke_in_repo "$TEST_ROOT/usage-empty" "$cmd" "$stdout_file" "$stderr_file"
+    status=$?
+    if [[ "$status" -eq 0 ]]; then
+      problems="${problems}${cmd} without config exited 0"$'\n'
+    fi
+    if grep -F -q -- 'unknown command' "$stderr_file"; then
+      problems="${problems}${cmd} was treated as unknown"$'\n'"$(cat "$stderr_file")"$'\n'
+    fi
+    if grep -F -q -- 'Usage:' "$stderr_file"; then
+      problems="${problems}${cmd} printed usage"$'\n'"$(cat "$stderr_file")"$'\n'
     fi
   done
 
@@ -1113,6 +1160,12 @@ test_usage_on_missing_and_unknown_command() {
   fi
   if ! grep -F -q -- 'Consider each registered repository on Wednesday' "$stdout_file"; then
     problems="${problems}-h usage does not say run considers each registered repository on Wednesday"$'\n'
+  fi
+  if ! grep -F -q -- 'Clear the open plan and advance the cursor' "$stdout_file"; then
+    problems="${problems}-h usage does not say done clears the open plan and advances the cursor"$'\n'
+  fi
+  if ! grep -F -q -- 'Show the cursor and the open plan' "$stdout_file"; then
+    problems="${problems}-h usage does not say status shows the cursor and the open plan"$'\n'
   fi
 
   "$UNTANGLE" --help >"$stdout_file" 2>"$stderr_file"
@@ -2681,6 +2734,79 @@ test_yaml_helpers_cursor_note_and_open_plan() {
     problems="${problems}set_open_plan did not store the absolute note path"$'\n'
   fi
 
+  local next="$dir/next.yml"
+  local removal="$dir/removal.yml"
+  local bare="$dir/bare.yml"
+  cp "$ownership" "$next"
+  printf '%s\n' '---' 'version: 1' "trunk: ''" 'cursor: Removal' >"$removal"
+  printf '%s\n' '---' 'version: 1' "trunk: ''" >"$bare"
+
+  ruby_untangle advance_cursor "$next"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}advance_cursor from Ownership exited $status"$'\n'
+  fi
+  if ! yaml_expect "$next" "cursor=str:Boundaries"; then
+    problems="${problems}advance_cursor from Ownership did not write Boundaries"$'\n'
+  fi
+  if ! yaml_expect "$next" "version=int:1"; then
+    problems="${problems}advance_cursor dropped version"$'\n'
+  fi
+  if ! yaml_expect "$next" "trunk=blank"; then
+    problems="${problems}advance_cursor dropped the blank trunk"$'\n'
+  fi
+  if ! yaml_expect "$next" "open_plan=absent"; then
+    problems="${problems}advance_cursor set open_plan"$'\n'
+  fi
+
+  ruby_untangle advance_cursor "$removal"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}advance_cursor from Removal exited $status"$'\n'
+  fi
+  if ! yaml_expect "$removal" "cursor=str:Language"; then
+    problems="${problems}advance_cursor from Removal did not wrap to Language"$'\n'
+  fi
+  if ! yaml_expect "$removal" "version=int:1"; then
+    problems="${problems}advance_cursor from Removal dropped version"$'\n'
+  fi
+  if ! yaml_expect "$removal" "trunk=blank"; then
+    problems="${problems}advance_cursor from Removal dropped the blank trunk"$'\n'
+  fi
+
+  ruby_untangle advance_cursor "$bare"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}advance_cursor from a missing cursor exited $status"$'\n'
+  fi
+  if ! yaml_expect "$bare" "cursor=str:Ownership"; then
+    problems="${problems}advance_cursor from a missing cursor did not write Ownership"$'\n'
+  fi
+  if ! yaml_expect "$bare" "version=int:1"; then
+    problems="${problems}advance_cursor from a missing cursor dropped version"$'\n'
+  fi
+  if ! yaml_expect "$bare" "trunk=blank"; then
+    problems="${problems}advance_cursor from a missing cursor dropped the blank trunk"$'\n'
+  fi
+
+  ruby_untangle clear_open_plan "$kept"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}clear_open_plan exited $status"$'\n'
+  fi
+  if ! yaml_expect "$kept" "open_plan=absent"; then
+    problems="${problems}clear_open_plan left open_plan set"$'\n'
+  fi
+  if ! yaml_expect "$kept" "cursor=str:Ownership"; then
+    problems="${problems}clear_open_plan changed the cursor"$'\n'
+  fi
+  if ! yaml_expect "$kept" "version=int:1"; then
+    problems="${problems}clear_open_plan dropped version"$'\n'
+  fi
+  if ! yaml_expect "$kept" "trunk=blank"; then
+    problems="${problems}clear_open_plan dropped the blank trunk"$'\n'
+  fi
+
   if [[ -n "$problems" ]]; then
     fail "$test_name" "$problems"
     return
@@ -2870,6 +2996,87 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
     problems="${problems}2026-10-21 did not skip for the open plan"$'\n'
   fi
 
+  local status_out="$TEST_ROOT/run-plan-status-out.txt"
+  local status_err="$TEST_ROOT/run-plan-status-err.txt"
+  local done_out="$TEST_ROOT/run-plan-done-out.txt"
+  local done_err="$TEST_ROOT/run-plan-done-err.txt"
+  local status_expected="$TEST_ROOT/run-plan-status-expected.txt"
+
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Language" "open plan: ${note}" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-plan-config-kept.yml" "$repo_yml"; then
+    problems="${problems}status changed repo config"$'\n'
+  fi
+
+  # The plan left the cursor absent, whose successor is Ownership. Move to
+  # Ownership first so done has to follow the list, not store that successor.
+  yaml_set_key "$repo_yml" cursor Ownership
+
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}done expected exit 0, got $status"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" || -s "$done_err" ]]; then
+    problems="${problems}done wrote output"$'\n'"$(cat "$done_out")"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}done left open_plan set"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Boundaries"; then
+    problems="${problems}done left the cursor off Boundaries"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}done dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}done dropped the blank trunk"$'\n'
+  fi
+  if [[ -e "$TEST_ROOT/not-the-registry/config.yml" ]]; then
+    problems="${problems}done wrote the registry"$'\n'
+  fi
+
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Boundaries" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status after done expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status after done wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status after done output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}second done exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'untangle: error: no open plan' "$done_err"; then
+    problems="${problems}second done did not report no open plan"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" ]]; then
+    problems="${problems}second done wrote to stdout"$'\n'"$(cat "$done_out")"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Boundaries"; then
+    problems="${problems}second done changed the cursor"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}second done set open_plan"$'\n'
+  fi
+
   if [[ -n "$problems" ]]; then
     fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
     return
@@ -2924,8 +3131,17 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if ! yaml_expect "$repo_yml" "open_plan=absent"; then
     problems="${problems}quiet note set open_plan"$'\n'
   fi
-  if ! yaml_expect "$repo_yml" "cursor=absent"; then
-    problems="${problems}quiet note wrote a cursor"$'\n'
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}quiet note left the cursor off Ownership"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}quiet note dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}quiet note dropped the blank trunk"$'\n'
+  fi
+  if [[ ! -f "$record/arg-1-1" ]] || ! grep -F -q -- 'for the bucket Language only' "$record/arg-1-1"; then
+    problems="${problems}first prompt does not name the Language bucket"$'\n'
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
     problems="${problems}first run did not say quiet note"$'\n'
@@ -2946,6 +3162,12 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if ! grep -F -x -q -- "untangle: skip ${repo_dir} — week already stamped" "$out_file"; then
     problems="${problems}same Wednesday did not skip for the stamp"$'\n'
   fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}same Wednesday changed the cursor"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}same Wednesday set open_plan"$'\n'
+  fi
 
   RUN_AGENT_NOTE=$next_note
   invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
@@ -2961,8 +3183,8 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if [[ -z "$wt" || "$cwd" != "$wt" ]]; then
     problems="${problems}2026-10-21 agent cwd is not the worktree (cwd=$cwd worktree=$wt)"$'\n'
   fi
-  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- 'for the bucket Language only' "$record/arg-2-1"; then
-    problems="${problems}2026-10-21 prompt does not name the Language bucket"$'\n'
+  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- 'for the bucket Ownership only' "$record/arg-2-1"; then
+    problems="${problems}2026-10-21 prompt does not name the Ownership bucket"$'\n'
   fi
   if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- "$next_note" "$record/arg-2-1"; then
     problems="${problems}2026-10-21 prompt does not name notes/261021.md"$'\n'
@@ -2976,8 +3198,14 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if ! yaml_expect "$repo_yml" "open_plan=absent"; then
     problems="${problems}2026-10-21 set open_plan"$'\n'
   fi
-  if ! yaml_expect "$repo_yml" "cursor=absent"; then
-    problems="${problems}2026-10-21 wrote a cursor"$'\n'
+  if ! yaml_expect "$repo_yml" "cursor=str:Boundaries"; then
+    problems="${problems}2026-10-21 left the cursor off Boundaries"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}2026-10-21 dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}2026-10-21 dropped the blank trunk"$'\n'
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
     problems="${problems}2026-10-21 did not say quiet note"$'\n'
@@ -3222,8 +3450,8 @@ test_run_agent_failure_then_quiet_note_is_not_an_open_plan() {
   if ! yaml_expect "$repo_yml" "open_plan=absent"; then
     problems="${problems}quiet note set open_plan"$'\n'
   fi
-  if ! yaml_expect "$repo_yml" "cursor=absent"; then
-    problems="${problems}quiet note wrote a cursor"$'\n'
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}quiet note left the cursor off Ownership"$'\n'
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
     problems="${problems}quiet retry did not say quiet note"$'\n'
@@ -3370,6 +3598,202 @@ test_run_invalid_cursor_skips_before_fetch() {
   pass "$test_name"
 }
 
+test_run_removal_quiet_note_wraps_cursor_to_language() {
+  local test_name="a quiet note on Removal wraps the cursor to Language"
+  local config_dir="$TEST_ROOT/run-removal-config"
+  local repo_dir="$TEST_ROOT/run-removal-repo"
+  local out_file="$TEST_ROOT/run-removal-out.txt"
+  local record="$TEST_ROOT/run-removal-record"
+  local note_src="$TEST_ROOT/run-removal-note-src.md"
+  local log_src="$TEST_ROOT/run-removal-log-src.md"
+  local prompt_file="$TEST_ROOT/run-removal-prompt.txt"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local log_file="$repo_dir/untangle/log.md"
+  local repo_yml status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  yaml_set_key "$repo_yml" cursor Removal
+  write_quiet_note "$note_src"
+  write_agent_log "$log_src"
+  write_expected_prompt "$prompt_file" "$repo_dir" "261014" "Removal"
+  use_agent_mock "$record"
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$note_src
+  RUN_AGENT_LOG_FILE=$log_file
+  RUN_AGENT_LOG_SRC=$log_src
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}expected the agent once"$'\n'
+  fi
+  if [[ ! -f "$record/arg-1-1" ]]; then
+    problems="${problems}agent prompt was not recorded"$'\n'
+  else
+    if ! grep -F -q -- 'for the bucket Removal only' "$record/arg-1-1"; then
+      problems="${problems}prompt does not name the Removal bucket"$'\n'
+    fi
+    if ! files_match "$prompt_file" "$record/arg-1-1"; then
+      problems="${problems}agent prompt mismatch"$'\n'"$(diff -u "$prompt_file" "$record/arg-1-1" || true)"$'\n'
+    fi
+  fi
+  if ! files_match "$note_src" "$note"; then
+    problems="${problems}quiet note bytes were not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Language"; then
+    problems="${problems}cursor did not wrap to Language"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}quiet note set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}quiet note dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}quiet note dropped the blank trunk"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
+    problems="${problems}did not say quiet note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_done_without_open_plan_leaves_ownership_cursor() {
+  local test_name="done with no open plan leaves an Ownership cursor"
+  local config_dir="$TEST_ROOT/done-none-config"
+  local gitignore_file="$TEST_ROOT/done-none-gitignore"
+  local repo_dir="$TEST_ROOT/done-none-repo"
+  local repo_yml status_out status_err done_out done_err status problems=""
+  local status_expected="$TEST_ROOT/done-none-status-expected.txt"
+
+  mkdir -p "$config_dir"
+  printf '%s\n' '# keep' >"$gitignore_file"
+  make_repo "$repo_dir"
+  run_init "$repo_dir" "$config_dir" "$gitignore_file" >/dev/null
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "$test_name" "init exited $status"
+    return
+  fi
+  repo_yml="$repo_dir/untangle/config.yml"
+  yaml_set_key "$repo_yml" cursor Ownership
+
+  status_out="$TEST_ROOT/done-none-status-out.txt"
+  status_err="$TEST_ROOT/done-none-status-err.txt"
+  done_out="$TEST_ROOT/done-none-done-out.txt"
+  done_err="$TEST_ROOT/done-none-done-err.txt"
+
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}done exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'untangle: error: no open plan' "$done_err"; then
+    problems="${problems}done did not report no open plan"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" ]]; then
+    problems="${problems}done wrote to stdout"$'\n'"$(cat "$done_out")"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}done changed the cursor"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}done set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}done dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}done dropped the blank trunk"$'\n'
+  fi
+
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Ownership" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}status changed the cursor"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_status_and_done_without_config_fail() {
+  local test_name="status and done fail when untangle/config.yml is missing"
+  local repo_dir="$TEST_ROOT/no-config-repo"
+  local status_out="$TEST_ROOT/no-config-status-out.txt"
+  local status_err="$TEST_ROOT/no-config-status-err.txt"
+  local done_out="$TEST_ROOT/no-config-done-out.txt"
+  local done_err="$TEST_ROOT/no-config-done-err.txt"
+  local status problems=""
+
+  mkdir -p "$repo_dir"
+
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}status exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'untangle: error: missing untangle/config.yml' "$status_err"; then
+    problems="${problems}status did not report a missing config"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if grep -F -q -- 'unknown command' "$status_err"; then
+    problems="${problems}status was treated as unknown"$'\n'
+  fi
+  if [[ -s "$status_out" ]]; then
+    problems="${problems}status wrote to stdout"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}done exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'untangle: error: missing untangle/config.yml' "$done_err"; then
+    problems="${problems}done did not report a missing config"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if grep -F -q -- 'unknown command' "$done_err"; then
+    problems="${problems}done was treated as unknown"$'\n'
+  fi
+  if [[ -s "$done_out" ]]; then
+    problems="${problems}done wrote to stdout"$'\n'"$(cat "$done_out")"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/config.yml" ]]; then
+    problems="${problems}a missing config was created"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
@@ -3414,6 +3838,9 @@ run_test test_run_rejects_plan_case_and_planning_then_keeps_a_plan
 run_test test_run_agent_failure_then_quiet_note_is_not_an_open_plan
 run_test test_run_existing_open_plan_skips_without_fetch_or_agent
 run_test test_run_invalid_cursor_skips_before_fetch
+run_test test_run_removal_quiet_note_wraps_cursor_to_language
+run_test test_done_without_open_plan_leaves_ownership_cursor
+run_test test_status_and_done_without_config_fail
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run untangle tests failed"
