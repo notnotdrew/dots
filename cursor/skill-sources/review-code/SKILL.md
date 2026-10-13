@@ -96,7 +96,10 @@ List only real issues. For each:
 - file and line reference
 - concrete problem
 - why it matters
-- concise fix direction
+- fix direction only when a particular, non-obvious solution is required
+
+Do not tack an action sentence onto a finding. The problem and its impact are
+usually enough; leave the implementation to the author.
 
 ### Open Questions
 

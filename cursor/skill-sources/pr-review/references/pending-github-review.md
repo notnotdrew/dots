@@ -91,7 +91,10 @@ rewrites for humans:
 
 - plain, simple, clear;
 - factual statements with minimal color;
-- short; state the problem and the needed change plainly; ask a question only for genuine uncertainty;
+- short; state the problem and why it matters, then stop;
+- do not add an action sentence or prescribe the fix by default. Include fix
+  direction only when the review requires a particular, non-obvious solution;
+- ask a question only for genuine uncertainty;
 - code identifiers in backticks;
 - no process narration, no finding IDs, no PERFECT labels, no "AI noted".
 

@@ -94,7 +94,8 @@ Drew's published review comments are usually several rewrites past the agent's d
 
 - State the issue and why it matters. That is usually the whole comment.
 - Don't get bogged down in the details. Go a level or two up and describe the problem simply. Name the symbol when it is the thing; skip the trace of how it happens.
-- A fix is optional. Leave it to the author unless it is specific and not obvious, and then say it as a plain statement (`` `X` already parses this. ``).
+- Leave the fix to the author. Do not end with an action sentence that tells them what to change.
+- Mention fix direction only when the review truly requires one particular, non-obvious solution. State the constraint or existing primitive plainly (`` `X` already parses this. ``), without turning it into an instruction.
 - Never dress a suggestion as a question ("What do you think of…?", "Could we…?", "Should we…?", "Would it make sense to…?"). If you know what you would change, the question is a costume. Ask only when you are actually missing the answer ("Is this called before the lock?").
 - Uncertain risk: say what would go wrong, hedged in place (`I think`, `if I'm reading this right`). One concrete fact if the risk is not obvious.
 - Plain beats warm. Do not soften a clear point into something the author has to decode.
