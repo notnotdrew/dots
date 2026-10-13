@@ -1094,29 +1094,36 @@ test_usage_on_missing_and_unknown_command() {
   if [[ "$status" -eq 0 ]]; then
     problems="${problems}missing command exited 0"$'\n'
   fi
-  if ! grep -F -q -- 'Usage: untangle <init|run|done|status>' "$stderr_file"; then
+  if ! grep -F -q -- 'Usage: untangle <init|run|done|status|launchd-setup>' "$stderr_file"; then
     problems="${problems}missing command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
   fi
   if [[ -s "$stdout_file" ]]; then
     problems="${problems}missing command wrote to stdout"$'\n'
   fi
 
-  for cmd in launchd-setup no-such; do
-    "$UNTANGLE" "$cmd" >"$stdout_file" 2>"$stderr_file"
-    status=$?
-    if [[ "$status" -eq 0 ]]; then
-      problems="${problems}unknown command ${cmd} exited 0"$'\n'
-    fi
-    if ! grep -F -q -- 'Usage: untangle <init|run|done|status>' "$stderr_file"; then
-      problems="${problems}unknown command ${cmd} did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
-    fi
-    if ! grep -F -q -- "unknown command: ${cmd}" "$stderr_file"; then
-      problems="${problems}unknown command ${cmd} did not name itself"$'\n'"$(cat "$stderr_file")"$'\n'
-    fi
-    if [[ -s "$stdout_file" ]]; then
-      problems="${problems}unknown command ${cmd} wrote to stdout"$'\n'
-    fi
-  done
+  "$UNTANGLE" launchd-setup -h >"$stdout_file" 2>"$stderr_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}launchd-setup -h exited $status"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if grep -F -q -- 'unknown command' "$stderr_file"; then
+    problems="${problems}launchd-setup was treated as unknown"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+
+  "$UNTANGLE" no-such >"$stdout_file" 2>"$stderr_file"
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}unknown command no-such exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'Usage: untangle <init|run|done|status|launchd-setup>' "$stderr_file"; then
+    problems="${problems}unknown command no-such did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if ! grep -F -q -- "unknown command: no-such" "$stderr_file"; then
+    problems="${problems}unknown command no-such did not name itself"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if [[ -s "$stdout_file" ]]; then
+    problems="${problems}unknown command no-such wrote to stdout"$'\n'
+  fi
 
   mkdir -p "$TEST_ROOT/usage-empty"
   for cmd in done status; do
@@ -1166,6 +1173,9 @@ test_usage_on_missing_and_unknown_command() {
   fi
   if ! grep -F -q -- 'Show the cursor and the open plan' "$stdout_file"; then
     problems="${problems}-h usage does not say status shows the cursor and the open plan"$'\n'
+  fi
+  if ! grep -F -q -- 'launchd-setup' "$stdout_file"; then
+    problems="${problems}-h usage does not mention launchd-setup"$'\n'
   fi
 
   "$UNTANGLE" --help >"$stdout_file" 2>"$stderr_file"
@@ -3794,6 +3804,237 @@ test_status_and_done_without_config_fail() {
   pass "$test_name"
 }
 
+# --- launchd -----------------------------------------------------------------
+
+snapshot_launchd_path() {
+  local path=$1
+  if [[ -e "$path" || -L "$path" ]]; then
+    stat -f '%i %m %z' "$path"
+  else
+    printf '%s\n' missing
+  fi
+}
+
+runner_cdhash() {
+  codesign -dvvv "$1" 2>&1 | sed -n 's/^CDHash=//p'
+}
+
+test_launchd_template_is_wednesday_only() {
+  local test_name="launchd template is Wednesday hours 8–15 at :00 and :30"
+  local plist="$DOTS/launchd/com.untangle.plist.template"
+  local problems="" placeholder program_args last_arg
+  local weekday_count weekday hour hour_count minute_0 minute_30
+
+  if [[ ! -f "$plist" ]]; then
+    fail "$test_name" "missing plist template: $plist"
+    return
+  fi
+
+  if ! grep -Fq '<string>com.untangle</string>' "$plist"; then
+    problems="${problems}plist Label must be com.untangle"$'\n'
+  fi
+  if grep -F '/Users/' "$plist" >/dev/null; then
+    problems="${problems}template must not hard-code /Users/ paths"$'\n'
+  fi
+  for placeholder in '@HOME@' '@PATH@' '@LAUNCHD_RUNNER@' '@UNTANGLE_BIN@'; do
+    if ! grep -Fq "$placeholder" "$plist"; then
+      problems="${problems}template missing placeholder $placeholder"$'\n'
+    fi
+  done
+
+  program_args=$(sed -n '/<key>ProgramArguments<\/key>/,/<\/array>/p' "$plist")
+  last_arg=$(printf '%s\n' "$program_args" | grep '<string>' | tail -n 1 || true)
+  if [[ "$last_arg" != *'<string>run</string>'* ]]; then
+    problems="${problems}ProgramArguments must end in run"$'\n'
+  fi
+  if ! printf '%s\n' "$program_args" | grep -Fq '@LAUNCHD_RUNNER@'; then
+    problems="${problems}ProgramArguments must include @LAUNCHD_RUNNER@"$'\n'
+  fi
+  if ! printf '%s\n' "$program_args" | grep -Fq '@UNTANGLE_BIN@'; then
+    problems="${problems}ProgramArguments must include @UNTANGLE_BIN@"$'\n'
+  fi
+
+  weekday_count=$(grep -A1 '<key>Weekday</key>' "$plist" | grep -c '<integer>3</integer>' || true)
+  if [[ "$weekday_count" -ne 16 ]]; then
+    problems="${problems}expected 16 Wednesday (Weekday 3) intervals, got $weekday_count"$'\n'
+  fi
+  for weekday in 1 2 4 5; do
+    if grep -A1 '<key>Weekday</key>' "$plist" | grep -q "<integer>${weekday}</integer>"; then
+      problems="${problems}StartCalendarInterval includes Weekday ${weekday}"$'\n'
+    fi
+  done
+  for hour in 8 9 10 11 12 13 14 15; do
+    hour_count=$(grep -A1 '<key>Hour</key>' "$plist" | grep -c "<integer>${hour}</integer>" || true)
+    if [[ "$hour_count" -ne 2 ]]; then
+      problems="${problems}expected Hour ${hour} twice, got ${hour_count}"$'\n'
+    fi
+  done
+  minute_0=$(grep -A1 '<key>Minute</key>' "$plist" | grep -c '<integer>0</integer>' || true)
+  minute_30=$(grep -A1 '<key>Minute</key>' "$plist" | grep -c '<integer>30</integer>' || true)
+  if [[ "$minute_0" -ne 8 || "$minute_30" -ne 8 ]]; then
+    problems="${problems}expected 8 ticks at :00 and 8 at :30, got :00=$minute_0 :30=$minute_30"$'\n'
+  fi
+  if ! grep -Fq 'en_US.UTF-8' "$plist"; then
+    problems="${problems}plist LANG and LC_ALL must be en_US.UTF-8"$'\n'
+  fi
+  if ! grep -Fq '@HOME@/Library/Logs/untangle.out.log' "$plist" \
+    || ! grep -Fq '@HOME@/Library/Logs/untangle.err.log' "$plist"; then
+    problems="${problems}plist must log to untangle.out.log and untangle.err.log under @HOME@"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_launchd_setup_installs_runner() {
+  local test_name="launchd-setup installs a signed runner and reuses it"
+  local fake_home="$TEST_ROOT/launchd-home"
+  local runner="$TEST_ROOT/untangle-launchd"
+  local plist="$TEST_ROOT/LaunchAgents/com.untangle.plist"
+  local out_file="$TEST_ROOT/launchd-setup-out.txt"
+  local second_out="$TEST_ROOT/launchd-setup-second.txt"
+  local guard_bin="$TEST_ROOT/launchd-guards"
+  local real_home=$HOME
+  local agents="${real_home}/Library/LaunchAgents"
+  local inchworm_runner="${XDG_DATA_HOME:-$real_home/.local/share}/inchworm/inchworm-launchd"
+  local slowfriday_runner="${XDG_DATA_HOME:-$real_home/.local/share}/slowfriday/slowfriday-launchd"
+  local before_inchworm_plist before_slowfriday_plist before_inchworm_runner before_slowfriday_runner before_agents
+  local after_inchworm_plist after_slowfriday_plist after_inchworm_runner after_slowfriday_runner after_agents
+  local status problems="" identity cdhash second_cdhash
+
+  before_inchworm_plist=$(snapshot_launchd_path "$agents/com.inchworm.plist")
+  before_slowfriday_plist=$(snapshot_launchd_path "$agents/com.slowfriday.plist")
+  before_inchworm_runner=$(snapshot_launchd_path "$inchworm_runner")
+  before_slowfriday_runner=$(snapshot_launchd_path "$slowfriday_runner")
+  before_agents=$(stat -f '%m' "$agents" 2>/dev/null || printf '%s\n' missing)
+
+  mkdir -p "$fake_home" "$guard_bin" "$(dirname "$plist")" "$(dirname "$runner")"
+  cat >"$guard_bin/launchctl" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$TEST_ROOT/launchctl.log"
+exit 99
+EOF
+  cat >"$guard_bin/open" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$TEST_ROOT/open.log"
+exit 99
+EOF
+  chmod 755 "$guard_bin/launchctl" "$guard_bin/open"
+
+  (
+    export HOME="$fake_home"
+    export PATH="$guard_bin:$PATH"
+    export UNTANGLE_LAUNCHD_RUNNER="$runner"
+    export UNTANGLE_LAUNCHD_PLIST="$plist"
+    export UNTANGLE_LAUNCHD_TEMPLATE="$DOTS/launchd/com.untangle.plist.template"
+    "$UNTANGLE" launchd-setup --no-open --no-reload
+  ) >"$out_file" 2>&1
+  status=$?
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ ! -x "$runner" ]]; then
+    problems="${problems}expected executable runner at $runner"$'\n'
+  fi
+  identity=$(codesign --display --verbose=2 "$runner" 2>&1 | sed -n 's/^Identifier=//p' || true)
+  if [[ "$identity" != "com.untangle.launchd" ]]; then
+    problems="${problems}expected runner identifier com.untangle.launchd, got: $identity"$'\n'
+  fi
+  if ! "$runner" -c 'exit 0' >/dev/null 2>&1; then
+    problems="${problems}runner -c 'exit 0' failed"$'\n'
+  fi
+  if [[ ! -f "$plist" ]]; then
+    problems="${problems}expected generated plist at $plist"$'\n'
+  else
+    if ! grep -Fq "$runner" "$plist"; then
+      problems="${problems}generated plist must contain the temp runner path"$'\n'
+    fi
+    if ! grep -Fq "$UNTANGLE" "$plist"; then
+      problems="${problems}generated plist must contain the untangle bin path"$'\n'
+    fi
+    if ! grep -Fq '<string>run</string>' "$plist"; then
+      problems="${problems}generated plist must include run"$'\n'
+    fi
+    if grep -Fq '@HOME@' "$plist" || grep -Fq '@LAUNCHD_RUNNER@' "$plist" \
+      || grep -Fq '@UNTANGLE_BIN@' "$plist" || grep -Fq '@PATH@' "$plist"; then
+      problems="${problems}generated plist must not leave placeholders unexpanded"$'\n'
+    fi
+  fi
+  if [[ -s "$TEST_ROOT/launchctl.log" || -s "$TEST_ROOT/open.log" ]]; then
+    problems="${problems}launchd-setup --no-open --no-reload invoked launchctl or open"$'\n'
+  fi
+
+  cdhash=$(runner_cdhash "$runner" || true)
+  if [[ -z "$cdhash" ]]; then
+    problems="${problems}runner has no cdhash"$'\n'
+  fi
+
+  (
+    export HOME="$fake_home"
+    export PATH="$guard_bin:$PATH"
+    export UNTANGLE_LAUNCHD_RUNNER="$runner"
+    export UNTANGLE_LAUNCHD_PLIST="$plist"
+    export UNTANGLE_LAUNCHD_TEMPLATE="$DOTS/launchd/com.untangle.plist.template"
+    "$UNTANGLE" launchd-setup --no-open --no-reload
+  ) >"$second_out" 2>&1
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}second setup expected exit 0, got $status"$'\n'
+  fi
+  second_cdhash=$(runner_cdhash "$runner" || true)
+  if [[ -z "$cdhash" || "$second_cdhash" != "$cdhash" ]]; then
+    problems="${problems}second setup must reuse the runner cdhash, got first='$cdhash' second='$second_cdhash'"$'\n'
+  fi
+  if ! grep -Fq 'reused' "$second_out"; then
+    problems="${problems}second setup output must say reused"$'\n'
+  fi
+
+  after_inchworm_plist=$(snapshot_launchd_path "$agents/com.inchworm.plist")
+  after_slowfriday_plist=$(snapshot_launchd_path "$agents/com.slowfriday.plist")
+  after_inchworm_runner=$(snapshot_launchd_path "$inchworm_runner")
+  after_slowfriday_runner=$(snapshot_launchd_path "$slowfriday_runner")
+  after_agents=$(stat -f '%m' "$agents" 2>/dev/null || printf '%s\n' missing)
+  if [[ "$before_inchworm_plist" != "$after_inchworm_plist" \
+    || "$before_slowfriday_plist" != "$after_slowfriday_plist" \
+    || "$before_inchworm_runner" != "$after_inchworm_runner" \
+    || "$before_slowfriday_runner" != "$after_slowfriday_runner" \
+    || "$before_agents" != "$after_agents" ]]; then
+    problems="${problems}real LaunchAgents directory, com.inchworm.plist, com.slowfriday.plist, or their runners changed"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")" "second:" "$(cat "$second_out" 2>/dev/null || true)"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_docs_launchagent() {
+  local test_name="docs mention launchd-setup and Full Disk Access"
+  local problems=""
+
+  if [[ ! -f "$DOCS_FILE" ]]; then
+    fail "$test_name" "missing $DOCS_FILE"
+    return
+  fi
+  if ! grep -Fq 'launchd-setup' "$DOCS_FILE"; then
+    problems="${problems}docs must mention launchd-setup"$'\n'
+  fi
+  if ! grep -Fq 'Full Disk Access' "$DOCS_FILE"; then
+    problems="${problems}docs must mention Full Disk Access"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
@@ -3841,6 +4082,9 @@ run_test test_run_invalid_cursor_skips_before_fetch
 run_test test_run_removal_quiet_note_wraps_cursor_to_language
 run_test test_done_without_open_plan_leaves_ownership_cursor
 run_test test_status_and_done_without_config_fail
+run_test test_launchd_template_is_wednesday_only
+run_test test_launchd_setup_installs_runner
+run_test test_docs_launchagent
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run untangle tests failed"

@@ -41,6 +41,12 @@ A quiet note advances the cursor and wraps after Removal. A plan leaves the curs
 
 `untangle status` shows the cursor and the open plan when there is one. It reads `untangle/config.yml` in the current directory and does not change the file.
 
+## LaunchAgent
+
+`untangle launchd-setup` installs a LaunchAgent that ticks `untangle run` on Wednesday from 08:00–15:30 every 30 minutes.
+
+Grant Full Disk Access only to the runner path that command prints. A rebuilt runner needs the grant added again.
+
 ## After init
 
 Move `untangle/` into `~/dots-private` and replace the checkout path with a symlink. The script does not do that move.
