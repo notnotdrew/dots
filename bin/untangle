@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Init a repo, gate the Wednesday run, and open a dated worktree.
+# Init a repo, gate the Wednesday run, open a dated worktree, and ask one orchestrator.
 #
 # Usage:
 #   untangle init
@@ -264,6 +264,95 @@ deliver_worktree() {
   return 0
 }
 
+# Prompt for the one orchestrator. Paths are the registered checkout, the same
+# files the worktree symlink points at. The shell does not write the log or the note.
+orchestrator_prompt() {
+  local repo=$1
+  local yymmdd=$2
+  local bucket=$3
+  local guide="${repo}/untangle/guide.md"
+  local log="${repo}/untangle/log.md"
+  local note="${repo}/untangle/notes/${yymmdd}.md"
+
+  cat <<EOF
+You are the Untangle orchestrator.
+
+Follow the guide at ${guide} for the bucket ${bucket} only. Do not look at the other buckets.
+
+Write the log at ${log} and the weekly note at ${note} itself. Subagents do not.
+
+You may delegate a code read. Subagents do not write those files.
+
+Do not edit or commit application files.
+Do not open a pull request.
+
+The note opens with the word plan or the word quiet.
+
+A plan names one knot, why the next change is expensive, a completion condition, and behavior-preserving steps.
+
+A quiet note says what was looked at and why nothing is ready.
+EOF
+}
+
+# cwd is the delivered worktree. Arguments are only -p and the prompt.
+run_orchestrator() {
+  local repo_path=$1
+  local yymmdd=$2
+  local worktree=$3
+  local bucket=$4
+  local repo_abs prompt agent status
+
+  repo_abs=$repo_path
+  if [[ "$repo_abs" != /* ]]; then
+    if ! repo_abs=$(CDPATH= cd "$repo_path" && pwd); then
+      return 1
+    fi
+  fi
+
+  prompt=$(orchestrator_prompt "$repo_abs" "$yymmdd" "$bucket") || return 1
+  agent=${UNTANGLE_AGENT:-agent}
+  status=0
+  (
+    cd "$worktree" || exit 1
+    "$agent" -p "$prompt"
+  ) || status=$?
+  return "$status"
+}
+
+# A kept note opens with plan or quiet. Anything else is deleted.
+# A plan is recorded as open_plan. A quiet note is not.
+classify_note() {
+  local repo_path=$1
+  local repo_yml=$2
+  local note_path=$3
+  local agent_status=$4
+  local word
+
+  if [[ ! -f "$note_path" ]]; then
+    if [[ "$agent_status" -ne 0 ]]; then
+      printf 'untangle: skip %s — agent failed; the week is unstamped\n' "$repo_path"
+    else
+      printf 'untangle: %s — week left unstamped\n' "$repo_path"
+    fi
+    return 0
+  fi
+
+  word=$(ruby_yaml note_word "$note_path")
+  case "$word" in
+    plan)
+      ruby_yaml set_open_plan "$repo_yml" "$note_path"
+      printf 'untangle: %s — open plan\n' "$repo_path"
+      ;;
+    quiet)
+      printf 'untangle: %s — quiet note\n' "$repo_path"
+      ;;
+    *)
+      rm -f -- "$note_path"
+      printf 'untangle: %s — note rejected; the week is unstamped\n' "$repo_path"
+      ;;
+  esac
+}
+
 # Fail closed for the fixture, or when this path is not inside a work tree.
 preflight_repo() {
   local repo_path=$1
@@ -275,7 +364,7 @@ preflight_repo() {
 }
 
 # One repo. Skips and probe failures return 0 so the caller can keep going.
-# The weekly stamp is the note file. This step does not write it.
+# A kept note is the weekly stamp. The shell does not write the note or the log.
 consider_repo() {
   local repo_path=$1
   local today=$2
@@ -283,6 +372,7 @@ consider_repo() {
   local hour=$4
   local minute=$5
   local mins yymmdd repo_yml note_path state pid probe_status
+  local open_plan bucket agent_status
 
   # 1=Mon .. 7=Sun. Wednesday is 3.
   if [[ "$weekday" -ne 3 ]]; then
@@ -300,6 +390,13 @@ consider_repo() {
   repo_yml="${repo_path}/untangle/config.yml"
   if [[ ! -f "$repo_yml" ]]; then
     printf 'untangle: skip %s — not initialized\n' "$repo_path"
+    return 0
+  fi
+
+  # A recorded plan blocks later Wednesdays until it is cleared. Do not clear it here.
+  open_plan=$(ruby_yaml open_plan_value "$repo_yml")
+  if [[ -n "$open_plan" ]]; then
+    printf 'untangle: skip %s — open plan\n' "$repo_path"
     return 0
   fi
 
@@ -337,6 +434,17 @@ consider_repo() {
     return 0
   fi
 
+  # Accept only the eight bucket names. Do not rewrite cursor, and do not fetch.
+  bucket=$(ruby_yaml cursor_bucket "$repo_yml")
+  case "$bucket" in
+    Language|Ownership|Boundaries|Representation|Flow|Dependencies|Consolidation|Removal)
+      ;;
+    *)
+      retry_later "$repo_path" "invalid cursor"
+      return 0
+      ;;
+  esac
+
   CURRENT_PROGRESS_YML=$repo_yml
   ruby_yaml set_progress_pid "$repo_yml" "$$"
 
@@ -346,17 +454,21 @@ consider_repo() {
   fi
   printf 'untangle: %s — worktree %s\n' "$repo_path" "$DELIVERED_WORKTREE"
 
-  # UNTANGLE_PROBE is the test seam. Unset, this tick records the pid and leaves the week unstamped.
-  probe_status=0
+  # UNTANGLE_PROBE is the test seam. When it is set, do not start an agent.
+  agent_status=0
   if [[ -n "${UNTANGLE_PROBE:-}" ]]; then
+    probe_status=0
     "$UNTANGLE_PROBE" "$repo_path" || probe_status=$?
+    release_progress
+    if [[ "$probe_status" -ne 0 ]]; then
+      printf 'untangle: skip %s — probe failed; the week is unstamped\n' "$repo_path"
+      return 0
+    fi
+  else
+    run_orchestrator "$repo_path" "$yymmdd" "$DELIVERED_WORKTREE" "$bucket" || agent_status=$?
+    release_progress
   fi
-  release_progress
-  if [[ "$probe_status" -ne 0 ]]; then
-    printf 'untangle: skip %s — probe failed; the week is unstamped\n' "$repo_path"
-    return 0
-  fi
-  printf 'untangle: %s — week left unstamped\n' "$repo_path"
+  classify_note "$repo_path" "$repo_yml" "$note_path" "$agent_status"
   return 0
 }
 

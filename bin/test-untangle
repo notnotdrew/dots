@@ -194,6 +194,21 @@ data = {} unless data.is_a?(Hash)
 data["progress_pid"] = pid
 File.write(path, YAML.dump(data))
 RUBY
+
+  cat >"$TEST_ROOT/yaml_set_key.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+key = ARGV.fetch(1)
+value = ARGV.fetch(2)
+data = YAML.load_file(path)
+data = {} unless data.is_a?(Hash)
+data[key] = value
+File.write(path, YAML.dump(data))
+RUBY
 }
 
 yaml_repo_occurrences() {
@@ -218,6 +233,14 @@ yaml_add_repo() {
 
 yaml_set_progress_pid() {
   mise exec -- ruby "$TEST_ROOT/yaml_set_progress_pid.rb" "$1" "$2"
+}
+
+yaml_set_key() {
+  mise exec -- ruby "$TEST_ROOT/yaml_set_key.rb" "$1" "$2" "$3"
+}
+
+ruby_untangle() {
+  mise exec -- ruby "$YAML_HELPER" "$@"
 }
 
 files_match() {
@@ -390,7 +413,8 @@ EOF
   chmod +x "$TEST_ROOT/herdr-mock"
 }
 
-# Records a PATH `agent` if run invokes one. The gate must not.
+# Records a PATH `agent`. Probe ticks and skips must not invoke it.
+# An unprobed tick with no test mock runs it once and writes nothing.
 install_path_agent() {
   local bin="$TEST_ROOT/path-agent-bin"
   mkdir -p "$bin"
@@ -400,6 +424,41 @@ set -u
 printf '%s\n' "invoked" >>"$TEST_ROOT/path-agent-invocations"
 EOF
   chmod +x "$bin/agent"
+}
+
+# Records cwd, argc, and each arg. Optionally copies a note and a log, then exits.
+install_agent_mock() {
+  cat >"$TEST_ROOT/agent-mock" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+record=${UNTANGLE_AGENT_RECORD:?}
+mkdir -p "$record"
+count_file="$record/count"
+if [[ -f "$count_file" ]]; then
+  count=$(cat "$count_file")
+else
+  count=0
+fi
+count=$((count + 1))
+printf '%s\n' "$count" >"$count_file"
+printf '%s\n' "$PWD" >"$record/cwd-$count"
+printf '%s\n' "$#" >"$record/argc-$count"
+i=0
+for arg in "$@"; do
+  printf '%s' "$arg" >"$record/arg-$count-$i"
+  i=$((i + 1))
+done
+
+if [[ -n "${UNTANGLE_AGENT_NOTE_SRC:-}" ]]; then
+  cp "$UNTANGLE_AGENT_NOTE_SRC" "${UNTANGLE_AGENT_NOTE:?}"
+fi
+if [[ -n "${UNTANGLE_AGENT_LOG_SRC:-}" ]]; then
+  cp "$UNTANGLE_AGENT_LOG_SRC" "${UNTANGLE_AGENT_LOG_FILE:?}"
+fi
+exit "${UNTANGLE_AGENT_STATUS:-0}"
+EOF
+  chmod +x "$TEST_ROOT/agent-mock"
 }
 
 reset_run_env() {
@@ -412,6 +471,13 @@ reset_run_env() {
   RUN_HERDR_CREATE_STATUS=
   RUN_HERDR_LIST=
   RUN_HERDR_PLANT=
+  RUN_AGENT=
+  RUN_AGENT_RECORD=
+  RUN_AGENT_STATUS=
+  RUN_AGENT_NOTE=
+  RUN_AGENT_NOTE_SRC=
+  RUN_AGENT_LOG_FILE=
+  RUN_AGENT_LOG_SRC=
 }
 
 bare_origin_for() {
@@ -537,6 +603,42 @@ invoke_run() {
     else
       unset UNTANGLE_HERDR_PLANT
     fi
+    # A test mock wins. Otherwise the recording PATH agent is the orchestrator.
+    if [[ -n "${RUN_AGENT:-}" ]]; then
+      export UNTANGLE_AGENT="$RUN_AGENT"
+    else
+      export UNTANGLE_AGENT="$TEST_ROOT/path-agent-bin/agent"
+    fi
+    if [[ -n "${RUN_AGENT_RECORD:-}" ]]; then
+      export UNTANGLE_AGENT_RECORD="$RUN_AGENT_RECORD"
+    else
+      unset UNTANGLE_AGENT_RECORD
+    fi
+    if [[ -n "${RUN_AGENT_STATUS:-}" ]]; then
+      export UNTANGLE_AGENT_STATUS="$RUN_AGENT_STATUS"
+    else
+      unset UNTANGLE_AGENT_STATUS
+    fi
+    if [[ -n "${RUN_AGENT_NOTE:-}" ]]; then
+      export UNTANGLE_AGENT_NOTE="$RUN_AGENT_NOTE"
+    else
+      unset UNTANGLE_AGENT_NOTE
+    fi
+    if [[ -n "${RUN_AGENT_NOTE_SRC:-}" ]]; then
+      export UNTANGLE_AGENT_NOTE_SRC="$RUN_AGENT_NOTE_SRC"
+    else
+      unset UNTANGLE_AGENT_NOTE_SRC
+    fi
+    if [[ -n "${RUN_AGENT_LOG_FILE:-}" ]]; then
+      export UNTANGLE_AGENT_LOG_FILE="$RUN_AGENT_LOG_FILE"
+    else
+      unset UNTANGLE_AGENT_LOG_FILE
+    fi
+    if [[ -n "${RUN_AGENT_LOG_SRC:-}" ]]; then
+      export UNTANGLE_AGENT_LOG_SRC="$RUN_AGENT_LOG_SRC"
+    else
+      unset UNTANGLE_AGENT_LOG_SRC
+    fi
     "$UNTANGLE" run
   ) >"$out_file" 2>&1
 }
@@ -573,6 +675,91 @@ path_agent_invocations() {
   fi
   count=$(grep -c . "$file" || true)
   printf '%s' "$count"
+}
+
+use_agent_mock() {
+  local record=$1
+  RUN_AGENT="$TEST_ROOT/agent-mock"
+  RUN_AGENT_RECORD="$record"
+  RUN_AGENT_STATUS=
+  RUN_AGENT_NOTE=
+  RUN_AGENT_NOTE_SRC=
+  RUN_AGENT_LOG_FILE=
+  RUN_AGENT_LOG_SRC=
+  mkdir -p "$record"
+}
+
+agent_invocation_count() {
+  local record=$1
+  local count_file="$record/count"
+  if [[ ! -f "$count_file" ]]; then
+    printf '0'
+    return 0
+  fi
+  cat "$count_file"
+}
+
+# Keep this identical to orchestrator_prompt in bin/untangle.
+write_expected_prompt() {
+  local dest=$1
+  local repo=$2
+  local yymmdd=$3
+  local bucket=$4
+  local guide="${repo}/untangle/guide.md"
+  local log="${repo}/untangle/log.md"
+  local note="${repo}/untangle/notes/${yymmdd}.md"
+  local text
+  text=$(cat <<EOF
+You are the Untangle orchestrator.
+
+Follow the guide at ${guide} for the bucket ${bucket} only. Do not look at the other buckets.
+
+Write the log at ${log} and the weekly note at ${note} itself. Subagents do not.
+
+You may delegate a code read. Subagents do not write those files.
+
+Do not edit or commit application files.
+Do not open a pull request.
+
+The note opens with the word plan or the word quiet.
+
+A plan names one knot, why the next change is expensive, a completion condition, and behavior-preserving steps.
+
+A quiet note says what was looked at and why nothing is ready.
+EOF
+)
+  printf '%s' "$text" >"$dest"
+}
+
+write_plan_note() {
+  local dest=$1
+  cat >"$dest" <<'EOF'
+plan
+Knot: the checkout client name.
+The next change is expensive because both generations are still called.
+Completion condition: one name remains and callers still pass.
+Behavior-preserving steps: rename one caller at a time.
+EOF
+}
+
+write_quiet_note() {
+  local dest=$1
+  cat >"$dest" <<'EOF'
+quiet
+Looked at the checkout names.
+Nothing is ready because no single knot is worth the change.
+EOF
+}
+
+write_agent_log() {
+  local dest=$1
+  printf '%s\n' 'Read the checkout names.' >"$dest"
+}
+
+write_opening_note() {
+  local dest=$1
+  local word=$2
+  printf '%s\n%s\n' "$word" 'Knot: this opening is not a kept note.' >"$dest"
 }
 
 publish_branch() {
@@ -843,6 +1030,15 @@ test_docs_manual_step_and_script_silence() {
   if ! grep -F -q -- 'Move `untangle/` into `~/dots-private` and replace the checkout path with a symlink.' "$DOCS_FILE"; then
     problems="${problems}docs do not say to move untangle/ into ~/dots-private and replace the checkout path with a symlink"$'\n'
   fi
+  if ! grep -F -q -- 'The orchestrator runs in the worktree. It follows the guide for the cursor'"'"'s bucket only, may delegate a code read, and writes the log and the note.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the orchestrator runs in the worktree for the cursor's bucket"$'\n'
+  fi
+  if ! grep -F -q -- 'The coordinator keeps a note only when it opens with `plan` or `quiet`.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a note is kept only when it opens with plan or quiet"$'\n'
+  fi
+  if ! grep -F -q -- 'A plan is recorded as the open plan and later runs skip. A quiet note is not an open plan.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a plan is the open plan and a quiet note is not"$'\n'
+  fi
   if grep -F -q -- 'dots-private' "$UNTANGLE"; then
     problems="${problems}bin/untangle contains dots-private"$'\n'
   fi
@@ -974,7 +1170,7 @@ test_guide_omits_slowfriday_notes() {
 }
 
 test_run_success_leaves_week_unstamped_and_probes_again() {
-  local test_name="Wednesday probe success leaves the note absent and a second run probes again"
+  local test_name="Wednesday probe success leaves the note absent, a second run probes again, and an unset probe runs one agent"
   local config_dir="$TEST_ROOT/run-ok-config"
   local repo_dir="$TEST_ROOT/run-ok-repo"
   local log="$TEST_ROOT/run-ok-log"
@@ -1060,8 +1256,8 @@ test_run_success_leaves_week_unstamped_and_probes_again() {
   if [[ "$count" != "2" ]]; then
     problems="${problems}unset probe invoked the probe, count=$count"$'\n'
   fi
-  if [[ "$agents" != "0" ]]; then
-    problems="${problems}unset probe executed agent, count=$agents"$'\n'
+  if [[ "$agents" != "1" ]]; then
+    problems="${problems}unset probe expected one PATH agent, count=$agents"$'\n'
   fi
   if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
     problems="${problems}unset probe wrote notes/261014.md"$'\n'
@@ -2367,12 +2563,820 @@ test_run_bad_trunk_does_not_fetch() {
   pass "$test_name"
 }
 
+test_yaml_helpers_cursor_note_and_open_plan() {
+  local test_name="yaml helpers report the cursor bucket, the note word, and an open plan path"
+  local dir="$TEST_ROOT/yaml-helpers"
+  local missing="$dir/missing.yml"
+  local blank="$dir/blank.yml"
+  local ownership="$dir/ownership.yml"
+  local nope="$dir/nope.yml"
+  local lower="$dir/lower.yml"
+  local note_plan="$dir/plan.md"
+  local note_quiet="$dir/quiet.md"
+  local note_planning="$dir/planning.md"
+  local note_plan_case="$dir/plan-case.md"
+  local note_quiet_dot="$dir/quiet-dot.md"
+  local note_padded="$dir/padded.md"
+  local note_empty="$dir/empty.md"
+  local kept="$dir/kept.yml"
+  local got status problems=""
+
+  mkdir -p "$dir"
+  printf '%s\n' '---' 'version: 1' "trunk: ''" >"$blank"
+  printf '%s\n' 'cursor: ""' >>"$blank"
+  printf '%s\n' '---' 'version: 1' "trunk: ''" 'cursor: Ownership' >"$ownership"
+  printf '%s\n' '---' 'cursor: Nope' >"$nope"
+  printf '%s\n' '---' 'cursor: language' >"$lower"
+  printf '%s\n' 'plan' 'one knot' >"$note_plan"
+  printf '%s\n' 'quiet' 'looked' >"$note_quiet"
+  printf '%s\n' 'planning' 'not a word' >"$note_planning"
+  printf '%s\n' 'Plan' 'wrong case' >"$note_plan_case"
+  printf '%s\n' 'quiet.' 'punctuation' >"$note_quiet_dot"
+  printf '%s\n' '  plan' 'padded' >"$note_padded"
+  : >"$note_empty"
+  cp "$ownership" "$kept"
+
+  got=$(ruby_untangle cursor_bucket "$missing")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "Language" ]]; then
+    problems="${problems}missing cursor expected Language, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle cursor_bucket "$blank")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "Language" ]]; then
+    problems="${problems}blank cursor expected Language, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle cursor_bucket "$ownership")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "Ownership" ]]; then
+    problems="${problems}Ownership cursor expected Ownership, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle cursor_bucket "$nope")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "invalid" ]]; then
+    problems="${problems}Nope cursor expected invalid, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle cursor_bucket "$lower")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "invalid" ]]; then
+    problems="${problems}lowercase language expected invalid, status=$status got=$got"$'\n'
+  fi
+
+  got=$(ruby_untangle note_word "$note_plan")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "plan" ]]; then
+    problems="${problems}note_word plan expected plan, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$note_quiet")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "quiet" ]]; then
+    problems="${problems}note_word quiet expected quiet, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$note_planning")
+  status=$?
+  if [[ "$status" -ne 0 || -n "$got" ]]; then
+    problems="${problems}note_word planning expected empty, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$note_plan_case")
+  status=$?
+  if [[ "$status" -ne 0 || -n "$got" ]]; then
+    problems="${problems}note_word Plan expected empty, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$note_quiet_dot")
+  status=$?
+  if [[ "$status" -ne 0 || -n "$got" ]]; then
+    problems="${problems}note_word quiet. expected empty, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$note_padded")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "plan" ]]; then
+    problems="${problems}note_word padded plan expected plan, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$note_empty")
+  status=$?
+  if [[ "$status" -ne 0 || -n "$got" ]]; then
+    problems="${problems}note_word empty file expected empty, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle note_word "$dir/missing-note.md")
+  status=$?
+  if [[ "$status" -ne 0 || -n "$got" ]]; then
+    problems="${problems}note_word missing file expected empty, status=$status got=$got"$'\n'
+  fi
+
+  ruby_untangle set_open_plan "$kept" "$dir/notes/261014.md"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}set_open_plan exited $status"$'\n'
+  fi
+  if ! yaml_expect "$kept" "version=int:1"; then
+    problems="${problems}set_open_plan dropped version"$'\n'
+  fi
+  if ! yaml_expect "$kept" "trunk=blank"; then
+    problems="${problems}set_open_plan dropped the blank trunk"$'\n'
+  fi
+  if ! yaml_expect "$kept" "cursor=str:Ownership"; then
+    problems="${problems}set_open_plan dropped cursor"$'\n'
+  fi
+  if ! yaml_expect "$kept" "open_plan=str:${dir}/notes/261014.md"; then
+    problems="${problems}set_open_plan did not store the absolute note path"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
+  local test_name="a plan note records the open plan and later Wednesdays skip"
+  local config_dir="$TEST_ROOT/run-plan-config"
+  local repo_dir="$TEST_ROOT/run-plan-repo"
+  local out_file="$TEST_ROOT/run-plan-out.txt"
+  local record="$TEST_ROOT/run-plan-record"
+  local herdr_log="$TEST_ROOT/run-plan-herdr.log"
+  local later_herdr="$TEST_ROOT/run-plan-herdr-later.log"
+  local note_src="$TEST_ROOT/run-plan-note-src.md"
+  local log_src="$TEST_ROOT/run-plan-log-src.md"
+  local prompt_file="$TEST_ROOT/run-plan-prompt.txt"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local log_file="$repo_dir/untangle/log.md"
+  local repo_yml head_before wt cwd herdr_before herdr_after
+  local old new stale after status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  write_plan_note "$note_src"
+  write_agent_log "$log_src"
+  write_expected_prompt "$prompt_file" "$repo_dir" "261014" "Language"
+  use_agent_mock "$record"
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$note_src
+  RUN_AGENT_LOG_FILE=$log_file
+  RUN_AGENT_LOG_SRC=$log_src
+  RUN_HERDR_LOG=$herdr_log
+  head_before=$(git -C "$repo_dir" rev-parse HEAD)
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  cwd=$(cat "$record/cwd-1" 2>/dev/null || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}first run expected the agent once"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" || "$cwd" != "$wt" ]]; then
+    problems="${problems}agent cwd is not the delivered worktree (cwd=$cwd worktree=$wt)"$'\n'
+  fi
+  if [[ "$cwd" == "$repo_dir" ]]; then
+    problems="${problems}agent started in the registered checkout"$'\n'
+  fi
+  if [[ "$(cat "$record/argc-1" 2>/dev/null || true)" != "2" ]]; then
+    problems="${problems}agent argc is not 2"$'\n'
+  fi
+  if [[ "$(cat "$record/arg-1-0" 2>/dev/null || true)" != "-p" ]]; then
+    problems="${problems}agent argv does not start with -p"$'\n'
+  fi
+  if [[ -e "$record/arg-1-2" ]]; then
+    problems="${problems}agent received an extra argument"$'\n'
+  fi
+  if [[ ! -f "$record/arg-1-1" ]]; then
+    problems="${problems}agent prompt was not recorded"$'\n'
+  else
+    if ! grep -F -q -- 'for the bucket Language only' "$record/arg-1-1"; then
+      problems="${problems}prompt does not name the Language bucket"$'\n'
+    fi
+    if ! grep -F -q -- 'A plan names one knot, why the next change is expensive, a completion condition, and behavior-preserving steps.' "$record/arg-1-1"; then
+      problems="${problems}prompt is missing the plan sentence"$'\n'
+    fi
+    if ! grep -F -q -- 'A quiet note says what was looked at and why nothing is ready.' "$record/arg-1-1"; then
+      problems="${problems}prompt is missing the quiet sentence"$'\n'
+    fi
+    if ! grep -F -q -- 'code read' "$record/arg-1-1"; then
+      problems="${problems}prompt does not mention a code read"$'\n'
+    fi
+    if ! files_match "$prompt_file" "$record/arg-1-1"; then
+      problems="${problems}agent prompt mismatch"$'\n'"$(diff -u "$prompt_file" "$record/arg-1-1" || true)"$'\n'
+    fi
+  fi
+  if ! files_match "$note_src" "$note"; then
+    problems="${problems}plan note bytes were not kept"$'\n'
+  fi
+  if ! grep -F -q -- 'Knot: the checkout client name.' "$note"; then
+    problems="${problems}plan note does not name one knot"$'\n'
+  fi
+  if ! grep -F -q -- 'The next change is expensive because both generations are still called.' "$note"; then
+    problems="${problems}plan note does not say why the next change is expensive"$'\n'
+  fi
+  if ! grep -F -q -- 'Completion condition: one name remains and callers still pass.' "$note"; then
+    problems="${problems}plan note does not name a completion condition"$'\n'
+  fi
+  if ! grep -F -q -- 'Behavior-preserving steps: rename one caller at a time.' "$note"; then
+    problems="${problems}plan note does not name behavior-preserving steps"$'\n'
+  fi
+  if ! files_match "$log_src" "$log_file"; then
+    problems="${problems}agent log bytes were not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=str:${note}"; then
+    problems="${problems}open_plan is not the absolute note path"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=absent"; then
+    problems="${problems}plan note wrote a cursor"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}plan note dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}plan note dropped the blank trunk"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}plan note left progress_pid set"$'\n'
+  fi
+  if [[ "$(git -C "$repo_dir" rev-parse HEAD)" != "$head_before" ]]; then
+    problems="${problems}HEAD changed"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}first run did not say open plan"$'\n'
+  fi
+
+  cp "$note" "$TEST_ROOT/run-plan-note-kept.md"
+  cp "$repo_yml" "$TEST_ROOT/run-plan-config-kept.yml"
+  cp "$log_file" "$TEST_ROOT/run-plan-log-kept.md"
+  herdr_before=$(wc -l <"$herdr_log" | tr -d '[:space:]')
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  herdr_after=$(wc -l <"$herdr_log" | tr -d '[:space:]')
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}same Wednesday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}same Wednesday started the agent"$'\n'
+  fi
+  if [[ "$herdr_after" != "$herdr_before" ]]; then
+    problems="${problems}same Wednesday called herdr"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-plan-note-kept.md" "$note"; then
+    problems="${problems}same Wednesday changed the note"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-plan-config-kept.yml" "$repo_yml"; then
+    problems="${problems}same Wednesday changed repo config"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}same Wednesday did not skip for the open plan"$'\n'
+  fi
+
+  old=$(git -C "$repo_dir" rev-parse origin/main)
+  new=$(advance_bare_branch "$repo_dir" main) || {
+    fail "$test_name" "could not advance origin/main" "$problems"
+    return
+  }
+  stale=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$stale" != "$old" || "$new" == "$old" ]]; then
+    fail "$test_name" "origin/main was not stale before the later run (old=$old new=$new stale=$stale)" "$problems"
+    return
+  fi
+  RUN_HERDR_LOG=$later_herdr
+  invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
+  status=$?
+  after=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}2026-10-21 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$after" != "$old" ]]; then
+    problems="${problems}2026-10-21 fetched (origin/main moved from $old to $after)"$'\n'
+  fi
+  if [[ -s "$later_herdr" ]]; then
+    problems="${problems}2026-10-21 called herdr"$'\n'"$(cat "$later_herdr")"'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}2026-10-21 started the agent"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-plan-note-kept.md" "$note"; then
+    problems="${problems}2026-10-21 changed the note"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-plan-config-kept.yml" "$repo_yml"; then
+    problems="${problems}2026-10-21 changed open_plan or another config key"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-plan-log-kept.md" "$log_file"; then
+    problems="${problems}2026-10-21 changed the log"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}2026-10-21 did not skip for the open plan"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
+  local test_name="a quiet note stamps the week and the next Wednesday runs again"
+  local config_dir="$TEST_ROOT/run-quiet-config"
+  local repo_dir="$TEST_ROOT/run-quiet-repo"
+  local out_file="$TEST_ROOT/run-quiet-out.txt"
+  local record="$TEST_ROOT/run-quiet-record"
+  local note_src="$TEST_ROOT/run-quiet-note-src.md"
+  local log_src="$TEST_ROOT/run-quiet-log-src.md"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local next_note="$repo_dir/untangle/notes/261021.md"
+  local log_file="$repo_dir/untangle/log.md"
+  local repo_yml wt cwd status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  write_quiet_note "$note_src"
+  write_agent_log "$log_src"
+  use_agent_mock "$record"
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$note_src
+  RUN_AGENT_LOG_FILE=$log_file
+  RUN_AGENT_LOG_SRC=$log_src
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}first run expected the agent once"$'\n'
+  fi
+  if ! files_match "$note_src" "$note"; then
+    problems="${problems}quiet note bytes were not kept"$'\n'
+  fi
+  if ! grep -F -q -- 'Looked at the checkout names.' "$note"; then
+    problems="${problems}quiet note does not say what was looked at"$'\n'
+  fi
+  if ! grep -F -q -- 'Nothing is ready because no single knot is worth the change.' "$note"; then
+    problems="${problems}quiet note does not say why nothing is ready"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}quiet note set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=absent"; then
+    problems="${problems}quiet note wrote a cursor"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
+    problems="${problems}first run did not say quiet note"$'\n'
+  fi
+
+  cp "$note" "$TEST_ROOT/run-quiet-note-kept.md"
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}same Wednesday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}same Wednesday started the agent"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-quiet-note-kept.md" "$note"; then
+    problems="${problems}same Wednesday changed the quiet note"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — week already stamped" "$out_file"; then
+    problems="${problems}same Wednesday did not skip for the stamp"$'\n'
+  fi
+
+  RUN_AGENT_NOTE=$next_note
+  invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  cwd=$(cat "$record/cwd-2" 2>/dev/null || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}2026-10-21 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}2026-10-21 did not start the agent again"$'\n'
+  fi
+  if [[ -z "$wt" || "$cwd" != "$wt" ]]; then
+    problems="${problems}2026-10-21 agent cwd is not the worktree (cwd=$cwd worktree=$wt)"$'\n'
+  fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- 'for the bucket Language only' "$record/arg-2-1"; then
+    problems="${problems}2026-10-21 prompt does not name the Language bucket"$'\n'
+  fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- "$next_note" "$record/arg-2-1"; then
+    problems="${problems}2026-10-21 prompt does not name notes/261021.md"$'\n'
+  fi
+  if ! files_match "$note_src" "$next_note"; then
+    problems="${problems}2026-10-21 quiet note was not kept"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-quiet-note-kept.md" "$note"; then
+    problems="${problems}2026-10-21 changed the previous quiet note"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}2026-10-21 set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=absent"; then
+    problems="${problems}2026-10-21 wrote a cursor"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
+    problems="${problems}2026-10-21 did not say quiet note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_ownership_cursor_stays_after_plan_note() {
+  local test_name="an Ownership cursor stays Ownership after a plan note"
+  local config_dir="$TEST_ROOT/run-own-config"
+  local repo_dir="$TEST_ROOT/run-own-repo"
+  local out_file="$TEST_ROOT/run-own-out.txt"
+  local record="$TEST_ROOT/run-own-record"
+  local note_src="$TEST_ROOT/run-own-note-src.md"
+  local log_src="$TEST_ROOT/run-own-log-src.md"
+  local prompt_file="$TEST_ROOT/run-own-prompt.txt"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local log_file="$repo_dir/untangle/log.md"
+  local repo_yml status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  yaml_set_key "$repo_yml" cursor Ownership
+  write_plan_note "$note_src"
+  write_agent_log "$log_src"
+  write_expected_prompt "$prompt_file" "$repo_dir" "261014" "Ownership"
+  use_agent_mock "$record"
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$note_src
+  RUN_AGENT_LOG_FILE=$log_file
+  RUN_AGENT_LOG_SRC=$log_src
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}expected the agent once"$'\n'
+  fi
+  if [[ ! -f "$record/arg-1-1" ]]; then
+    problems="${problems}agent prompt was not recorded"$'\n'
+  else
+    if ! grep -F -q -- 'for the bucket Ownership only' "$record/arg-1-1"; then
+      problems="${problems}prompt does not name the Ownership bucket"$'\n'
+    fi
+    if ! files_match "$prompt_file" "$record/arg-1-1"; then
+      problems="${problems}agent prompt mismatch"$'\n'"$(diff -u "$prompt_file" "$record/arg-1-1" || true)"$'\n'
+    fi
+  fi
+  if ! files_match "$note_src" "$note"; then
+    problems="${problems}plan note bytes were not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}cursor is no longer Ownership"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=str:${note}"; then
+    problems="${problems}open_plan is not the absolute note path"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}plan note dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}plan note dropped the blank trunk"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}did not say open plan"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
+  local test_name="Plan and planning notes are rejected and a later plan note is kept"
+  local config_dir="$TEST_ROOT/run-reject-config"
+  local repo_dir="$TEST_ROOT/run-reject-repo"
+  local out_file="$TEST_ROOT/run-reject-out.txt"
+  local record="$TEST_ROOT/run-reject-record"
+  local plan_src="$TEST_ROOT/run-reject-plan.md"
+  local case_src="$TEST_ROOT/run-reject-case.md"
+  local prefix_src="$TEST_ROOT/run-reject-prefix.md"
+  local log_src="$TEST_ROOT/run-reject-log.md"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local log_file="$repo_dir/untangle/log.md"
+  local repo_yml status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  write_opening_note "$case_src" "Plan"
+  write_opening_note "$prefix_src" "planning"
+  write_plan_note "$plan_src"
+  write_agent_log "$log_src"
+  use_agent_mock "$record"
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$case_src
+  RUN_AGENT_LOG_FILE=$log_file
+  RUN_AGENT_LOG_SRC=$log_src
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}Plan tick expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}Plan tick expected the agent once"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}Plan note was kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}Plan note set open_plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — note rejected; the week is unstamped" "$out_file"; then
+    problems="${problems}Plan tick did not reject the note"$'\n'
+  fi
+
+  RUN_AGENT_NOTE_SRC=$prefix_src
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}planning tick expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}planning tick did not start the agent"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}planning note was kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}planning note set open_plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — note rejected; the week is unstamped" "$out_file"; then
+    problems="${problems}planning tick did not reject the note"$'\n'
+  fi
+
+  RUN_AGENT_NOTE_SRC=$plan_src
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}plan tick expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "3" ]]; then
+    problems="${problems}plan tick did not start the agent"$'\n'
+  fi
+  if ! files_match "$plan_src" "$note"; then
+    problems="${problems}plan note bytes were not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=str:${note}"; then
+    problems="${problems}plan note did not set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=absent"; then
+    problems="${problems}plan note wrote a cursor"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}plan tick did not say open plan"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_agent_failure_then_quiet_note_is_not_an_open_plan() {
+  local test_name="agent failure leaves the week unstamped and a later quiet note is not an open plan"
+  local config_dir="$TEST_ROOT/run-fail-agent-config"
+  local repo_dir="$TEST_ROOT/run-fail-agent-repo"
+  local out_file="$TEST_ROOT/run-fail-agent-out.txt"
+  local record="$TEST_ROOT/run-fail-agent-record"
+  local note_src="$TEST_ROOT/run-fail-agent-quiet.md"
+  local log_src="$TEST_ROOT/run-fail-agent-log.md"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local log_file="$repo_dir/untangle/log.md"
+  local repo_yml status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  write_quiet_note "$note_src"
+  write_agent_log "$log_src"
+  use_agent_mock "$record"
+  RUN_AGENT_STATUS=1
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}failed agent expected untangle exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}failed agent was not started"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}failed agent wrote a note"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}failed agent set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}failed agent left progress_pid set"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — agent failed; the week is unstamped" "$out_file"; then
+    problems="${problems}failed agent did not say the week is unstamped"$'\n'
+  fi
+
+  RUN_AGENT_STATUS=0
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$note_src
+  RUN_AGENT_LOG_FILE=$log_file
+  RUN_AGENT_LOG_SRC=$log_src
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}quiet retry expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}quiet retry did not start the agent"$'\n'
+  fi
+  if ! files_match "$note_src" "$note"; then
+    problems="${problems}quiet note bytes were not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}quiet note set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=absent"; then
+    problems="${problems}quiet note wrote a cursor"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
+    problems="${problems}quiet retry did not say quiet note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_existing_open_plan_skips_without_fetch_or_agent() {
+  local test_name="an existing open plan skips the run and keeps the key"
+  local config_dir="$TEST_ROOT/run-open-config"
+  local repo_dir="$TEST_ROOT/run-open-repo"
+  local out_file="$TEST_ROOT/run-open-out.txt"
+  local record="$TEST_ROOT/run-open-record"
+  local herdr_log="$TEST_ROOT/run-open-herdr.log"
+  local kept="$TEST_ROOT/already-open-plan.md"
+  local repo_yml old new stale after status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  yaml_set_key "$repo_yml" open_plan "$kept"
+  cp "$repo_yml" "$TEST_ROOT/run-open-config-kept.yml"
+  old=$(git -C "$repo_dir" rev-parse origin/main)
+  new=$(advance_bare_branch "$repo_dir" main) || {
+    fail "$test_name" "could not advance origin/main"
+    return
+  }
+  stale=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$stale" != "$old" || "$new" == "$old" ]]; then
+    fail "$test_name" "origin/main was not stale before the run (old=$old new=$new stale=$stale)"
+    return
+  fi
+  use_agent_mock "$record"
+  RUN_HERDR_LOG=$herdr_log
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  after=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$after" != "$old" ]]; then
+    problems="${problems}fetch ran (origin/main moved from $old to $after)"$'\n'
+  fi
+  if [[ -s "$herdr_log" ]]; then
+    problems="${problems}open plan called herdr"$'\n'"$(cat "$herdr_log")"'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "0" ]]; then
+    problems="${problems}open plan started the agent"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}open plan wrote a note"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-open-config-kept.yml" "$repo_yml"; then
+    problems="${problems}open plan changed repo config"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=str:${kept}"; then
+    problems="${problems}open plan key was not left in place"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}did not skip for the open plan"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_invalid_cursor_skips_before_fetch() {
+  local test_name="cursor Nope skips before fetch and leaves the cursor unchanged"
+  local config_dir="$TEST_ROOT/run-nope-config"
+  local repo_dir="$TEST_ROOT/run-nope-repo"
+  local out_file="$TEST_ROOT/run-nope-out.txt"
+  local record="$TEST_ROOT/run-nope-record"
+  local herdr_log="$TEST_ROOT/run-nope-herdr.log"
+  local repo_yml old new stale after status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  yaml_set_key "$repo_yml" cursor Nope
+  cp "$repo_yml" "$TEST_ROOT/run-nope-config-kept.yml"
+  old=$(git -C "$repo_dir" rev-parse origin/main)
+  new=$(advance_bare_branch "$repo_dir" main) || {
+    fail "$test_name" "could not advance origin/main"
+    return
+  }
+  stale=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$stale" != "$old" || "$new" == "$old" ]]; then
+    fail "$test_name" "origin/main was not stale before the run (old=$old new=$new stale=$stale)"
+    return
+  fi
+  use_agent_mock "$record"
+  RUN_HERDR_LOG=$herdr_log
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  after=$(git -C "$repo_dir" rev-parse origin/main)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$after" != "$old" ]]; then
+    problems="${problems}fetch ran (origin/main moved from $old to $after)"$'\n'
+  fi
+  if [[ -s "$herdr_log" ]]; then
+    problems="${problems}invalid cursor called herdr"$'\n'"$(cat "$herdr_log")"'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "0" ]]; then
+    problems="${problems}invalid cursor started the agent"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}invalid cursor wrote a note"$'\n'
+  fi
+  if ! files_match "$TEST_ROOT/run-nope-config-kept.yml" "$repo_yml"; then
+    problems="${problems}invalid cursor rewrote config"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Nope"; then
+    problems="${problems}cursor is no longer Nope"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}invalid cursor set open_plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — invalid cursor; the next tick retries" "$out_file"; then
+    problems="${problems}did not say invalid cursor and the next tick retries"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
 install_probe_stub
 install_herdr_mock
 install_path_agent
+install_agent_mock
 
 printf '%s\n' "# untangle tests"
 printf '%s\n' "# untangle binary: $UNTANGLE$([[ -x "$UNTANGLE" ]] && printf ' (present)' || printf ' (MISSING)')"
@@ -2402,6 +3406,14 @@ run_test test_run_herdr_create_failure_recovers_listed_branch
 run_test test_run_existing_untangle_symlink_is_left
 run_test test_run_write_through_link_lands_in_registered_dir
 run_test test_run_bad_trunk_does_not_fetch
+run_test test_yaml_helpers_cursor_note_and_open_plan
+run_test test_run_plan_note_records_open_plan_and_later_wednesdays_skip
+run_test test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs
+run_test test_run_ownership_cursor_stays_after_plan_note
+run_test test_run_rejects_plan_case_and_planning_then_keeps_a_plan
+run_test test_run_agent_failure_then_quiet_note_is_not_an_open_plan
+run_test test_run_existing_open_plan_skips_without_fetch_or_agent
+run_test test_run_invalid_cursor_skips_before_fetch
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run untangle tests failed"

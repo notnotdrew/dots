@@ -167,6 +167,71 @@ def remove_nofollow(path, idents)
   File.unlink(path)
 end
 
+BUCKETS = %w[
+  Language
+  Ownership
+  Boundaries
+  Representation
+  Flow
+  Dependencies
+  Consolidation
+  Removal
+].freeze
+
+# Missing or blank prints Language. A known bucket prints its name.
+# Anything else prints invalid. This does not write the file.
+def cursor_bucket(data)
+  return "Language" unless data.is_a?(Hash)
+
+  key =
+    if data.key?("cursor")
+      "cursor"
+    elsif data.key?(:cursor)
+      :cursor
+    end
+  return "Language" if key.nil?
+
+  text = data[key].nil? ? "" : data[key].to_s
+  return "Language" if text.empty?
+  return text if BUCKETS.include?(text)
+
+  "invalid"
+end
+
+# First word after leading whitespace, when it is exactly plan or quiet.
+def note_word(path)
+  return "" unless File.file?(path)
+
+  text = File.read(path)
+  stripped = text.sub(/\A[[:space:]]+/, "")
+  word = stripped[/\A\S+/]
+  return word if word == "plan" || word == "quiet"
+
+  ""
+end
+
+def open_plan_value(data)
+  return "" unless data.is_a?(Hash)
+
+  key =
+    if data.key?("open_plan")
+      "open_plan"
+    elsif data.key?(:open_plan)
+      :open_plan
+    end
+  return "" if key.nil?
+
+  value = data[key]
+  value.is_a?(String) ? value : ""
+end
+
+# Store an absolute path string. Other keys stay.
+def store_open_plan(data, note_path)
+  data = {} unless data.is_a?(Hash)
+  data["open_plan"] = File.expand_path(note_path.to_s)
+  data
+end
+
 # absent | pid:<positive integer> | stale
 def progress_pid_state(data)
   return "absent" unless data.is_a?(Hash)
@@ -259,6 +324,20 @@ when "herdr_list_path"
 
 when "remove_copied_dir"
   remove_copied_dir(ARGV.fetch(1), ARGV.fetch(2))
+
+when "cursor_bucket"
+  puts cursor_bucket(load_yaml(ARGV.fetch(1)))
+
+when "note_word"
+  puts note_word(ARGV.fetch(1))
+
+when "open_plan_value"
+  puts open_plan_value(load_yaml(ARGV.fetch(1)))
+
+when "set_open_plan"
+  repo_yml = ARGV.fetch(1)
+  data = store_open_plan(load_yaml(repo_yml), ARGV.fetch(2))
+  dump_yaml(repo_yml, data)
 
 when "parse_now"
   # Print: date weekday hour minute  (weekday: 1=Mon .. 7=Sun)

@@ -29,6 +29,8 @@ A second init keeps a single registry entry and a single gitignore line. A secon
 
 An eligible run fetches the trunk (blank means main), opens `drew/untangle-<yymmdd>` with herdr, and links the worktree `untangle/` at the registered directory. A delivery failure leaves the week unstamped.
 
+The orchestrator runs in the worktree. It follows the guide for the cursor's bucket only, may delegate a code read, and writes the log and the note. The coordinator keeps a note only when it opens with `plan` or `quiet`. A plan is recorded as the open plan and later runs skip. A quiet note is not an open plan.
+
 ## After init
 
 Move `untangle/` into `~/dots-private` and replace the checkout path with a symlink. The script does not do that move.
