@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rails Audit"
+  short_description: "Audit a Rails app with thoughtbot practices"
+  default_prompt: "Run rails-audit-thoughtbot on this application"
