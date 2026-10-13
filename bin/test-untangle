@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Harness for untangle init. Failures are recorded; the suite does not exit
-# on the first one. Tests set UNTANGLE_CONFIG_DIR and UNTANGLE_GITIGNORE_GLOBAL
-# so they never touch the real home config.
+# Harness for untangle init and run. Failures are recorded; the suite does not
+# exit on the first one. Tests set UNTANGLE_CONFIG_DIR and UNTANGLE_NOW so
+# they never touch the real home config. Init tests also set
+# UNTANGLE_GITIGNORE_GLOBAL.
 
 set -u
 
@@ -15,6 +16,14 @@ TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-untangle.XXXXXX") || exit 1
 TEST_ROOT=$(CDPATH= cd "$TEST_ROOT" && pwd)
 
 cleanup() {
+  local pid
+  if [[ -n "${TEST_ROOT:-}" && -f "$TEST_ROOT/sleeper-pid" ]]; then
+    pid=$(cat "$TEST_ROOT/sleeper-pid")
+    if [[ -n "$pid" ]]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  fi
   if [[ -n "${TEST_ROOT:-}" ]]; then
     rm -rf "$TEST_ROOT"
   fi
@@ -171,6 +180,20 @@ repos << { "path" => repo_path }
 data["repos"] = repos
 File.write(path, YAML.dump(data))
 RUBY
+
+  cat >"$TEST_ROOT/yaml_set_progress_pid.rb" <<'RUBY'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "yaml"
+
+path = ARGV.fetch(0)
+pid = Integer(ARGV.fetch(1))
+data = YAML.load_file(path)
+data = {} unless data.is_a?(Hash)
+data["progress_pid"] = pid
+File.write(path, YAML.dump(data))
+RUBY
 }
 
 yaml_repo_occurrences() {
@@ -191,6 +214,10 @@ yaml_expect() {
 
 yaml_add_repo() {
   mise exec -- ruby "$TEST_ROOT/yaml_add_repo.rb" "$1" "$2"
+}
+
+yaml_set_progress_pid() {
+  mise exec -- ruby "$TEST_ROOT/yaml_set_progress_pid.rb" "$1" "$2"
 }
 
 files_match() {
@@ -220,6 +247,177 @@ run_init() {
     export UNTANGLE_GITIGNORE_GLOBAL="$gitignore_file"
     "$UNTANGLE" init
   )
+}
+
+install_probe_stub() {
+  cat >"$TEST_ROOT/probe_snapshot.rb" <<'RUBY'
+# frozen_string_literal: true
+
+require "yaml"
+
+repo = ARGV.fetch(0)
+out = ARGV.fetch(1)
+data = YAML.load_file(File.join(repo, "untangle", "config.yml"))
+pid = data["progress_pid"]
+version = data["version"]
+trunk = data["trunk"]
+line =
+  if pid.is_a?(Integer) && pid.positive? && version.is_a?(Integer) && trunk.is_a?(String)
+    "int:#{pid} version:#{version} trunk:#{trunk}"
+  else
+    "bad pid=#{pid.inspect} class=#{pid.class} version=#{version.inspect} trunk=#{trunk.inspect}"
+  end
+File.open(out, "a") { |file| file.puts line }
+RUBY
+
+  cat >"$TEST_ROOT/probe-stub" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$1" >>"\$UNTANGLE_PROBE_LOG"
+if [[ -n "\${UNTANGLE_PID_SNAPSHOT:-}" ]]; then
+  mise exec -- ruby "$TEST_ROOT/probe_snapshot.rb" "\$1" "\$UNTANGLE_PID_SNAPSHOT"
+fi
+exit "\${UNTANGLE_PROBE_STATUS:-0}"
+EOF
+  chmod +x "$TEST_ROOT/probe-stub"
+}
+
+# Records a PATH `agent` if run invokes one. The gate must not.
+install_path_agent() {
+  local bin="$TEST_ROOT/path-agent-bin"
+  mkdir -p "$bin"
+  cat >"$bin/agent" <<EOF
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "invoked" >>"$TEST_ROOT/path-agent-invocations"
+EOF
+  chmod +x "$bin/agent"
+}
+
+reset_run_env() {
+  RUN_PROBE=
+  RUN_PROBE_LOG=
+  RUN_PROBE_STATUS=
+  RUN_PID_SNAPSHOT=
+  RUN_PREFLIGHT=
+}
+
+prepare_registered_repo() {
+  local repo_dir=$1
+  local config_dir=$2
+  local gitignore_file="$config_dir/gitignore"
+  local out status
+  mkdir -p "$config_dir"
+  if [[ ! -f "$gitignore_file" ]]; then
+    printf '%s\n' '# keep' >"$gitignore_file"
+  fi
+  if [[ ! -e "$repo_dir/.git" ]]; then
+    make_repo "$repo_dir"
+  fi
+  out=$(run_init "$repo_dir" "$config_dir" "$gitignore_file" 2>&1)
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf 'prepare_registered_repo failed (%s): %s\n' "$status" "$out" >&2
+    return "$status"
+  fi
+}
+
+prepare_registered_plain_dir() {
+  local repo_dir=$1
+  local config_dir=$2
+  local gitignore_file="$config_dir/gitignore"
+  local out status
+  mkdir -p "$config_dir" "$repo_dir"
+  if [[ ! -f "$gitignore_file" ]]; then
+    printf '%s\n' '# keep' >"$gitignore_file"
+  fi
+  out=$(run_init "$repo_dir" "$config_dir" "$gitignore_file" 2>&1)
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf 'prepare_registered_plain_dir failed (%s): %s\n' "$status" "$out" >&2
+    return "$status"
+  fi
+}
+
+invoke_run() {
+  local config_dir=$1
+  local now=$2
+  local out_file=$3
+  (
+    cd "$TEST_ROOT" || exit 1
+    export UNTANGLE_CONFIG_DIR="$config_dir"
+    export UNTANGLE_NOW="$now"
+    export UNTANGLE_GITIGNORE_GLOBAL="$TEST_ROOT/gitignore-unused"
+    export PATH="$TEST_ROOT/path-agent-bin:${PATH}"
+    if [[ -n "${RUN_PROBE:-}" ]]; then
+      export UNTANGLE_PROBE="$RUN_PROBE"
+    else
+      unset UNTANGLE_PROBE
+    fi
+    if [[ -n "${RUN_PROBE_LOG:-}" ]]; then
+      export UNTANGLE_PROBE_LOG="$RUN_PROBE_LOG"
+    else
+      unset UNTANGLE_PROBE_LOG
+    fi
+    if [[ -n "${RUN_PROBE_STATUS:-}" ]]; then
+      export UNTANGLE_PROBE_STATUS="$RUN_PROBE_STATUS"
+    else
+      unset UNTANGLE_PROBE_STATUS
+    fi
+    if [[ -n "${RUN_PID_SNAPSHOT:-}" ]]; then
+      export UNTANGLE_PID_SNAPSHOT="$RUN_PID_SNAPSHOT"
+    else
+      unset UNTANGLE_PID_SNAPSHOT
+    fi
+    if [[ -n "${RUN_PREFLIGHT:-}" ]]; then
+      export UNTANGLE_PREFLIGHT_FIXTURE="$RUN_PREFLIGHT"
+    else
+      unset UNTANGLE_PREFLIGHT_FIXTURE
+    fi
+    "$UNTANGLE" run
+  ) >"$out_file" 2>&1
+}
+
+path_count_in_log() {
+  local log=$1
+  local path=$2
+  local count
+  if [[ ! -f "$log" ]]; then
+    printf '0'
+    return 0
+  fi
+  count=$(grep -F -x -c -- "$path" "$log" || true)
+  printf '%s' "$count"
+}
+
+snapshot_int_count() {
+  local file=$1
+  local count
+  if [[ ! -f "$file" ]]; then
+    printf '0'
+    return 0
+  fi
+  count=$(grep -E -c '^int:[1-9][0-9]* version:1 trunk:$' "$file" || true)
+  printf '%s' "$count"
+}
+
+path_agent_invocations() {
+  local file="$TEST_ROOT/path-agent-invocations"
+  local count
+  if [[ ! -f "$file" ]]; then
+    printf '0'
+    return 0
+  fi
+  count=$(grep -c . "$file" || true)
+  printf '%s' "$count"
+}
+
+use_probe_stub() {
+  local log=$1
+  local snapshot=${2:-}
+  RUN_PROBE="$TEST_ROOT/probe-stub"
+  RUN_PROBE_LOG="$log"
+  RUN_PID_SNAPSHOT="$snapshot"
 }
 
 # --- tests -------------------------------------------------------------------
@@ -446,26 +644,43 @@ test_usage_on_missing_and_unknown_command() {
   if [[ "$status" -eq 0 ]]; then
     problems="${problems}missing command exited 0"$'\n'
   fi
-  if ! grep -F -q -- 'Usage: untangle <init>' "$stderr_file"; then
+  if ! grep -F -q -- 'Usage: untangle <init|run>' "$stderr_file"; then
     problems="${problems}missing command did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
   fi
   if [[ -s "$stdout_file" ]]; then
     problems="${problems}missing command wrote to stdout"$'\n'
   fi
 
-  for cmd in no-such run done status launchd-setup; do
+  for cmd in done status launchd-setup no-such; do
     "$UNTANGLE" "$cmd" >"$stdout_file" 2>"$stderr_file"
     status=$?
     if [[ "$status" -eq 0 ]]; then
       problems="${problems}unknown command ${cmd} exited 0"$'\n'
     fi
-    if ! grep -F -q -- 'Usage: untangle <init>' "$stderr_file"; then
+    if ! grep -F -q -- 'Usage: untangle <init|run>' "$stderr_file"; then
       problems="${problems}unknown command ${cmd} did not print usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
     fi
     if [[ -s "$stdout_file" ]]; then
       problems="${problems}unknown command ${cmd} wrote to stdout"$'\n'
     fi
   done
+
+  mkdir -p "$TEST_ROOT/usage-run-config"
+  (
+    export UNTANGLE_CONFIG_DIR="$TEST_ROOT/usage-run-config"
+    export UNTANGLE_NOW="2026-10-14T10:00:00"
+    "$UNTANGLE" run >"$stdout_file" 2>"$stderr_file"
+  )
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}run exited $status"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if grep -F -q -- 'unknown command' "$stderr_file"; then
+    problems="${problems}run was treated as unknown"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
+  if grep -F -q -- 'Usage:' "$stderr_file"; then
+    problems="${problems}run printed usage on stderr"$'\n'"$(cat "$stderr_file")"$'\n'
+  fi
 
   "$UNTANGLE" -h >"$stdout_file" 2>"$stderr_file"
   status=$?
@@ -474,6 +689,9 @@ test_usage_on_missing_and_unknown_command() {
   fi
   if ! grep -F -q -- 'Write the untangle directory, register cwd, and ensure the gitignore entry' "$stdout_file"; then
     problems="${problems}-h usage does not say init writes the directory, registers cwd, and ensures the gitignore entry"$'\n'
+  fi
+  if ! grep -F -q -- 'Consider each registered repository on Wednesday' "$stdout_file"; then
+    problems="${problems}-h usage does not say run considers each registered repository on Wednesday"$'\n'
   fi
 
   "$UNTANGLE" --help >"$stdout_file" 2>"$stderr_file"
@@ -530,9 +748,784 @@ test_guide_omits_slowfriday_notes() {
   pass "$test_name"
 }
 
+test_run_success_leaves_week_unstamped_and_probes_again() {
+  local test_name="Wednesday probe success leaves the note absent and a second run probes again"
+  local config_dir="$TEST_ROOT/run-ok-config"
+  local repo_dir="$TEST_ROOT/run-ok-repo"
+  local log="$TEST_ROOT/run-ok-log"
+  local snapshot="$TEST_ROOT/run-ok-snapshot"
+  local out_file="$TEST_ROOT/run-ok-out.txt"
+  local repo_yml count ints status agents problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  use_probe_stub "$log" "$snapshot"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  ints=$(snapshot_int_count "$snapshot")
+  agents=$(path_agent_invocations)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}first run expected the probe once, got $count"$'\n'
+  fi
+  if [[ "$agents" != "0" ]]; then
+    problems="${problems}first run executed agent, count=$agents"$'\n'
+  fi
+  if [[ "$ints" != "1" ]]; then
+    problems="${problems}first run expected an integer progress_pid during the probe, got $ints"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}first run wrote notes/261014.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — week left unstamped" "$out_file"; then
+    problems="${problems}first run did not say the week was left unstamped"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}first run left progress_pid set"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}first run dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}first run dropped the blank trunk"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  ints=$(snapshot_int_count "$snapshot")
+  agents=$(path_agent_invocations)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}second run expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "2" ]]; then
+    problems="${problems}second run expected the probe again, got count $count"$'\n'
+  fi
+  if [[ "$ints" != "2" ]]; then
+    problems="${problems}second run expected another integer progress_pid, got $ints"$'\n'
+  fi
+  if [[ "$agents" != "0" ]]; then
+    problems="${problems}probe seam executed agent, count=$agents"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}second run wrote notes/261014.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}second run left progress_pid set"$'\n'
+  fi
+
+  RUN_PROBE=
+  : >"$out_file"
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  agents=$(path_agent_invocations)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}unset probe expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "2" ]]; then
+    problems="${problems}unset probe invoked the probe, count=$count"$'\n'
+  fi
+  if [[ "$agents" != "0" ]]; then
+    problems="${problems}unset probe executed agent, count=$agents"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}unset probe wrote notes/261014.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — week left unstamped" "$out_file"; then
+    problems="${problems}unset probe did not say the week was left unstamped"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}unset probe left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_skips_when_current_note_exists() {
+  local test_name="existing notes/261014.md skips the probe and keeps the file bytes"
+  local config_dir="$TEST_ROOT/run-stamped-config"
+  local repo_dir="$TEST_ROOT/run-stamped-repo"
+  local log="$TEST_ROOT/run-stamped-log"
+  local out_file="$TEST_ROOT/run-stamped-out.txt"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local expected="$TEST_ROOT/run-stamped-expected"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'already stamped this week' >"$note"
+  cp "$note" "$expected"
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}probe ran despite the stamp, count=$count"$'\n'
+  fi
+  if ! files_match "$expected" "$note"; then
+    problems="${problems}notes/261014.md bytes changed"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — week already stamped" "$out_file"; then
+    problems="${problems}did not say the week was already stamped"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_probe_failure_retries_on_the_next_tick() {
+  local test_name="probe failure leaves the week unstamped and a later success is invoked"
+  local config_dir="$TEST_ROOT/run-fail-config"
+  local repo_a="$TEST_ROOT/run-fail-repo-a"
+  local repo_b="$TEST_ROOT/run-fail-repo-b"
+  local log="$TEST_ROOT/run-fail-log"
+  local snapshot="$TEST_ROOT/run-fail-snapshot"
+  local out_file="$TEST_ROOT/run-fail-out.txt"
+  local status count_a count_b ints problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_a" "$config_dir" || {
+    fail "$test_name" "prepare repo a failed"
+    return
+  }
+  prepare_registered_repo "$repo_b" "$config_dir" || {
+    fail "$test_name" "prepare repo b failed"
+    return
+  }
+  use_probe_stub "$log" "$snapshot"
+  RUN_PROBE_STATUS=1
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count_a=$(path_count_in_log "$log" "$repo_a")
+  count_b=$(path_count_in_log "$log" "$repo_b")
+  ints=$(snapshot_int_count "$snapshot")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}failed probes expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count_a" != "1" || "$count_b" != "1" ]]; then
+    problems="${problems}both repos should be probed once, got a=$count_a b=$count_b"$'\n'
+  fi
+  if [[ "$ints" != "2" ]]; then
+    problems="${problems}expected an integer progress_pid during each probe, got $ints"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ -e "$repo_a/untangle/notes/261014.md" || -e "$repo_b/untangle/notes/261014.md" ]]; then
+    problems="${problems}probe failure wrote a stamp note"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_a} — probe failed; the week is unstamped" "$out_file"; then
+    problems="${problems}repo a did not say the probe failed"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_b} — probe failed; the week is unstamped" "$out_file"; then
+    problems="${problems}repo b did not say the probe failed"$'\n'
+  fi
+  if ! yaml_expect "$repo_a/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}repo a left progress_pid set"$'\n'
+  fi
+  if ! yaml_expect "$repo_b/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}repo b left progress_pid set"$'\n'
+  fi
+
+  RUN_PROBE_STATUS=0
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count_a=$(path_count_in_log "$log" "$repo_a")
+  count_b=$(path_count_in_log "$log" "$repo_b")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}retry expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count_a" != "2" || "$count_b" != "2" ]]; then
+    problems="${problems}retry should probe both repos again, got a=$count_a b=$count_b"$'\n'
+  fi
+  if [[ -e "$repo_a/untangle/notes/261014.md" || -e "$repo_b/untangle/notes/261014.md" ]]; then
+    problems="${problems}retry wrote a stamp note"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_a} — week left unstamped" "$out_file"; then
+    problems="${problems}retry did not leave repo a unstamped"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_b} — week left unstamped" "$out_file"; then
+    problems="${problems}retry did not leave repo b unstamped"$'\n'
+  fi
+  if ! yaml_expect "$repo_a/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid on repo a"$'\n'
+  fi
+  if ! yaml_expect "$repo_b/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid on repo b"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_preflight_fixture_failure_retries_when_cleared() {
+  local test_name="preflight fixture failure skips the probe and a later run probes"
+  local config_dir="$TEST_ROOT/run-preflight-config"
+  local repo_dir="$TEST_ROOT/run-preflight-repo"
+  local log="$TEST_ROOT/run-preflight-log"
+  local snapshot="$TEST_ROOT/run-preflight-snapshot"
+  local out_file="$TEST_ROOT/run-preflight-out.txt"
+  local repo_yml="$repo_dir/untangle/config.yml"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_probe_stub "$log" "$snapshot"
+  RUN_PROBE_STATUS=0
+  RUN_PREFLIGHT=fail
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}preflight failure expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}preflight failure invoked the probe, count=$count"$'\n'
+  fi
+  if [[ -e "$snapshot" ]]; then
+    problems="${problems}preflight failure wrote a pid snapshot"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}preflight failure wrote notes/261014.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — preflight failed; the next tick retries" "$out_file"; then
+    problems="${problems}preflight failure did not say the next tick retries"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}preflight failure left progress_pid set"$'\n'
+  fi
+
+  RUN_PREFLIGHT=
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}retry expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}retry expected the probe once, got $count"$'\n'
+  fi
+  if [[ "$(snapshot_int_count "$snapshot")" != "1" ]]; then
+    problems="${problems}retry did not record an integer progress_pid"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}retry wrote notes/261014.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}retry left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_live_pid_blocks_probe() {
+  local test_name="a live progress_pid blocks the probe and stays in the config"
+  local config_dir="$TEST_ROOT/run-live-config"
+  local repo_dir="$TEST_ROOT/run-live-repo"
+  local log="$TEST_ROOT/run-live-log"
+  local out_file="$TEST_ROOT/run-live-out.txt"
+  local repo_yml holder status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  sleep 120 &
+  holder=$!
+  printf '%s\n' "$holder" >"$TEST_ROOT/sleeper-pid"
+  yaml_set_progress_pid "$repo_yml" "$holder"
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  rm -f "$TEST_ROOT/sleeper-pid"
+
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}probe ran while the pid was alive, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}live pid wrote notes/261014.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — in progress" "$out_file"; then
+    problems="${problems}did not say the repo was in progress"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=int:$holder"; then
+    problems="${problems}live pid was not left as integer $holder"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}live skip dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}live skip dropped trunk"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_stale_pid_is_cleared_and_probe_runs() {
+  local test_name="a dead progress_pid is cleared and the probe runs"
+  local config_dir="$TEST_ROOT/run-stale-config"
+  local repo_dir="$TEST_ROOT/run-stale-repo"
+  local log="$TEST_ROOT/run-stale-log"
+  local snapshot="$TEST_ROOT/run-stale-snapshot"
+  local out_file="$TEST_ROOT/run-stale-out.txt"
+  local repo_yml="$repo_dir/untangle/config.yml"
+  local stale_pid=99999999
+  local status count problems=""
+
+  reset_run_env
+  if kill -0 "$stale_pid" 2>/dev/null; then
+    fail "$test_name" "pid $stale_pid is alive; cannot use it as a stale lock"
+    return
+  fi
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  yaml_set_progress_pid "$repo_yml" "$stale_pid"
+  use_probe_stub "$log" "$snapshot"
+  RUN_PROBE_STATUS=0
+  RUN_PREFLIGHT=fail
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}preflight failure expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}preflight failure invoked the probe, count=$count"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — cleared a stale progress pid" "$out_file"; then
+    problems="${problems}preflight failure did not say the stale progress pid was cleared"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}preflight failure left the dead progress pid set"$'\n'
+  fi
+
+  RUN_PREFLIGHT=
+  yaml_set_progress_pid "$repo_yml" "$stale_pid"
+  : >"$out_file"
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}expected the probe once, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}stale pid run wrote notes/261014.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — cleared a stale progress pid" "$out_file"; then
+    problems="${problems}did not say the stale progress pid was cleared"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}stale pid was not cleared"$'\n'
+  fi
+  if grep -F -q -- "int:${stale_pid} " "$snapshot" 2>/dev/null; then
+    problems="${problems}probe ran while the stale pid was still stored"$'\n'
+  fi
+  if [[ "$(snapshot_int_count "$snapshot")" != "1" ]]; then
+    problems="${problems}expected an integer progress_pid during the probe"$'\n'"$(cat "$snapshot" 2>/dev/null || true)"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_skips_tuesday_and_thursday() {
+  local test_name="Tuesday and Thursday skip without probing and say not Wednesday"
+  local config_dir="$TEST_ROOT/run-weekday-config"
+  local repo_dir="$TEST_ROOT/run-weekday-repo"
+  local log="$TEST_ROOT/run-weekday-log"
+  local out_file="$TEST_ROOT/run-weekday-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-13T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}Tuesday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}Tuesday invoked the probe, count=$count"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — not Wednesday" "$out_file"; then
+    problems="${problems}Tuesday output did not say not Wednesday"$'\n'
+  fi
+  if grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}Tuesday was reported as outside the window"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261013.md" || -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}Tuesday wrote a note"$'\n'
+  fi
+
+  : >"$out_file"
+  invoke_run "$config_dir" "2026-10-15T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}Thursday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}Thursday invoked the probe, count=$count"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — not Wednesday" "$out_file"; then
+    problems="${problems}Thursday output did not say not Wednesday"$'\n'
+  fi
+  if grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}Thursday was reported as outside the window"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261015.md" || -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}Thursday wrote a note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_window_edges() {
+  local test_name="Wednesday window skips 07:59 and 16:00 and probes 08:00 and 15:30"
+  local config_dir="$TEST_ROOT/run-window-config"
+  local repo_dir="$TEST_ROOT/run-window-repo"
+  local log="$TEST_ROOT/run-window-log"
+  local out_file="$TEST_ROOT/run-window-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T07:59:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}07:59 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}07:59 invoked the probe, count=$count"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — outside the window" "$out_file"; then
+    problems="${problems}07:59 did not say outside the window"$'\n'
+  fi
+  if grep -F -q -- "not Wednesday" "$out_file"; then
+    problems="${problems}07:59 was reported as not Wednesday"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-14T16:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}16:00 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}16:00 invoked the probe, count=$count"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — outside the window" "$out_file"; then
+    problems="${problems}16:00 did not say outside the window"$'\n'
+  fi
+  if grep -F -q -- "not Wednesday" "$out_file"; then
+    problems="${problems}16:00 was reported as not Wednesday"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-14T08:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}08:00 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}08:00 expected the probe once, got $count"$'\n'
+  fi
+  if grep -F -q -- "outside the window" "$out_file"; then
+    problems="${problems}08:00 was reported as outside the window"$'\n'
+  fi
+  if grep -F -q -- "not Wednesday" "$out_file"; then
+    problems="${problems}08:00 was reported as not Wednesday"$'\n'
+  fi
+
+  invoke_run "$config_dir" "2026-10-14T15:30:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}15:30 expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "2" ]]; then
+    problems="${problems}15:30 expected a second probe, got $count"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}inside-window run wrote notes/261014.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}inside-window run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_two_repos_probes_only_the_unstamped_one() {
+  local test_name="only the repo without notes/261014.md is probed"
+  local config_dir="$TEST_ROOT/run-two-config"
+  local stamped="$TEST_ROOT/run-two-stamped"
+  local open="$TEST_ROOT/run-two-open"
+  local log="$TEST_ROOT/run-two-log"
+  local out_file="$TEST_ROOT/run-two-out.txt"
+  local note="$stamped/untangle/notes/261014.md"
+  local expected="$TEST_ROOT/run-two-expected"
+  local status stamped_count open_count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$stamped" "$config_dir" || {
+    fail "$test_name" "prepare stamped repo failed"
+    return
+  }
+  prepare_registered_repo "$open" "$config_dir" || {
+    fail "$test_name" "prepare open repo failed"
+    return
+  }
+  printf '%s\n' 'this week is done' >"$note"
+  cp "$note" "$expected"
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  stamped_count=$(path_count_in_log "$log" "$stamped")
+  open_count=$(path_count_in_log "$log" "$open")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$stamped_count" != "0" ]]; then
+    problems="${problems}stamped repo was probed, count=$stamped_count"$'\n'
+  fi
+  if [[ "$open_count" != "1" ]]; then
+    problems="${problems}unstamped repo expected one probe, got $open_count"$'\n'
+  fi
+  if ! files_match "$expected" "$note"; then
+    problems="${problems}stamped note bytes changed"$'\n'
+  fi
+  if [[ -e "$open/untangle/notes/261014.md" ]]; then
+    problems="${problems}unstamped repo gained notes/261014.md"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_older_note_does_not_stamp_this_week() {
+  local test_name="notes/261014.md is not the 2026-10-21 stamp and is left unchanged"
+  local config_dir="$TEST_ROOT/run-old-config"
+  local repo_dir="$TEST_ROOT/run-old-repo"
+  local log="$TEST_ROOT/run-old-log"
+  local out_file="$TEST_ROOT/run-old-out.txt"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local expected="$TEST_ROOT/run-old-expected"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  printf '%s\n' 'an older Wednesday stays put' >"$note"
+  cp "$note" "$expected"
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}older note should not stamp this Wednesday, probe count=$count"$'\n'
+  fi
+  if ! files_match "$expected" "$note"; then
+    problems="${problems}notes/261014.md bytes changed"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261021.md" ]]; then
+    problems="${problems}run wrote notes/261021.md"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}run left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_plain_directory_fails_preflight() {
+  local test_name="a directory that is not a git work tree fails preflight without a fixture"
+  local config_dir="$TEST_ROOT/run-plain-config"
+  local repo_dir="$TEST_ROOT/run-plain-repo"
+  local log="$TEST_ROOT/run-plain-log"
+  local out_file="$TEST_ROOT/run-plain-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_plain_dir "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  if git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    fail "$test_name" "fixture directory is inside a work tree, so preflight would pass"
+    return
+  fi
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}probe ran, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}preflight failure wrote notes/261014.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — preflight failed; the next tick retries" "$out_file"; then
+    problems="${problems}did not say preflight failed"$'\n'
+  fi
+  if ! yaml_expect "$repo_dir/untangle/config.yml" "progress_pid=absent"; then
+    problems="${problems}preflight failure left progress_pid set"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_missing_init_skips() {
+  local test_name="a registry path with no untangle/config.yml skips as not initialized"
+  local config_dir="$TEST_ROOT/run-uninit-config"
+  local repo_dir="$TEST_ROOT/run-uninit-repo"
+  local log="$TEST_ROOT/run-uninit-log"
+  local out_file="$TEST_ROOT/run-uninit-out.txt"
+  local status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  rm -f "$repo_dir/untangle/config.yml"
+  use_probe_stub "$log"
+  RUN_PROBE_STATUS=0
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "0" ]]; then
+    problems="${problems}probe ran, count=$count"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
+    problems="${problems}missing init wrote notes/261014.md"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/config.yml" ]]; then
+    problems="${problems}missing init recreated config.yml"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — not initialized" "$out_file"; then
+    problems="${problems}did not say the repo was not initialized"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
 # --- main --------------------------------------------------------------------
 
 write_yaml_helpers
+install_probe_stub
+install_path_agent
 
 printf '%s\n' "# untangle tests"
 printf '%s\n' "# untangle binary: $UNTANGLE$([[ -x "$UNTANGLE" ]] && printf ' (present)' || printf ' (MISSING)')"
@@ -542,6 +1535,18 @@ run_test test_init_is_idempotent
 run_test test_docs_manual_step_and_script_silence
 run_test test_usage_on_missing_and_unknown_command
 run_test test_guide_omits_slowfriday_notes
+run_test test_run_success_leaves_week_unstamped_and_probes_again
+run_test test_run_skips_when_current_note_exists
+run_test test_run_probe_failure_retries_on_the_next_tick
+run_test test_run_preflight_fixture_failure_retries_when_cleared
+run_test test_run_live_pid_blocks_probe
+run_test test_run_stale_pid_is_cleared_and_probe_runs
+run_test test_run_skips_tuesday_and_thursday
+run_test test_run_window_edges
+run_test test_run_two_repos_probes_only_the_unstamped_one
+run_test test_run_older_note_does_not_stamp_this_week
+run_test test_run_plain_directory_fails_preflight
+run_test test_run_missing_init_skips
 
 if [[ "$tests_failed" -ne 0 ]]; then
   printf '%s\n' "$tests_failed of $tests_run untangle tests failed"
