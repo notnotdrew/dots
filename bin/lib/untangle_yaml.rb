@@ -6,6 +6,7 @@
 
 require "yaml"
 require "fileutils"
+require "json"
 require "time"
 
 Encoding.default_external = Encoding::UTF_8
@@ -51,6 +52,119 @@ def repo_paths(data)
   Array(repos).map do |entry|
     entry.is_a?(Hash) ? (entry["path"] || entry[:path]).to_s : entry.to_s
   end
+end
+
+# Blank or missing trunk means main. The file itself is left unchanged.
+def trunk_name(data)
+  return "main" unless data.is_a?(Hash)
+
+  key =
+    if data.key?("trunk")
+      "trunk"
+    elsif data.key?(:trunk)
+      :trunk
+    end
+  return "main" if key.nil?
+
+  text = data[key].nil? ? "" : data[key].to_s
+  text.empty? ? "main" : text
+end
+
+def json_load(path)
+  JSON.parse(File.read(path))
+rescue JSON::ParserError, Errno::ENOENT
+  nil
+end
+
+def herdr_create_path(data)
+  return "" unless data.is_a?(Hash)
+
+  result = data["result"]
+  return "" unless result.is_a?(Hash)
+
+  worktree = result["worktree"]
+  return "" unless worktree.is_a?(Hash)
+
+  worktree["path"].to_s
+end
+
+def herdr_list_path(data, branch)
+  return "" unless data.is_a?(Hash)
+
+  result = data["result"]
+  return "" unless result.is_a?(Hash)
+
+  worktrees = result["worktrees"]
+  return "" unless worktrees.is_a?(Array)
+
+  worktrees.each do |entry|
+    next unless entry.is_a?(Hash)
+    next unless entry["branch"].to_s == branch
+
+    return entry["path"].to_s
+  end
+  ""
+end
+
+def protected_identities(path)
+  idents = []
+  listed = File.lstat(path)
+  idents << [listed.dev, listed.ino]
+  followed = File.stat(path)
+  idents << [followed.dev, followed.ino]
+  idents.uniq
+end
+
+def protected_stat?(stat, idents)
+  idents.any? { |dev, ino| stat.dev == dev && stat.ino == ino }
+end
+
+# Delete a copied directory without walking a symlink into the registered tree.
+# A trailing slash is never added: on macOS, rm follows that into the target.
+def remove_copied_dir(dest, protected)
+  dest_real = File.realpath(dest)
+  protected_real = File.realpath(protected)
+  same = dest_real == protected_real
+  inside = dest_real.start_with?(protected_real + File::SEPARATOR)
+  if same || inside
+    abort "refusing to remove registered untangle tree: #{dest}"
+  end
+
+  idents = protected_identities(protected)
+  remove_nofollow(dest, idents)
+end
+
+def remove_nofollow(path, idents)
+  listed = File.lstat(path)
+  if protected_stat?(listed, idents)
+    abort "refusing to remove registered untangle tree: #{path}"
+  end
+
+  if listed.symlink?
+    File.unlink(path)
+    return
+  end
+
+  if listed.directory?
+    followed = File.stat(path)
+    if protected_stat?(followed, idents)
+      abort "refusing to remove registered untangle tree: #{path}"
+    end
+
+    children = []
+    Dir.foreach(path) do |name|
+      next if name == "." || name == ".."
+
+      children << name
+    end
+    children.each do |name|
+      remove_nofollow(File.join(path, name), idents)
+    end
+    Dir.rmdir(path)
+    return
+  end
+
+  File.unlink(path)
 end
 
 # absent | pid:<positive integer> | stale
@@ -130,6 +244,21 @@ when "clear_progress_pid"
   data.delete("progress_pid")
   data.delete(:progress_pid)
   dump_yaml(repo_yml, data)
+
+when "trunk_name"
+  repo_yml = ARGV.fetch(1)
+  puts trunk_name(load_yaml(repo_yml))
+
+when "herdr_create_path"
+  puts herdr_create_path(json_load(ARGV.fetch(1)))
+
+when "herdr_list_path"
+  json_path = ARGV.fetch(1)
+  branch = ARGV.fetch(2)
+  puts herdr_list_path(json_load(json_path), branch)
+
+when "remove_copied_dir"
+  remove_copied_dir(ARGV.fetch(1), ARGV.fetch(2))
 
 when "parse_now"
   # Print: date weekday hour minute  (weekday: 1=Mon .. 7=Sun)

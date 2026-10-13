@@ -27,6 +27,8 @@ A second init keeps a single registry entry and a single gitignore line. A secon
 
 `untangle/notes/<yymmdd>.md` is the weekly stamp. When that note exists, the repo is skipped. A live `progress_pid` in `untangle/config.yml` blocks another run. A pid whose process is gone is cleared, and the tick continues. A missing `untangle/config.yml` skips the repo. If preflight fails, the note is not written, so the week stays unstamped and a later Wednesday tick can retry.
 
+An eligible run fetches the trunk (blank means main), opens `drew/untangle-<yymmdd>` with herdr, and links the worktree `untangle/` at the registered directory. A delivery failure leaves the week unstamped.
+
 ## After init
 
 Move `untangle/` into `~/dots-private` and replace the checkout path with a symlink. The script does not do that move.
