@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rails Antipatterns"
+  short_description: "Refactor one Rails antipattern"
+  default_prompt: "Use rails-antipatterns on this code"

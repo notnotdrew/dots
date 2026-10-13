@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing Rails"
+  short_description: "Write a Rails test the thoughtbot way"
+  default_prompt: "Use testing-rails for this behavior"
