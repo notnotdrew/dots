@@ -198,8 +198,10 @@ skill_folded=$(printf '%s' "$skill_text" | tr '[:upper:]' '[:lower:]')
 test_name="the skill watches one repo and calls pr-review"
 missing=
 for line in \
-    "Subscribe to pull request opened and pull request pushed for that repository." \
-    "Do not add a timer, a cron schedule, or a search that runs on its own." \
+    "Do not call \`subscribe_github_pr\` with \`scope: repo\`." \
+    "Arm one \`subscribe_timer\` named \`review-requested\`." \
+    "Pass cron \`0 9-17 * * 1-5\` and timezone \`America/Denver\` when the tool accepts a timezone." \
+    "When it does not, pass cron \`0 15-23 * * 1-5\`." \
     "4. Do not push commits." \
     "5. Do not submit or publish the GitHub review." \
     "3. Follow the \`pr-review\` skill for a Standard review of that pull request. Do not invoke the \`pr-review\` shell command. Do not select Deep."
@@ -208,6 +210,9 @@ do
         missing="$missing [$line]"
     fi
 done
+if grep -Fxq "Do not add a timer, a cron schedule, or a search that runs on its own." "$SKILL_FILE"; then
+    missing="$missing [timer prohibition]"
+fi
 case "$skill_text" in
     *'review-requested:@me'*) ;;
     *) missing="$missing review-requested:@me" ;;
