@@ -672,13 +672,14 @@ invoke_in_repo() {
   local cmd=$2
   local out_file=$3
   local err_file=$4
+  shift 4
   mkdir -p "$TEST_ROOT/not-the-registry"
   (
     cd "$repo_dir" || exit 1
     export UNTANGLE_CONFIG_DIR="$TEST_ROOT/not-the-registry"
     export UNTANGLE_GITIGNORE_GLOBAL="$TEST_ROOT/not-the-gitignore"
     export UNTANGLE_NOW="2026-10-13T10:00:00"
-    "$UNTANGLE" "$cmd"
+    "$UNTANGLE" "$cmd" "$@"
   ) >"$out_file" 2>"$err_file"
 }
 
@@ -1170,8 +1171,14 @@ test_docs_manual_step_and_script_silence() {
   if ! grep -F -q -- '`untangle done` clears the open plan and then advances.' "$DOCS_FILE"; then
     problems="${problems}docs do not say untangle done clears the open plan and then advances"$'\n'
   fi
+  if ! grep -F -q -- '`untangle done change` clears the open change plan and leaves the cursor.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say untangle done change clears the open change plan and leaves the cursor"$'\n'
+  fi
   if ! grep -F -q -- '`untangle status` shows the cursor and the open plan when there is one.' "$DOCS_FILE"; then
     problems="${problems}docs do not say untangle status shows the cursor and the open plan when there is one"$'\n'
+  fi
+  if ! grep -F -q -- 'When an open change plan is recorded, status shows that path too.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say status shows an open change plan"$'\n'
   fi
   if grep -F -q -- 'dots-private' "$UNTANGLE"; then
     problems="${problems}bin/untangle contains dots-private"$'\n'
@@ -1273,8 +1280,8 @@ test_usage_on_missing_and_unknown_command() {
   if ! grep -F -q -- 'Consider each registered repository on Wednesday' "$stdout_file"; then
     problems="${problems}-h usage does not say run considers each registered repository on Wednesday"$'\n'
   fi
-  if ! grep -F -q -- 'Clear the open plan and advance the cursor' "$stdout_file"; then
-    problems="${problems}-h usage does not say done clears the open plan and advances the cursor"$'\n'
+  if ! grep -F -q -- 'Clear the open plan and advance the cursor; done change clears the open change plan' "$stdout_file"; then
+    problems="${problems}-h usage does not say done clears the open plan and done change clears the open change plan"$'\n'
   fi
   if ! grep -F -q -- 'Show the cursor and the open plan' "$stdout_file"; then
     problems="${problems}-h usage does not say status shows the cursor and the open plan"$'\n'
@@ -4444,6 +4451,199 @@ test_done_without_open_plan_leaves_ownership_cursor() {
   pass "$test_name"
 }
 
+test_status_and_done_change_keep_the_other_plan() {
+  local test_name="status shows an open change plan and done change clears only that plan"
+  local config_dir="$TEST_ROOT/done-change-config"
+  local gitignore_file="$TEST_ROOT/done-change-gitignore"
+  local repo_dir="$TEST_ROOT/done-change-repo"
+  local repo_yml plan_note change_note
+  local status_out status_err done_out done_err status problems=""
+  local status_expected="$TEST_ROOT/done-change-status-expected.txt"
+  local config_snapshot="$TEST_ROOT/done-change-config-snapshot.yml"
+
+  mkdir -p "$config_dir"
+  printf '%s\n' '# keep' >"$gitignore_file"
+  make_repo "$repo_dir"
+  run_init "$repo_dir" "$config_dir" "$gitignore_file" >/dev/null
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "$test_name" "init exited $status"
+    return
+  fi
+
+  repo_yml="$repo_dir/untangle/config.yml"
+  plan_note="$repo_dir/untangle/notes/261014.md"
+  change_note="$repo_dir/untangle/notes/261014-change.md"
+  printf '%s\n' 'plan' 'knot' >"$plan_note"
+  printf '%s\n' 'plan' 'change' >"$change_note"
+  yaml_set_key "$repo_yml" cursor Ownership
+  yaml_set_key "$repo_yml" open_plan "$plan_note"
+
+  status_out="$TEST_ROOT/done-change-status-out.txt"
+  status_err="$TEST_ROOT/done-change-status-err.txt"
+  done_out="$TEST_ROOT/done-change-done-out.txt"
+  done_err="$TEST_ROOT/done-change-done-err.txt"
+
+  cp "$repo_yml" "$config_snapshot"
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Ownership" "open plan: ${plan_note}" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status without a change plan expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status without a change plan wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status without a change plan output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+  if ! files_match "$config_snapshot" "$repo_yml"; then
+    problems="${problems}status without a change plan changed repo config"$'\n'
+  fi
+
+  yaml_set_key "$repo_yml" open_change_plan "$change_note"
+  cp "$repo_yml" "$config_snapshot"
+
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err" bogus
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}done bogus exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'untangle: error: unknown done target: bogus' "$done_err"; then
+    problems="${problems}done bogus did not name the target"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" ]]; then
+    problems="${problems}done bogus wrote to stdout"$'\n'"$(cat "$done_out")"$'\n'
+  fi
+  if ! files_match "$config_snapshot" "$repo_yml"; then
+    problems="${problems}done bogus wrote repo config"$'\n'
+  fi
+
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Ownership" "open plan: ${plan_note}" "open change plan: ${change_note}" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status with both plans expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status with both plans wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status with both plans output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+  if ! files_match "$config_snapshot" "$repo_yml"; then
+    problems="${problems}status with both plans changed repo config"$'\n'
+  fi
+
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err" change
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}done change expected exit 0, got $status"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" || -s "$done_err" ]]; then
+    problems="${problems}done change wrote output"$'\n'"$(cat "$done_out")"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}done change left open_change_plan set"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=str:${plan_note}"; then
+    problems="${problems}done change changed open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}done change changed the cursor"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}done change dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}done change dropped the blank trunk"$'\n'
+  fi
+
+  cp "$repo_yml" "$config_snapshot"
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Ownership" "open plan: ${plan_note}" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status after done change expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status after done change wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status after done change output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+  if ! files_match "$config_snapshot" "$repo_yml"; then
+    problems="${problems}status after done change changed repo config"$'\n'
+  fi
+
+  cp "$repo_yml" "$config_snapshot"
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err" change
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    problems="${problems}second done change exited 0"$'\n'
+  fi
+  if ! grep -F -q -- 'untangle: error: no open change plan' "$done_err"; then
+    problems="${problems}second done change did not report no open change plan"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" ]]; then
+    problems="${problems}second done change wrote to stdout"$'\n'"$(cat "$done_out")"$'\n'
+  fi
+  if ! files_match "$config_snapshot" "$repo_yml"; then
+    problems="${problems}second done change wrote repo config"$'\n'
+  fi
+
+  yaml_set_key "$repo_yml" open_change_plan "$change_note"
+  invoke_in_repo "$repo_dir" done "$done_out" "$done_err"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}done expected exit 0, got $status"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if [[ -s "$done_out" || -s "$done_err" ]]; then
+    problems="${problems}done wrote output"$'\n'"$(cat "$done_out")"$'\n'"$(cat "$done_err")"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}done left open_plan set"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=str:${change_note}"; then
+    problems="${problems}done changed open_change_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Boundaries"; then
+    problems="${problems}done left the cursor off Boundaries"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "version=int:1"; then
+    problems="${problems}done dropped version"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "trunk=blank"; then
+    problems="${problems}done dropped the blank trunk"$'\n'
+  fi
+
+  cp "$repo_yml" "$config_snapshot"
+  invoke_in_repo "$repo_dir" status "$status_out" "$status_err"
+  status=$?
+  printf '%s\n' "cursor: Boundaries" "open change plan: ${change_note}" >"$status_expected"
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}status after done expected exit 0, got $status"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if [[ -s "$status_err" ]]; then
+    problems="${problems}status after done wrote to stderr"$'\n'"$(cat "$status_err")"$'\n'
+  fi
+  if ! files_match "$status_expected" "$status_out"; then
+    problems="${problems}status after done output mismatch"$'\n'"$(cat "$status_out")"$'\n'
+  fi
+  if ! files_match "$config_snapshot" "$repo_yml"; then
+    problems="${problems}status after done changed repo config"$'\n'
+  fi
+  if [[ -e "$TEST_ROOT/not-the-registry/config.yml" ]]; then
+    problems="${problems}done wrote the registry"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems"
+    return
+  fi
+  pass "$test_name"
+}
+
 test_status_and_done_without_config_fail() {
   local test_name="status and done fail when untangle/config.yml is missing"
   local repo_dir="$TEST_ROOT/no-config-repo"
@@ -4776,6 +4976,7 @@ run_test test_run_probe_writes_the_change_guide_once
 run_test test_run_invalid_cursor_skips_before_fetch
 run_test test_run_removal_quiet_note_wraps_cursor_to_language
 run_test test_done_without_open_plan_leaves_ownership_cursor
+run_test test_status_and_done_change_keep_the_other_plan
 run_test test_status_and_done_without_config_fail
 run_test test_launchd_template_is_wednesday_only
 run_test test_launchd_setup_installs_runner

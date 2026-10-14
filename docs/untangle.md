@@ -37,11 +37,11 @@ On that same Wednesday tick, a change look asks what valuable change this bucket
 
 ## Done
 
-`untangle done` clears the open plan and then advances. It reads `untangle/config.yml` in the current directory. With no open plan, it exits non-zero and leaves the cursor.
+`untangle done` clears the open plan and then advances. It reads `untangle/config.yml` in the current directory. With no open plan, it exits non-zero and leaves the cursor. `untangle done change` clears the open change plan and leaves the cursor.
 
 ## Status
 
-`untangle status` shows the cursor and the open plan when there is one. It reads `untangle/config.yml` in the current directory and does not change the file.
+`untangle status` shows the cursor and the open plan when there is one. It reads `untangle/config.yml` in the current directory and does not change the file. When an open change plan is recorded, status shows that path too.
 
 ## LaunchAgent
 

@@ -234,11 +234,12 @@ def store_open_plan(data, note_path, key = "open_plan")
   data
 end
 
-# Drop open_plan. Other keys stay. The cursor is not touched.
-def clear_open_plan(data)
+# Drop the named plan key. Other keys stay. The cursor is not touched.
+def clear_open_plan(data, key = "open_plan")
   data = {} unless data.is_a?(Hash)
-  data.delete("open_plan")
-  data.delete(:open_plan)
+  string_key = key.to_s
+  data.delete(string_key)
+  data.delete(string_key.to_sym)
   data
 end
 
@@ -364,6 +365,11 @@ when "set_open_plan"
 when "clear_open_plan"
   repo_yml = ARGV.fetch(1)
   data = clear_open_plan(load_yaml(repo_yml))
+  dump_yaml(repo_yml, data)
+
+when "clear_open_change_plan"
+  repo_yml = ARGV.fetch(1)
+  data = clear_open_plan(load_yaml(repo_yml), "open_change_plan")
   dump_yaml(repo_yml, data)
 
 when "open_change_plan_value"

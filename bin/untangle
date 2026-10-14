@@ -4,7 +4,7 @@
 # Usage:
 #   untangle init
 #   untangle run
-#   untangle done
+#   untangle done [change]
 #   untangle status
 #   untangle launchd-setup [--no-open] [--no-reload]
 
@@ -31,7 +31,7 @@ Usage: untangle <init|run|done|status|launchd-setup>
 
   init    Write the untangle directory, register cwd, and ensure the gitignore entry
   run     Consider each registered repository on Wednesday
-  done    Clear the open plan and advance the cursor
+  done    Clear the open plan and advance the cursor; done change clears the open change plan
   status  Show the cursor and the open plan
   launchd-setup   Install the Wednesday LaunchAgent [--no-open] [--no-reload]
 EOF
@@ -812,27 +812,49 @@ cmd_init() {
 }
 
 # Clear a recorded plan, then advance the cursor. Do not write when there is none.
+# `done change` clears only the open change plan and leaves the cursor.
 # Current directory, any day. Not the registry.
 cmd_done() {
-  local repo_root repo_yml open_plan
+  local repo_root repo_yml recorded target
+
+  if [[ $# -gt 1 ]]; then
+    die "unknown done target: $*"
+  fi
+
+  target=${1:-}
+  case "$target" in
+    ""|change)
+      ;;
+    *)
+      die "unknown done target: $target"
+      ;;
+  esac
 
   repo_root=$(pwd) || die "could not resolve the current directory"
   repo_yml="${repo_root}/untangle/config.yml"
   [[ -f "$repo_yml" ]] || die "missing untangle/config.yml"
 
-  open_plan=$(ruby_yaml open_plan_value "$repo_yml")
-  if [[ -z "$open_plan" ]]; then
-    die "no open plan"
+  if [[ -z "$target" ]]; then
+    recorded=$(ruby_yaml open_plan_value "$repo_yml")
+    if [[ -z "$recorded" ]]; then
+      die "no open plan"
+    fi
+    ruby_yaml clear_open_plan "$repo_yml"
+    ruby_yaml advance_cursor "$repo_yml"
+    return 0
   fi
 
-  ruby_yaml clear_open_plan "$repo_yml"
-  ruby_yaml advance_cursor "$repo_yml"
+  recorded=$(ruby_yaml open_change_plan_value "$repo_yml")
+  if [[ -z "$recorded" ]]; then
+    die "no open change plan"
+  fi
+  ruby_yaml clear_open_change_plan "$repo_yml"
 }
 
-# Print the cursor and, when one is recorded, the open plan. Do not write.
-# Current directory, any day. Not the registry.
+# Print the cursor and, when recorded, the open plan and the open change plan.
+# Do not write. Current directory, any day. Not the registry.
 cmd_status() {
-  local repo_root repo_yml bucket open_plan
+  local repo_root repo_yml bucket open_plan open_change
 
   repo_root=$(pwd) || die "could not resolve the current directory"
   repo_yml="${repo_root}/untangle/config.yml"
@@ -840,9 +862,13 @@ cmd_status() {
 
   bucket=$(ruby_yaml cursor_bucket "$repo_yml")
   open_plan=$(ruby_yaml open_plan_value "$repo_yml")
+  open_change=$(ruby_yaml open_change_plan_value "$repo_yml")
   printf 'cursor: %s\n' "$bucket"
   if [[ -n "$open_plan" ]]; then
     printf 'open plan: %s\n' "$open_plan"
+  fi
+  if [[ -n "$open_change" ]]; then
+    printf 'open change plan: %s\n' "$open_change"
   fi
 }
 
