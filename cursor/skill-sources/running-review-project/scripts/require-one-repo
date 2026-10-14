@@ -1,0 +1,73 @@
+#!/bin/sh
+
+# Read workspace repository names, one per line, and print the single owner/repo.
+# A repeated name for that same repository still counts as one. Two different
+# repositories are an error.
+
+set -eu
+
+die() {
+    printf 'error: %s\n' "$1" >&2
+    exit 1
+}
+
+normalize() {
+    repo=$1
+    repo=${repo%.git}
+    case "$repo" in
+        https://github.com/*)
+            repo=${repo#https://github.com/}
+            ;;
+        http://github.com/*)
+            repo=${repo#http://github.com/}
+            ;;
+        github.com/*)
+            repo=${repo#github.com/}
+            ;;
+    esac
+    repo=${repo%/}
+    case "$repo" in
+        */*/*|'')
+            die "not a repository: $1"
+            ;;
+        */*) ;;
+        *)
+            die "not a repository: $1"
+            ;;
+    esac
+    owner=${repo%%/*}
+    name=${repo#*/}
+    case "$owner" in
+        ''|*[!A-Za-z0-9_.-]*)
+            die "not a repository: $1"
+            ;;
+    esac
+    case "$name" in
+        ''|*[!A-Za-z0-9_.-]*)
+            die "not a repository: $1"
+            ;;
+    esac
+    printf '%s\n' "$owner/$name"
+}
+
+chosen=
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+        ''|'#'*)
+            continue
+            ;;
+    esac
+    # Trim surrounding spaces without relying on external tools.
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    [ -n "$line" ] || continue
+    repo=$(normalize "$line")
+    if [ -z "$chosen" ]; then
+        chosen=$repo
+    elif [ "$repo" != "$chosen" ]; then
+        die "project workspace has more than one repository"
+    fi
+done
+
+[ -n "$chosen" ] || die "project workspace has no repository"
+printf '%s\n' "$chosen"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review project"
+  short_description: "Standard-review one repo's pull requests"
+  default_prompt: "Watch this project's repository for pull requests that request my review, and run a Standard pr-review for each one"

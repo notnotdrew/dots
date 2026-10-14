@@ -1,0 +1,241 @@
+#!/bin/sh
+
+# The review project takes one workspace repository, confirms that repository's
+# review-requested search listed this pull request, and records that pull
+# request once in Context.
+
+set -u
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+SKILL_DIR=$(CDPATH= cd "$SCRIPT_DIR/.." && pwd)
+ONE_REPO="$SCRIPT_DIR/require-one-repo"
+CONFIRM="$SCRIPT_DIR/confirm-review-request"
+RECORD="$SCRIPT_DIR/record-pending-review"
+SKILL_FILE="$SKILL_DIR/SKILL.md"
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-running-review-project.XXXXXX") || exit 1
+
+trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+for script in "$ONE_REPO" "$CONFIRM" "$RECORD"; do
+    if [ ! -x "$script" ]; then
+        printf '%s\n' "not ok - missing or not executable: $script" >&2
+        exit 1
+    fi
+done
+
+tests_run=0
+tests_failed=0
+
+fail() {
+    tests_failed=$((tests_failed + 1))
+    printf '%s\n' "not ok - $1"
+    if [ -n "${2:-}" ]; then
+        printf '%s\n' "$2"
+    fi
+}
+
+pass() {
+    printf '%s\n' "ok - $1"
+}
+
+begin() {
+    tests_run=$((tests_run + 1))
+}
+
+run_one() {
+    one_stdout=$TEST_ROOT/one-stdout
+    one_stderr=$TEST_ROOT/one-stderr
+    one_status=0
+    printf '%s\n' "$1" | "$ONE_REPO" >"$one_stdout" 2>"$one_stderr" || one_status=$?
+}
+
+run_confirm() {
+    confirm_status=0
+    printf '%s\n' "$2" | "$CONFIRM" "$1" >/dev/null 2>"$TEST_ROOT/confirm-stderr" || confirm_status=$?
+}
+
+# --- one repository, and it is the one that was passed ---
+
+begin
+run_one "https://github.com/zz-only/not-widgets.git"
+zz_status=$one_status
+zz_stdout=$(cat "$one_stdout")
+run_one "https://github.com/acme/widgets.git"
+test_name="one workspace repository is printed as owner/repo"
+if [ "$zz_status" -ne 0 ] || [ "$zz_stdout" != "zz-only/not-widgets" ] || \
+    [ "$one_status" -ne 0 ] || [ "$(cat "$one_stdout")" != "acme/widgets" ]; then
+    fail "$test_name" "zz=$zz_status [$zz_stdout] acme=$one_status [$(cat "$one_stdout")] stderr=$(cat "$one_stderr")"
+else
+    pass "$test_name"
+fi
+
+begin
+run_one "$(printf '%s\n' "github.com/zz-only/not-widgets" "https://github.com/zz-only/not-widgets.git")"
+test_name="the same repository listed twice is still one"
+if [ "$one_status" -ne 0 ] || [ "$(cat "$one_stdout")" != "zz-only/not-widgets" ]; then
+    fail "$test_name" "status=$one_status stdout=$(cat "$one_stdout") stderr=$(cat "$one_stderr")"
+else
+    pass "$test_name"
+fi
+
+begin
+run_one "$(printf '%s\n' "zz-only/not-widgets" "zz-only/widgets")"
+same_owner_status=$one_status
+same_owner_stdout=$(cat "$one_stdout")
+run_one "$(printf '%s\n' "zz-only/not-widgets" "acme/not-widgets")"
+test_name="two workspace repositories are refused"
+if [ "$same_owner_status" -eq 0 ] || [ "$one_status" -eq 0 ]; then
+    fail "$test_name" "accepted two repositories: [$same_owner_stdout] [$(cat "$one_stdout")]"
+elif [ -s "$one_stdout" ] || [ -n "$same_owner_stdout" ]; then
+    fail "$test_name" "printed a repository while refusing: [$same_owner_stdout] [$(cat "$one_stdout")]"
+else
+    pass "$test_name"
+fi
+
+begin
+run_one ""
+test_name="an empty workspace is refused"
+if [ "$one_status" -eq 0 ]; then
+    fail "$test_name" "accepted an empty workspace: $(cat "$one_stdout")"
+elif [ -s "$one_stdout" ]; then
+    fail "$test_name" "printed a repository for an empty workspace: $(cat "$one_stdout")"
+else
+    pass "$test_name"
+fi
+
+# --- the search must list this exact pull request ---
+
+begin
+run_confirm 42 "$(printf '%s\n' 7 42 99)"
+listed_42=$confirm_status
+run_confirm 7 "$(printf '%s\n' 7)"
+listed_7=$confirm_status
+run_confirm 7 "$(printf '%s\n' 42)"
+test_name="a listed pull request is confirmed"
+if [ "$listed_42" -ne 0 ] || [ "$listed_7" -ne 0 ]; then
+    fail "$test_name" "42=$listed_42 7=$listed_7"
+elif [ "$confirm_status" -eq 0 ]; then
+    fail "$test_name" "search 42 confirmed event 7"
+else
+    pass "$test_name"
+fi
+
+begin
+run_confirm 42 "$(printf '%s\n' 7 420 042 99)"
+test_name="a longer number that only contains the pull request is not a match"
+if [ "$confirm_status" -eq 0 ]; then
+    fail "$test_name" "420 or 042 confirmed 42"
+else
+    pass "$test_name"
+fi
+
+begin
+run_confirm 42 ""
+test_name="an empty review-request search is not a match"
+if [ "$confirm_status" -eq 0 ]; then
+    fail "$test_name" "empty search confirmed 42"
+else
+    pass "$test_name"
+fi
+
+# --- one action-items file, one line per pending review ---
+
+begin
+context=$TEST_ROOT/context
+series=$context/pr-reviews
+mkdir -p "$series"
+url_other=https://github.com/acme/widgets/pull/137
+url_long=https://github.com/zz-only/not-widgets/pull/420
+url_short=https://github.com/zz-only/not-widgets/pull/42
+url_other_repo=https://github.com/acme/widgets/pull/42
+"$RECORD" "$context" "$url_other"
+record_status=$?
+"$RECORD" "$context" "$url_long"
+"$RECORD" "$context" "$url_short"
+"$RECORD" "$context" "$url_other_repo"
+"$RECORD" "$context" "$url_short"
+record_status_again=$?
+count_other=$(grep -Fxc -- "- $url_other" "$context/action-items.md" || true)
+count_long=$(grep -Fxc -- "- $url_long" "$context/action-items.md" || true)
+count_short=$(grep -Fxc -- "- $url_short" "$context/action-items.md" || true)
+count_other_repo=$(grep -Fxc -- "- $url_other_repo" "$context/action-items.md" || true)
+series_hits=$(find "$series" -name action-items.md | wc -l | tr -d ' ')
+test_name="a pending review is recorded once in context"
+if [ "$record_status" -ne 0 ] || [ "$record_status_again" -ne 0 ]; then
+    fail "$test_name" "status=$record_status again=$record_status_again"
+elif [ "$count_other" != 1 ] || [ "$count_long" != 1 ] || \
+    [ "$count_short" != 1 ] || [ "$count_other_repo" != 1 ]; then
+    fail "$test_name" "counts other=$count_other long=$count_long short=$count_short other_repo=$count_other_repo
+$(cat "$context/action-items.md")"
+elif [ "$series_hits" != 0 ]; then
+    fail "$test_name" "wrote action items into the review series"
+else
+    pass "$test_name"
+fi
+
+begin
+before=$(cat "$context/action-items.md")
+series_status=0
+"$RECORD" "$series" "$url_short" >/dev/null 2>"$TEST_ROOT/series-stderr" || series_status=$?
+after=$(cat "$context/action-items.md")
+series_files=$(find "$series" -type f | wc -l | tr -d ' ')
+test_name="action items are refused inside the review series"
+if [ "$series_status" -eq 0 ]; then
+    fail "$test_name" "wrote into pr-reviews"
+elif [ "$after" != "$before" ]; then
+    fail "$test_name" "context action items changed while refusing the series"
+elif [ "$series_files" != 0 ]; then
+    fail "$test_name" "created a file inside pr-reviews"
+else
+    pass "$test_name"
+fi
+
+# --- the skill keeps the project contract in the instructions ---
+
+begin
+skill_text=$(cat "$SKILL_FILE")
+skill_folded=$(printf '%s' "$skill_text" | tr '[:upper:]' '[:lower:]')
+test_name="the skill watches one repo and calls pr-review"
+missing=
+for line in \
+    "Subscribe to pull request opened and pull request pushed for that repository." \
+    "Do not add a timer, a cron schedule, or a search that runs on its own." \
+    "4. Do not push commits." \
+    "5. Do not submit or publish the GitHub review." \
+    "3. Follow the \`pr-review\` skill for a Standard review of that pull request. Do not invoke the \`pr-review\` shell command. Do not select Deep."
+do
+    if ! grep -Fxq -- "$line" "$SKILL_FILE"; then
+        missing="$missing [$line]"
+    fi
+done
+case "$skill_text" in
+    *'review-requested:@me'*) ;;
+    *) missing="$missing review-requested:@me" ;;
+esac
+case "$skill_text" in
+    *require-one-repo*) ;;
+    *) missing="$missing require-one-repo" ;;
+esac
+case "$skill_text" in
+    *confirm-review-request*) ;;
+    *) missing="$missing confirm-review-request" ;;
+esac
+case "$skill_text" in
+    *record-pending-review*) ;;
+    *) missing="$missing record-pending-review" ;;
+esac
+case "$skill_folded" in
+    *screensteps*) missing="$missing screensteps-hardcode" ;;
+esac
+if [ -n "$missing" ]; then
+    fail "$test_name" "missing or extra:$missing"
+else
+    pass "$test_name"
+fi
+
+if [ "$tests_failed" -ne 0 ]; then
+    printf '%s\n' "$tests_failed of $tests_run running-review-project tests failed"
+    exit 1
+fi
+
+printf '%s\n' "all $tests_run running-review-project tests passed"
