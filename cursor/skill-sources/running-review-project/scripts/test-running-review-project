@@ -200,8 +200,8 @@ missing=
 for line in \
     "Do not call \`subscribe_github_pr\` with \`scope: repo\`." \
     "Arm one \`subscribe_timer\` named \`review-requested\`." \
-    "Pass cron \`0 9-17 * * 1-5\` and timezone \`America/Denver\` when the tool accepts a timezone." \
-    "When it does not, pass cron \`0 15-23 * * 1-5\`." \
+    "Pass cron \`0 7-16 * * 1-5\` and timezone \`America/Denver\` when the tool accepts a timezone." \
+    "When it does not, pass cron \`0 13-22 * * 1-5\`." \
     "4. Do not push commits." \
     "5. Do not submit or publish the GitHub review." \
     "3. Follow the \`pr-review\` skill for a Standard review of that pull request. Do not invoke the \`pr-review\` shell command. Do not select Deep."

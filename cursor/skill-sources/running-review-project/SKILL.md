@@ -23,11 +23,11 @@ Do not call `subscribe_github_pr` with `scope: repo`.
 
 Arm one `subscribe_timer` named `review-requested`.
 
-Pass cron `0 9-17 * * 1-5` and timezone `America/Denver` when the tool accepts a timezone.
+Pass cron `0 7-16 * * 1-5` and timezone `America/Denver` when the tool accepts a timezone.
 
-When it does not, pass cron `0 15-23 * * 1-5`.
+When it does not, pass cron `0 13-22 * * 1-5`.
 
-That schedule is hourly from 09:00 through 17:00 America/Denver on weekdays. The fallback cron is those same hours during daylight saving time, when Denver is UTC−6. Do not arm a second timer. Re-subscribing the same timer name does not change it; unsubscribe first.
+That schedule is hourly from 07:00 through 16:00 America/Denver on weekdays, so East Coast requests are reviewed before the afternoon there. The fallback cron is those same hours during daylight saving time, when Denver is UTC−6. Do not arm a second timer. Re-subscribing the same timer name does not change it; unsubscribe first.
 
 When a tick starts a fresh conversation, the timer prompt is this skill's repository, search, and review procedure. Otherwise the same conversation wakes and follows this skill.
 
