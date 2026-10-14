@@ -6,6 +6,11 @@
 # that path is this repo. The store watcher uploads real folders it finds
 # under the user mount's files/skills.
 #
+# Names in cursor/skills/.gitignore are private overlay skills linked by
+# ~/dots-private/update_symlinks. Each must be a live symlink before anything
+# is copied. A missing one aborts before the store is pruned, so a broken
+# overlay link cannot drop the published copy.
+#
 #   mirror-cursor-skills              mirror once
 #   mirror-cursor-skills --install    install the twice-daily LaunchAgent
 #   mirror-cursor-skills --uninstall  unload and remove the LaunchAgent
@@ -179,6 +184,26 @@ for source in "$sources_root"/*; do
   ensure_link "${codex_skills_root}/${name}" "../../cursor/skill-sources/${name}"
 done
 
+overlay_list="${skills_root}/.gitignore"
+[[ -f "$overlay_list" ]] || die "missing overlay skill list ${overlay_list}"
+overlay_names=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+  [[ "$line" =~ ^[A-Za-z0-9._-]+$ ]] || die "unexpected overlay skill name in ${overlay_list}: ${line}"
+  overlay_names+=("$line")
+done <"$overlay_list"
+
+for name in "${overlay_names[@]}"; do
+  entry="${skills_root}/${name}"
+  if [[ ! -L "$entry" ]]; then
+    die "overlay skill ${name} is not a symlink under ${skills_root} (run ~/dots-private/update_symlinks)"
+  fi
+  if [[ ! -d "$entry" || ! -f "${entry}/SKILL.md" ]]; then
+    die "overlay skill ${name} does not resolve to a skill (run ~/dots-private/update_symlinks)"
+  fi
+done
+
 mounts=()
 for candidate in "$store_root"/*; do
   base=$(basename "$candidate")
@@ -223,6 +248,19 @@ done
 if (( ${#synced[@]} == 0 )); then
   die "no skills with SKILL.md under ${skills_root}"
 fi
+
+for name in "${overlay_names[@]}"; do
+  found=0
+  for published in "${synced[@]}"; do
+    if [[ "$published" == "$name" ]]; then
+      found=1
+      break
+    fi
+  done
+  if (( found == 0 )); then
+    die "overlay skill ${name} was not mirrored; refusing to prune the agent store"
+  fi
+done
 
 for existing in "$dest_root"/*; do
   [[ -d "$existing" ]] || continue
