@@ -41,14 +41,26 @@ Keep parsed data as data, never as shell code.
 - For a numeric reference, run `gh repo view --json nameWithOwner --jq '.nameWithOwner'` from `INVOCATION_DIR`. Require exactly one non-empty `owner/repository` result before continuing.
 - Do not infer identity from a checkout path, remote name, branch name, or PR head SHA.
 
-Derive:
+Select the series root before deriving paths. A review is a cloud review only when `CURSOR_AGENT_SOCKET` is set and this command succeeds and its output is exactly `managed`:
 
-```text
-SERIES_PARENT = ~/.cdx-artifacts/pr-reviews/<OWNER>--<REPOSITORY>
-SERIES_DIR    = <SERIES_PARENT>/pr-<PR_NUMBER>
+```bash
+curl -fsS --unix-socket "$CURSOR_AGENT_SOCKET" http://cursor-agent/v1/meta-data/agent/runtime
 ```
 
-Expand `~` to an absolute home-directory path before invoking tools. The series identity is owner, repository, and PR number; revisions are evidence only.
+If `CURSOR_AGENT_SOCKET` is set but the command fails or the output is anything else, stop. Do not fall back to the local series root. `self_hosted` is not a cloud review. A local review does not set `CURSOR_AGENT_SOCKET`.
+
+```text
+Local SERIES_ROOT = ~/.cdx-artifacts/pr-reviews
+Cloud SERIES_ROOT = $CURSOR_AGENT_STORE_FILES_DIR/pr-reviews
+SERIES_PARENT     = <SERIES_ROOT>/<OWNER>--<REPOSITORY>
+SERIES_DIR        = <SERIES_PARENT>/pr-<PR_NUMBER>
+```
+
+On a cloud review, `CURSOR_AGENT_STORE_FILES_DIR` must be an absolute path of an existing directory. If it is missing, relative, or not a directory, stop. Do not write a cloud series under `~/.cdx-artifacts`.
+
+Expand `~` in the local root to an absolute home-directory path before invoking tools. The series identity is owner, repository, and PR number; revisions are evidence only. Read same-head no-op, epoch, and readiness from `SERIES_DIR/perfect-review.md` under this root only. A ready series that exists only under the other root is not a no-op and is not this review's series.
+
+`scripts/resolve-review-checkout` selects this root and prints `SERIES_ROOT`. Use that value. Series writes, staging directories, and `WORK_DIR` stay under the selected `SERIES_PARENT`.
 
 This workflow is initial-review-only. Before creating a checkout or staging directory:
 
@@ -60,21 +72,29 @@ If identity cannot be resolved, no stable artifact path exists. Report the ident
 
 ## 2. Resolve Checkout Ownership
 
-Query the PR explicitly as `OWNER/REPOSITORY` and obtain its full `headRefOid` before selecting a checkout. Reviews use disposable epoch checkouts only. Never select, switch, reset, or otherwise mutate the user's PR branch worktree (including a WorkTrunk `pr:<number>` checkout of that branch).
+Query the PR explicitly as `OWNER/REPOSITORY` and obtain its full `headRefOid` before selecting a checkout.
 
-For an initial review the epoch is `R1`. The disposable checkout branch name is:
+For an initial review the epoch is `R1`. `CHECKOUT_BRANCH` is:
 
 ```text
 CHECKOUT_BRANCH = pr-<PR_NUMBER>-R1
 ```
 
+A local review uses a disposable epoch checkout whose git branch is `CHECKOUT_BRANCH`. Never select, switch, reset, or otherwise mutate the user's PR branch worktree (including a WorkTrunk `pr:<number>` checkout of that branch).
+
+A cloud review uses the project clone at the observed head. Ignore the epoch branch-name requirement. Never call WorkTrunk. Never create a `pr-<PR_NUMBER>-R<epoch>` worktree or branch. Never remove the clone. `CHECKOUT_BRANCH` is only the epoch label.
+
 Prefer launcher-provided values when present and consistent:
 
-- `PR_REVIEW_EPOCH` / `PR_REVIEW_CHECKOUT_BRANCH` naming `pr-<PR_NUMBER>-R1`;
+- `PR_REVIEW_EPOCH` / `PR_REVIEW_CHECKOUT_BRANCH` naming `pr-<PR_NUMBER>-R1` (the git branch on a local review; the epoch label on a cloud review);
 - `PR_REVIEW_OBSERVED_HEAD` equal to the queried `headRefOid`;
-- `PR_REVIEW_CHECKOUT_CREATED` as `yes` or `no`.
+- `PR_REVIEW_CHECKOUT_CREATED` as `yes` or `no`. The hand-started local launcher is the source of `yes`. A cloud review stays `no`.
 
-First inspect `INVOCATION_DIR`. It is a usable checkout only when all of these are true:
+The hand-started launcher is local: it requires `wt` and passes `~/.cdx-artifacts/pr-reviews/<OWNER>--<REPOSITORY>` to the review. It does not select the cloud series root or the project-clone checkout.
+
+First inspect `INVOCATION_DIR`.
+
+On a local review it is a usable checkout only when all of these are true:
 
 - it is a Git worktree for `OWNER/REPOSITORY`;
 - its branch or WorkTrunk name is exactly `pr-<PR_NUMBER>-R1` (or matches `PR_REVIEW_CHECKOUT_BRANCH`);
@@ -82,28 +102,40 @@ First inspect `INVOCATION_DIR`. It is a usable checkout only when all of these a
 - it is clean enough for read-only review; and
 - it contains the PR files needed for the comparison.
 
+On a cloud review it is a usable checkout only when all of these are true:
+
+- its git toplevel is the project clone;
+- `gh repo view --json nameWithOwner` from that clone equals `OWNER/REPOSITORY`;
+- its current `HEAD` is exactly the observed GitHub `headRefOid`;
+- it is clean enough for read-only review; and
+- it contains the PR files needed for the comparison.
+
+The epoch branch name is not required on a cloud review.
+
 When those conditions hold:
 
 ```text
-REVIEW_DIR = INVOCATION_DIR
-CHECKOUT_CREATED_BY_THIS_INVOCATION = <yes only when PR_REVIEW_CHECKOUT_CREATED=yes; otherwise no>
+REVIEW_DIR = <INVOCATION_DIR on a local review; the clone's absolute git toplevel on a cloud review>
+CHECKOUT_CREATED_BY_THIS_INVOCATION = <yes only when a local review has PR_REVIEW_CHECKOUT_CREATED=yes; otherwise no>
 ```
 
-A launcher-created disposable epoch checkout that matches the rules above is usable. Record ownership from `PR_REVIEW_CHECKOUT_CREATED` when the launcher exported it; otherwise treat a pre-existing matching epoch checkout as not owned by this invocation.
+A local launcher-created disposable epoch checkout that matches the rules above is usable. Record ownership from `PR_REVIEW_CHECKOUT_CREATED` when the launcher exported it; otherwise treat a pre-existing matching epoch checkout as not owned by this invocation. A cloud review does not own the project clone, so `CHECKOUT_CREATED_BY_THIS_INVOCATION` stays `no`.
 
-If `INVOCATION_DIR` is not a usable epoch checkout, create or reuse the disposable checkout with the skill helper (or equivalent WorkTrunk commands):
+If `INVOCATION_DIR` is not a usable checkout, create or reuse it with the skill helper:
 
 ```bash
 "<skill-directory>/scripts/resolve-review-checkout" --ensure "$PR_REF"
 ```
 
-Require the helper's `CHECKOUT_BRANCH`, absolute `CHECKOUT_PATH`, `HEAD_SHA`, and `CHECKOUT_CREATED`. Set `REVIEW_DIR` to `CHECKOUT_PATH`. Set `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` when the helper reports `CHECKOUT_CREATED=yes` or when this workflow itself created the epoch checkout. Reuse of an already-matching `pr-<PR_NUMBER>-R1` checkout is `no`.
+Require the helper's `CHECKOUT_BRANCH`, absolute `CHECKOUT_PATH`, `HEAD_SHA`, `SERIES_ROOT`, and `CHECKOUT_CREATED`. Set `REVIEW_DIR` to `CHECKOUT_PATH`. On a local review, set `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` when the helper reports `CHECKOUT_CREATED=yes` or when this workflow itself created the epoch checkout. Reuse of an already-matching `pr-<PR_NUMBER>-R1` checkout is `no`. On a cloud review the helper reports `CHECKOUT_CREATED=no`; keep that value. Do not create a cloud checkout with WorkTrunk.
 
-Equivalent direct WorkTrunk creation when the helper is unavailable: create `pr-<PR_NUMBER>-R1` from the observed `headRefOid` (fetch `pull/<PR_NUMBER>/head` first if needed), not from a possibly stale local `pr:<number>` branch tip. After creation, require `HEAD` equals the observed full head SHA; reset that disposable epoch branch to the SHA when it does not. Never reset or otherwise mutate the user's PR branch worktree.
+On a local review, equivalent direct WorkTrunk creation when the helper is unavailable: create `pr-<PR_NUMBER>-R1` from the observed `headRefOid` (fetch `pull/<PR_NUMBER>/head` first if needed), not from a possibly stale local `pr:<number>` branch tip. After creation, require `HEAD` equals the observed full head SHA; reset that disposable epoch branch to the SHA when it does not. Never reset or otherwise mutate the user's PR branch worktree.
 
-After selection, require `git -C "$REVIEW_DIR" rev-parse HEAD` to equal the observed full head SHA. A mismatch is a readiness blocker. Never repair a mismatch by mutating a non-epoch or otherwise pre-existing checkout; only recreate or pin a disposable epoch checkout owned by this review flow.
+On a cloud review, do not replace the helper with WorkTrunk. The checkout is the git toplevel of the current directory. Confirm `gh repo view --json nameWithOwner` equals `OWNER/REPOSITORY`. If `HEAD` already equals the observed `headRefOid`, keep the clone. If `HEAD` differs and `git status --porcelain` is empty, fetch `pull/<PR_NUMBER>/head` when that SHA is not already local, then `git checkout --detach` the observed SHA. If the clone is dirty, stop without checking out or resetting. Never `git reset --hard` the project clone. Never create a `pr-<PR_NUMBER>-R<epoch>` worktree or branch. `CHECKOUT_PATH` is that clone's absolute toplevel. `CHECKOUT_CREATED` stays `no`.
 
-Record checkout ownership separately from readiness. Setup failure does not grant permission to remove a checkout. Never remove the user's PR branch worktree or any non-epoch checkout.
+After selection, require `git -C "$REVIEW_DIR" rev-parse HEAD` to equal the observed full head SHA. A mismatch is a readiness blocker. On a local review, never repair a mismatch by mutating a non-epoch or otherwise pre-existing checkout; only recreate or pin a disposable epoch checkout owned by this review flow. On a cloud review, never repair a mismatch with `git reset --hard`. A dirty clone is a blocker.
+
+Record checkout ownership separately from readiness. Setup failure does not grant permission to remove a checkout. Never remove the user's PR branch worktree, any non-epoch checkout, or the cloud project clone.
 
 ## 3. Gather The Context Brief
 
@@ -282,7 +314,7 @@ Skip this step when there are no surviving comments, when readiness published `U
 
 ## 11. Cleanup And Return
 
-Only after successful publication and after the pending GitHub review step has finished or been skipped, remove the checkout when:
+Only after successful publication and after the pending GitHub review step has finished or been skipped, remove the checkout when it is a local disposable epoch checkout and:
 
 ```text
 CHECKOUT_CREATED_BY_THIS_INVOCATION = yes
@@ -294,7 +326,7 @@ Use:
 wt remove --yes --foreground "$REVIEW_DIR"
 ```
 
-Never remove a checkout unless `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` and it is the disposable epoch checkout for this review. Never remove the user's PR branch worktree. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits the pending-review step and cleanup of a directly owned epoch checkout.
+Never remove a checkout unless `CHECKOUT_CREATED_BY_THIS_INVOCATION=yes` and it is the disposable epoch checkout for this local review. Never remove the user's PR branch worktree. Never remove the cloud project clone. Never call WorkTrunk on a cloud review. Never remove any checkout after failed identity resolution, failed readiness publication, staging failure, validation failure, or publication failure. Failed readiness with successfully published artifacts is successful publication and therefore permits the pending-review step and cleanup of a directly owned local epoch checkout.
 
 After successful publication and the pending-review step, remove `WORK_DIR`. On any earlier failure, leave `WORK_DIR` in place.
 
@@ -302,8 +334,8 @@ Return:
 
 - the final recommendation or concrete `UNABLE TO REVIEW` details;
 - the absolute canonical artifact directory and the three filenames;
-- the observed head, epoch checkout branch, and Standard mode-selection provenance;
+- the observed head, epoch label (`CHECKOUT_BRANCH`), and Standard mode-selection provenance;
 - material coverage and verification gaps, including unmatched languages and unexecuted checks;
 - whether a later Deep review is recommended, without claiming it ran;
 - pending GitHub review status (skipped, drafted unpublished with review id and comments, or failed), noting that it was not published; and
-- checkout cleanup status, distinguishing removed owned epoch checkout from preserved checkout.
+- checkout cleanup status, distinguishing a removed owned local epoch checkout, a preserved local checkout, and a cloud project clone left in place.

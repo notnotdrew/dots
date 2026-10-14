@@ -9,7 +9,7 @@ Keep Linear, Git history, PR metadata, and the review checkout read-only. Review
 Run the eleven Standard stages in order with only the substitutions below:
 
 1. **Resolve invocation, identity, and initial artifact path:** require `Mode: Deep` and `ModeSelection: explicit`. Retain Standard's PR identity, absent-series, collision, and canonical-path rules. Reject an omitted or defaulted Deep selection.
-2. **Resolve checkout ownership:** use Standard's disposable epoch-checkout selection (`pr-<PR_NUMBER>-R1` for an initial Deep review), observed-head check, ownership recording, and preservation rules unchanged. Never mutate the user's PR branch worktree.
+2. **Resolve checkout ownership:** use Standard's checkout selection, observed-head check, ownership recording, and preservation rules unchanged. A local Deep review uses the disposable epoch checkout (`pr-<PR_NUMBER>-R1` for an initial review) and never mutates the user's PR branch worktree. A cloud Deep review uses the project clone at the observed head, ignores the epoch branch-name requirement, never calls WorkTrunk, and never removes the clone.
 3. **Gather the context brief:** complete Standard's isolated gatherer first, then launch the Deep planner in `isolated-jobs.md` against that working brief.
 4. **Assess initial readiness:** apply the shared readiness gate against the Deep guarantee, including the planned broader context and independent verification capability.
 5. **Select and launch focused reviewers:** begin with Standard's risk-selected assignments, then add only the justified overlap defined below.

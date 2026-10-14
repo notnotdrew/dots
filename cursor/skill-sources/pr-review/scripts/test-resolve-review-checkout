@@ -1,0 +1,545 @@
+#!/bin/sh
+
+# Series-root and checkout selection for resolve-review-checkout.
+# Local reviews read ~/.cdx-artifacts. Cloud reviews read Project Context.
+# Stubs: gh, curl, wt. Real: gh-pr-parse, resolve-review-checkout, git, jq.
+
+set -u
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+RESOLVER="$SCRIPT_DIR/resolve-review-checkout"
+PARSER="$SCRIPT_DIR/gh-pr-parse"
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/test-resolve-review-checkout.XXXXXX") || exit 1
+
+trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+if [ ! -x "$RESOLVER" ] || [ ! -x "$PARSER" ]; then
+    printf '%s\n' "not ok - resolver or parser is missing or not executable" >&2
+    exit 1
+fi
+
+if ! command -v git >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    printf '%s\n' "not ok - git and jq are required" >&2
+    exit 1
+fi
+
+tests_run=0
+tests_failed=0
+
+OWNER=acme
+REPO=widgets
+PR_NUMBER=7
+PR_URL="https://github.com/${OWNER}/${REPO}/pull/${PR_NUMBER}"
+MATCH_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+OTHER_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+RUNTIME_URL=http://cursor-agent/v1/meta-data/agent/runtime
+
+HOME_DIR="$TEST_ROOT/home"
+STORE_DIR="$TEST_ROOT/project-context"
+STUB_BIN="$TEST_ROOT/bin"
+CURL_LOG="$TEST_ROOT/curl.log"
+WT_LOG="$TEST_ROOT/wt.log"
+SOCKET="$TEST_ROOT/agent.sock"
+UNMANAGED_SOCKET="$TEST_ROOT/unmanaged.sock"
+STATE_DIR="$TEST_ROOT/gh-state"
+
+mkdir -p "$HOME_DIR" "$STORE_DIR" "$STUB_BIN" "$STATE_DIR"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+printf '%s\n' "$PR_URL" >"$STATE_DIR/pr-url"
+printf '%s\n' "${OWNER}/${REPO}" >"$STATE_DIR/name-with-owner"
+: >"$CURL_LOG"
+: >"$WT_LOG"
+
+cat >"$STUB_BIN/gh" <<EOF
+#!/bin/sh
+set -eu
+joined=\$(printf '%s ' "\$@")
+case "\$joined" in
+    *"pr view"*)
+        head=\$(cat "$STATE_DIR/head-sha")
+        url=\$(cat "$STATE_DIR/pr-url")
+        printf '{"headRefOid":"%s","url":"%s"}\\n' "\$head" "\$url"
+        ;;
+    *"repo view"*)
+        cat "$STATE_DIR/name-with-owner"
+        printf '\\n'
+        ;;
+    *)
+        printf 'unexpected gh args: %s\\n' "\$joined" >&2
+        exit 1
+        ;;
+esac
+EOF
+
+cat >"$STUB_BIN/curl" <<EOF
+#!/bin/sh
+set -eu
+printf '%s\\n' "\$*" >>"$CURL_LOG"
+socket=
+url=
+prev=
+for arg in "\$@"; do
+    case "\$prev" in
+        --unix-socket)
+            socket=\$arg
+            prev=
+            continue
+            ;;
+    esac
+    case "\$arg" in
+        --unix-socket)
+            prev=\$arg
+            ;;
+        --unix-socket=*)
+            socket=\${arg#--unix-socket=}
+            ;;
+        http://*|https://*)
+            url=\$arg
+            ;;
+    esac
+done
+if [ "\$socket" = "$SOCKET" ] && [ "\$url" = "$RUNTIME_URL" ]; then
+    printf '%s\\n' managed
+    exit 0
+fi
+if [ "\$socket" = "$UNMANAGED_SOCKET" ] && [ "\$url" = "$RUNTIME_URL" ]; then
+    printf '%s\\n' unmanaged
+    exit 0
+fi
+printf '%s\\n' self_hosted
+exit 0
+EOF
+
+cat >"$STUB_BIN/wt" <<EOF
+#!/bin/sh
+printf '%s\\n' "\$*" >>"$WT_LOG"
+if [ -n "\${WT_PATH:-}" ] && [ -d "\${WT_PATH}" ]; then
+    printf '%s\\n' "{\\"path\\":\\"\${WT_PATH}\\"}"
+fi
+exit 0
+EOF
+
+chmod +x "$STUB_BIN/gh" "$STUB_BIN/curl" "$STUB_BIN/wt"
+
+fail() {
+    tests_failed=$((tests_failed + 1))
+    printf '%s\n' "not ok - $1"
+    if [ -n "${2:-}" ]; then
+        printf '%s\n' "$2"
+    fi
+}
+
+pass() {
+    printf '%s\n' "ok - $1"
+}
+
+begin() {
+    tests_run=$((tests_run + 1))
+    : >"$CURL_LOG"
+    : >"$WT_LOG"
+    unset WT_PATH || true
+}
+
+series_file() {
+    root=$1
+    printf '%s/%s--%s/pr-%s/perfect-review.md' "$root" "$OWNER" "$REPO" "$PR_NUMBER"
+}
+
+write_ready_series() {
+    root=$1
+    observed=$2
+    path=$(series_file "$root")
+    mkdir -p "$(dirname "$path")"
+    cat >"$path" <<EOF
+## Identity
+
+- ObservedHead: $observed
+- CurrentEpoch: R1
+- Readiness: ready
+EOF
+}
+
+clear_series() {
+    root=$1
+    dir=$(dirname "$(series_file "$root")")
+    rm -rf "$dir"
+}
+
+# Eval the resolver's KEY=VALUE line into the caller's shell.
+load_result() {
+    ACTION=
+    OWNER_OUT=
+    REPO_OUT=
+    PR_NUMBER_OUT=
+    HEAD_SHA=
+    EPOCH=
+    CHECKOUT_BRANCH=
+    CHECKOUT_CREATED=
+    CHECKOUT_PATH=
+    SERIES_ROOT=
+    PR_URL_OUT=
+    MESSAGE=
+    # shellcheck disable=SC2086
+    eval "$1"
+}
+
+run_resolver() {
+    run_stdout=$TEST_ROOT/stdout
+    run_stderr=$TEST_ROOT/stderr
+    run_status=0
+    : >"$run_stdout"
+    : >"$run_stderr"
+    (
+        cd "$run_dir" || exit 97
+        HOME="$HOME_DIR"
+        PATH="$STUB_BIN:$PATH"
+        export HOME PATH
+        # An empty socket must stay unset. A set socket is the cloud signal.
+        unset CURSOR_AGENT_SOCKET
+        unset CURSOR_AGENT_STORE_FILES_DIR
+        if [ -n "${run_socket:-}" ]; then
+            CURSOR_AGENT_SOCKET=$run_socket
+            export CURSOR_AGENT_SOCKET
+        fi
+        if [ -n "${run_store:-}" ]; then
+            CURSOR_AGENT_STORE_FILES_DIR=$run_store
+            export CURSOR_AGENT_STORE_FILES_DIR
+        fi
+        "$RESOLVER" "$@"
+    ) >"$run_stdout" 2>"$run_stderr" || run_status=$?
+}
+
+assert_status() {
+    test_name=$1
+    expected=$2
+    if [ "$run_status" -ne "$expected" ]; then
+        fail "$test_name" "expected status $expected, got $run_status
+stderr:
+$(cat "$run_stderr")
+stdout:
+$(cat "$run_stdout")"
+        return 1
+    fi
+    return 0
+}
+
+git_commit() {
+    repo=$1
+    name=$2
+    mkdir -p "$repo"
+    if [ ! -d "$repo/.git" ]; then
+        git -C "$repo" init -b main >/dev/null
+    fi
+    printf '%s\n' "$name" >"$repo/file"
+    git -C "$repo" add file
+    git -C "$repo" -c user.email=test@example.com -c user.name=Test commit -m "$name" >/dev/null
+    git -C "$repo" rev-parse HEAD
+}
+
+# --- 1. Local reads the home series and ignores Project Context ---
+
+begin
+write_ready_series "$HOME_DIR/.cdx-artifacts/pr-reviews" "$MATCH_SHA"
+write_ready_series "$STORE_DIR/pr-reviews" "$OTHER_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=
+run_store=$STORE_DIR
+run_resolver "$PR_URL"
+test_name="local ready home series is a noop"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    if [ "$ACTION" != noop ] || [ "$SERIES_ROOT" != "$HOME_DIR/.cdx-artifacts/pr-reviews" ]; then
+        fail "$test_name" "ACTION=$ACTION SERIES_ROOT=$SERIES_ROOT
+$(cat "$run_stdout")"
+    elif [ -s "$CURL_LOG" ]; then
+        fail "$test_name" "local review consulted curl:
+$(cat "$CURL_LOG")"
+    else
+        pass "$test_name"
+    fi
+fi
+
+begin
+clear_series "$HOME_DIR/.cdx-artifacts/pr-reviews"
+write_ready_series "$STORE_DIR/pr-reviews" "$MATCH_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=
+run_store=$STORE_DIR
+run_resolver "$PR_URL"
+test_name="local ignores a ready series that exists only in project context"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    if [ "$ACTION" = noop ]; then
+        fail "$test_name" "project-context series was treated as a local noop
+$(cat "$run_stdout")"
+    elif [ "$ACTION" != review ] || [ "$SERIES_ROOT" != "$HOME_DIR/.cdx-artifacts/pr-reviews" ]; then
+        fail "$test_name" "ACTION=$ACTION SERIES_ROOT=$SERIES_ROOT
+$(cat "$run_stdout")"
+    else
+        pass "$test_name"
+    fi
+fi
+
+# --- 2. Cloud reads Project Context and ignores the home series ---
+
+begin
+write_ready_series "$STORE_DIR/pr-reviews" "$MATCH_SHA"
+write_ready_series "$HOME_DIR/.cdx-artifacts/pr-reviews" "$OTHER_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=$SOCKET
+run_store=$STORE_DIR
+run_resolver "$PR_URL"
+test_name="cloud ready project-context series is a noop"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    if [ "$ACTION" != noop ] || [ "$SERIES_ROOT" != "$STORE_DIR/pr-reviews" ]; then
+        fail "$test_name" "ACTION=$ACTION SERIES_ROOT=$SERIES_ROOT
+$(cat "$run_stdout")"
+    elif ! grep -F -- "--unix-socket" "$CURL_LOG" >/dev/null || \
+        ! grep -F -- "$SOCKET" "$CURL_LOG" >/dev/null || \
+        ! grep -F -- "$RUNTIME_URL" "$CURL_LOG" >/dev/null; then
+        fail "$test_name" "curl was not consulted for the managed runtime URL on the cloud socket
+$(cat "$CURL_LOG")"
+    else
+        pass "$test_name"
+    fi
+fi
+
+begin
+clear_series "$STORE_DIR/pr-reviews"
+write_ready_series "$HOME_DIR/.cdx-artifacts/pr-reviews" "$MATCH_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=$SOCKET
+run_store=$STORE_DIR
+run_resolver "$PR_URL"
+test_name="cloud ignores a ready home series"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    if [ "$ACTION" = noop ]; then
+        fail "$test_name" "home series was treated as a cloud noop
+$(cat "$run_stdout")"
+    elif [ "$ACTION" != review ] || [ "$SERIES_ROOT" != "$STORE_DIR/pr-reviews" ]; then
+        fail "$test_name" "ACTION=$ACTION SERIES_ROOT=$SERIES_ROOT
+$(cat "$run_stdout")"
+    else
+        pass "$test_name"
+    fi
+fi
+
+begin
+write_ready_series "$STORE_DIR/pr-reviews" "$MATCH_SHA"
+write_ready_series "$HOME_DIR/.cdx-artifacts/pr-reviews" "$MATCH_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=$TEST_ROOT/other.sock
+run_store=$STORE_DIR
+run_resolver "$PR_URL"
+test_name="cloud self_hosted runtime is an error and not a noop"
+if [ "$run_status" -eq 0 ]; then
+    fail "$test_name" "self_hosted runtime was accepted
+stdout:
+$(cat "$run_stdout")
+stderr:
+$(cat "$run_stderr")"
+elif ! grep -F -- "$RUNTIME_URL" "$CURL_LOG" >/dev/null; then
+    fail "$test_name" "curl was not consulted
+$(cat "$CURL_LOG")
+stderr:
+$(cat "$run_stderr")"
+elif ! grep -F "expected managed" "$run_stderr" >/dev/null; then
+    fail "$test_name" "runtime mismatch was not rejected
+stderr:
+$(cat "$run_stderr")"
+elif grep -F "ACTION='noop'" "$run_stdout" >/dev/null; then
+    fail "$test_name" "self_hosted runtime produced a noop
+$(cat "$run_stdout")"
+else
+    pass "$test_name"
+fi
+
+begin
+write_ready_series "$STORE_DIR/pr-reviews" "$MATCH_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=$UNMANAGED_SOCKET
+run_store=$STORE_DIR
+run_resolver "$PR_URL"
+test_name="cloud unmanaged runtime is an error and not a noop"
+if [ "$run_status" -eq 0 ]; then
+    fail "$test_name" "unmanaged runtime was accepted
+stdout:
+$(cat "$run_stdout")
+stderr:
+$(cat "$run_stderr")"
+elif ! grep -F -- "$RUNTIME_URL" "$CURL_LOG" >/dev/null; then
+    fail "$test_name" "curl was not consulted
+$(cat "$CURL_LOG")
+stderr:
+$(cat "$run_stderr")"
+elif ! grep -F "expected managed" "$run_stderr" >/dev/null; then
+    fail "$test_name" "runtime mismatch was not rejected
+stderr:
+$(cat "$run_stderr")"
+elif grep -F "ACTION='noop'" "$run_stdout" >/dev/null; then
+    fail "$test_name" "unmanaged runtime produced a noop
+$(cat "$run_stdout")"
+else
+    pass "$test_name"
+fi
+
+begin
+clear_series "$HOME_DIR/.cdx-artifacts/pr-reviews"
+write_ready_series "$HOME_DIR/.cdx-artifacts/pr-reviews" "$OTHER_SHA"
+printf '%s\n' "$MATCH_SHA" >"$STATE_DIR/head-sha"
+run_dir=$TEST_ROOT
+run_socket=
+run_store=
+run_resolver "$PR_URL"
+test_name="local ready series for a different head is not a noop"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    if [ "$ACTION" = noop ]; then
+        fail "$test_name" "a different ObservedHead was a noop
+$(cat "$run_stdout")"
+    elif [ "$ACTION" != review ] || [ "$SERIES_ROOT" != "$HOME_DIR/.cdx-artifacts/pr-reviews" ]; then
+        fail "$test_name" "ACTION=$ACTION SERIES_ROOT=$SERIES_ROOT
+$(cat "$run_stdout")"
+    else
+        pass "$test_name"
+    fi
+fi
+
+# --- 3. Cloud --ensure detaches a clean clone and does not call wt ---
+
+begin
+clean_repo=$TEST_ROOT/clean-clone
+old_sha=$(git_commit "$clean_repo" old)
+new_sha=$(git_commit "$clean_repo" new)
+git -C "$clean_repo" checkout --detach "$old_sha" >/dev/null 2>&1
+git -C "$clean_repo" checkout -B main "$old_sha" >/dev/null 2>&1
+clear_series "$HOME_DIR/.cdx-artifacts/pr-reviews"
+clear_series "$STORE_DIR/pr-reviews"
+printf '%s\n' "$new_sha" >"$STATE_DIR/head-sha"
+run_dir=$clean_repo
+run_socket=$SOCKET
+run_store=$STORE_DIR
+run_resolver --ensure "$PR_URL"
+test_name="cloud ensure detaches a clean clone and does not call wt"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    after_head=$(git -C "$clean_repo" rev-parse HEAD)
+    after_branch=$(git -C "$clean_repo" rev-parse --abbrev-ref HEAD)
+    clone_toplevel=$(git -C "$clean_repo" rev-parse --show-toplevel)
+    if [ -s "$WT_LOG" ]; then
+        fail "$test_name" "wt was called:
+$(cat "$WT_LOG")"
+    elif [ "$CHECKOUT_CREATED" != no ] || [ "$CHECKOUT_PATH" != "$clone_toplevel" ]; then
+        fail "$test_name" "CHECKOUT_CREATED=$CHECKOUT_CREATED CHECKOUT_PATH=$CHECKOUT_PATH expected $clone_toplevel
+$(cat "$run_stdout")"
+    elif [ "$after_head" != "$new_sha" ] || [ "$after_branch" != HEAD ]; then
+        fail "$test_name" "HEAD=$after_head branch=$after_branch expected detached $new_sha"
+    elif git -C "$clean_repo" show-ref --verify --quiet "refs/heads/pr-${PR_NUMBER}-R1"; then
+        fail "$test_name" "cloud ensure created pr-${PR_NUMBER}-R1"
+    elif [ "$SERIES_ROOT" != "$STORE_DIR/pr-reviews" ]; then
+        fail "$test_name" "SERIES_ROOT=$SERIES_ROOT"
+    else
+        pass "$test_name"
+    fi
+fi
+
+# --- 4. Cloud --ensure on a dirty clone fails and leaves HEAD ---
+
+begin
+dirty_repo=$TEST_ROOT/dirty-clone
+dirty_old=$(git_commit "$dirty_repo" old)
+dirty_new=$(git_commit "$dirty_repo" new)
+git -C "$dirty_repo" checkout -B main "$dirty_old" >/dev/null 2>&1
+# Untracked, and absent from both commits, so checkout would carry it forward.
+printf '%s\n' dirty >"$dirty_repo/untracked"
+dirty_head_before=$(git -C "$dirty_repo" rev-parse HEAD)
+dirty_branch_before=$(git -C "$dirty_repo" symbolic-ref HEAD)
+dirty_status_before=$(git -C "$dirty_repo" status --porcelain)
+clear_series "$STORE_DIR/pr-reviews"
+printf '%s\n' "$dirty_new" >"$STATE_DIR/head-sha"
+run_dir=$dirty_repo
+run_socket=$SOCKET
+run_store=$STORE_DIR
+run_resolver --ensure "$PR_URL"
+test_name="cloud ensure refuses a dirty clone"
+if [ "$run_status" -eq 0 ]; then
+    fail "$test_name" "dirty clone was accepted
+$(cat "$run_stdout")"
+else
+    dirty_head_after=$(git -C "$dirty_repo" rev-parse HEAD)
+    dirty_branch_after=$(git -C "$dirty_repo" symbolic-ref HEAD)
+    dirty_status_after=$(git -C "$dirty_repo" status --porcelain)
+    if [ "$dirty_head_after" != "$dirty_head_before" ] || \
+        [ "$dirty_branch_after" != "$dirty_branch_before" ] || \
+        [ "$dirty_status_after" != "$dirty_status_before" ]; then
+        fail "$test_name" "HEAD or branch or status changed
+before: $dirty_head_before $dirty_branch_before [$dirty_status_before]
+after:  $dirty_head_after $dirty_branch_after [$dirty_status_after]
+stderr:
+$(cat "$run_stderr")"
+    elif [ -s "$WT_LOG" ]; then
+        fail "$test_name" "wt was called:
+$(cat "$WT_LOG")"
+    else
+        pass "$test_name"
+    fi
+fi
+
+# --- 5. Local --ensure still calls wt and does not detach the current clone ---
+
+begin
+local_repo=$TEST_ROOT/local-clone
+local_sha=$(git_commit "$local_repo" local)
+wt_repo=$TEST_ROOT/wt-checkout
+wt_sha=$(git_commit "$wt_repo" wt)
+clear_series "$HOME_DIR/.cdx-artifacts/pr-reviews"
+clear_series "$STORE_DIR/pr-reviews"
+printf '%s\n' "$wt_sha" >"$STATE_DIR/head-sha"
+WT_PATH=$wt_repo
+export WT_PATH
+local_head_before=$(git -C "$local_repo" rev-parse HEAD)
+local_branch_before=$(git -C "$local_repo" symbolic-ref HEAD)
+run_dir=$local_repo
+run_socket=
+run_store=
+run_resolver --ensure "$PR_URL"
+unset WT_PATH || true
+test_name="local ensure calls wt and does not detach the current clone"
+if assert_status "$test_name" 0; then
+    load_result "$(cat "$run_stdout")"
+    local_head_after=$(git -C "$local_repo" rev-parse HEAD)
+    local_branch_after=$(git -C "$local_repo" symbolic-ref HEAD)
+    if ! grep -F switch "$WT_LOG" >/dev/null; then
+        fail "$test_name" "wt was not invoked
+$(cat "$WT_LOG")"
+    elif [ "$local_head_after" != "$local_sha" ] || \
+        [ "$local_head_after" != "$local_head_before" ] || \
+        [ "$local_branch_after" != "$local_branch_before" ]; then
+        fail "$test_name" "current clone moved
+before: $local_head_before $local_branch_before
+after:  $local_head_after $local_branch_after
+clone: $local_sha observed: $wt_sha"
+    elif [ "$CHECKOUT_PATH" != "$wt_repo" ] || [ "$CHECKOUT_CREATED" != no ]; then
+        fail "$test_name" "CHECKOUT_PATH=$CHECKOUT_PATH CHECKOUT_CREATED=$CHECKOUT_CREATED
+$(cat "$run_stdout")"
+    elif [ "$SERIES_ROOT" != "$HOME_DIR/.cdx-artifacts/pr-reviews" ]; then
+        fail "$test_name" "SERIES_ROOT=$SERIES_ROOT home=$HOME_DIR"
+    else
+        pass "$test_name"
+    fi
+fi
+
+if [ "$tests_failed" -ne 0 ]; then
+    printf '%s\n' "$tests_failed of $tests_run resolve-review-checkout tests failed"
+    exit 1
+fi
+
+printf '%s\n' "all $tests_run resolve-review-checkout tests passed"

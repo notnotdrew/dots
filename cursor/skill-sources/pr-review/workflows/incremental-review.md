@@ -4,11 +4,11 @@ Use this workflow when the resolved GitHub PR already has a canonical review ser
 
 Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md), including isolated gathering from [isolated-jobs.md](../references/isolated-jobs.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, same-head handling, inheritance, and update publication.
 
-Keep Linear, PR metadata, Git history, and the review checkout read-only. Never change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, reply on existing threads, post issue comments, or let a reviewer mutate canonical artifacts. After successful artifact publication, the coordinator may draft an unpublished (`PENDING`) GitHub review per Standard's pending-review step; never submit it unless Drew explicitly asks later. Artifact-series writes, that pending draft, and removal of a disposable epoch checkout created by this invocation remain coordinator-only operations.
+Keep Linear, PR metadata, Git history, and the review checkout read-only. Never change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, reply on existing threads, post issue comments, or let a reviewer mutate canonical artifacts. After successful artifact publication, the coordinator may draft an unpublished (`PENDING`) GitHub review per Standard's pending-review step; never submit it unless Drew explicitly asks later. Artifact-series writes, that pending draft, and removal of a local disposable epoch checkout created by this invocation remain coordinator-only operations. A cloud review never calls WorkTrunk and never removes the project clone.
 
 ## 1. Resolve The Existing Series And Recover First
 
-Resolve owner, repository, PR number, `SERIES_PARENT`, and `SERIES_DIR` exactly as Standard does. Require `SERIES_DIR` to exist and contain the three canonical files. A full rebuild and a single-finding revision both require an existing series; they never create an initial review.
+Resolve owner, repository, PR number, `SERIES_PARENT`, and `SERIES_DIR` exactly as Standard does, including that review's local or cloud series root. Require `SERIES_DIR` to exist and contain the three canonical files. A ready series under the other root is not this series. A full rebuild and a single-finding revision both require an existing series; they never create an initial review.
 
 Before reading, validating, inheriting, or writing any canonical artifact, check:
 
@@ -31,12 +31,12 @@ After recovery, require the series to contain exactly the three regular canonica
 
 ## 2. Decide Whether This Head Needs A Run
 
-The stable series identity remains owner, repository, and PR number. `CurrentEpoch` counts runs; observed SHAs are evidence only. The launcher exports `PR_REVIEW_EPOCH` for this run and names the disposable checkout `pr-<PR_NUMBER>-<epoch>`.
+The stable series identity remains owner, repository, and PR number under the selected series root. `CurrentEpoch` counts runs; observed SHAs are evidence only. On a local review the launcher exports `PR_REVIEW_EPOCH` for this run and names the disposable checkout `pr-<PR_NUMBER>-<epoch>`. On a cloud review that name is the epoch label only; there is no WorkTrunk checkout.
 
 Compare the current GitHub `headRefOid` to the series' `ObservedHead`:
 
 - Same head, readiness already `ready`, and neither `--full-rebuild` nor `--finding`: stop as a no-op. Do not create a checkout or rewrite artifacts. Report that the current head is already reviewed.
-- Same head and prior readiness `UNABLE TO REVIEW`, without `--full-rebuild`: retry under the same `CurrentEpoch`. Reuse or recreate its checkout.
+- Same head and prior readiness `UNABLE TO REVIEW`, without `--full-rebuild`: retry under the same `CurrentEpoch`. On a local review, reuse or recreate that epoch checkout. On a cloud review, reuse the project clone at that head.
 - Same head with `--full-rebuild`: take the next ordinal.
 - Same head with `--finding`: follow Section 8 under the same `CurrentEpoch`.
 - New head: take the next ordinal and a checkout at the new SHA.
@@ -45,7 +45,7 @@ A series written before `CurrentEpoch` existed has none. Treat it as R1 and writ
 
 ## 3. Resolve The Current Observation
 
-Resolve the disposable checkout and the current GitHub head through Standard's read-only epoch-checkout process, targeting `pr-<PR_NUMBER>-<epoch>` for the ordinal selected in Section 2. Prefer launcher exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD` when consistent with the selected ordinal and head. Use `scripts/resolve-review-checkout --ensure` when a checkout must be created or reused. Never select the user's PR branch worktree.
+Resolve the checkout and the current GitHub head through Standard's checkout process. On a local review, target the disposable epoch checkout `pr-<PR_NUMBER>-<epoch>` for the ordinal selected in Section 2 and never select the user's PR branch worktree. On a cloud review, use the project clone at the observed head, ignore the epoch branch-name requirement, never call WorkTrunk, and never remove the clone. Prefer launcher exports `PR_REVIEW_EPOCH`, `PR_REVIEW_CHECKOUT_BRANCH`, `PR_REVIEW_CHECKOUT_CREATED`, and `PR_REVIEW_OBSERVED_HEAD` when consistent with the selected ordinal and head. Use `scripts/resolve-review-checkout --ensure` when a checkout must be created or reused.
 
 Record the full current head and actual merge-base. Re-query the head after gathering and before staging; do not combine revisions.
 
@@ -175,7 +175,7 @@ After a successful restoration, validate the restored destination before removin
 
 Only when all three replacements and destination validation succeed may the coordinator remove the marker, then the staging and backup directories. Successful marker removal commits the validated publication; retry and report any failure to remove the now-nonauthoritative sibling directories, but never apply them without a marker. An unrelated or unrecognized entry is never deleted.
 
-Do not clean up a disposable epoch checkout created by this invocation until publication succeeds and Standard's pending GitHub review step has finished or been skipped. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and `WORK_DIR` and report their ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, run Standard's pending unpublished GitHub review step (skip on same-head no-ops). Then apply Standard's checkout rule: remove only a disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree. Also remove `WORK_DIR`.
+Do not clean up a local disposable epoch checkout created by this invocation until publication succeeds and Standard's pending GitHub review step has finished or been skipped. On any recovery, staging, validation, replacement, restoration, or marker-removal failure, preserve that checkout and `WORK_DIR` and report their ownership and path. A sibling-directory cleanup warning after successful marker removal does not invalidate the publication. After successful publication, run Standard's pending unpublished GitHub review step (skip on same-head no-ops). Then apply Standard's checkout rule: remove only a local disposable epoch checkout that this workflow or its launcher marked as created for this invocation; never remove the user's PR branch worktree; never remove the cloud project clone. Also remove `WORK_DIR`.
 
 ## 11. Return
 

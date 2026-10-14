@@ -1,18 +1,24 @@
 #!/bin/sh
 
-# Resolve the disposable epoch checkout for a pr-review invocation.
+# Resolve the review series and checkout for a pr-review invocation.
+#
+# A cloud review reads its series under $CURSOR_AGENT_STORE_FILES_DIR/pr-reviews.
+# With --ensure it detaches the project clone at the observed head and does not
+# call WorkTrunk. A local review uses ~/.cdx-artifacts/pr-reviews and, with
+# --ensure, the WorkTrunk epoch checkout.
 #
 # Prints eval-friendly KEY=VALUE pairs on one line:
 #   ACTION OWNER REPO PR_NUMBER HEAD_SHA EPOCH CHECKOUT_BRANCH
-#   CHECKOUT_CREATED CHECKOUT_PATH MESSAGE
+#   CHECKOUT_CREATED CHECKOUT_PATH SERIES_ROOT PR_URL MESSAGE
 #
 # ACTION is noop (same head already reviewed) or review.
-# With --ensure, create or reuse the WorkTrunk checkout before printing.
+# Without --ensure, resolve the series and action only; do not move HEAD.
 
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 PR_PARSE="$SCRIPT_DIR/gh-pr-parse"
+review_runtime=local
 SERIES_ROOT="${HOME}/.cdx-artifacts/pr-reviews"
 
 usage='usage: resolve-review-checkout [--ensure] [--full-rebuild] [--finding F<id>] <PR-URL-or-ID>'
@@ -60,6 +66,30 @@ done
 
 [ -n "$pr_ref" ] || die "$usage"
 [ -x "$PR_PARSE" ] || die "missing parser script: $PR_PARSE"
+
+# Cloud only when the metadata runtime on this socket is exactly "managed".
+# Any other result, including self_hosted, is an error. Do not use the local series.
+if [ "${CURSOR_AGENT_SOCKET+x}" = x ]; then
+    command -v curl >/dev/null 2>&1 || die "curl is required to identify a cloud review"
+    if ! runtime=$(curl -fsS --unix-socket "$CURSOR_AGENT_SOCKET" http://cursor-agent/v1/meta-data/agent/runtime); then
+        die "failed to read cloud runtime from CURSOR_AGENT_SOCKET"
+    fi
+    case "$runtime" in
+        managed) ;;
+        *) die "cloud runtime returned '${runtime}', expected managed" ;;
+    esac
+
+    store_dir=${CURSOR_AGENT_STORE_FILES_DIR:-}
+    [ -n "$store_dir" ] || die "CURSOR_AGENT_STORE_FILES_DIR is required for a cloud review"
+    case "$store_dir" in
+        /*) ;;
+        *) die "CURSOR_AGENT_STORE_FILES_DIR must be an absolute path" ;;
+    esac
+    [ -d "$store_dir" ] || die "CURSOR_AGENT_STORE_FILES_DIR is not a directory: ${store_dir}"
+
+    SERIES_ROOT="${store_dir}/pr-reviews"
+    review_runtime=cloud
+fi
 
 parsed=$("$PR_PARSE" "$pr_ref") || exit 1
 OWNER=
@@ -194,7 +224,7 @@ fi
 CHECKOUT_BRANCH="pr-${PR_NUMBER}-${EPOCH}"
 
 emit_result() {
-    printf 'ACTION=%s OWNER=%s REPO=%s PR_NUMBER=%s HEAD_SHA=%s EPOCH=%s CHECKOUT_BRANCH=%s CHECKOUT_CREATED=%s CHECKOUT_PATH=%s PR_URL=%s MESSAGE=%s\n' \
+    printf 'ACTION=%s OWNER=%s REPO=%s PR_NUMBER=%s HEAD_SHA=%s EPOCH=%s CHECKOUT_BRANCH=%s CHECKOUT_CREATED=%s CHECKOUT_PATH=%s SERIES_ROOT=%s PR_URL=%s MESSAGE=%s\n' \
         "$(shell_quote "$ACTION")" \
         "$(shell_quote "$OWNER")" \
         "$(shell_quote "$REPO")" \
@@ -204,23 +234,13 @@ emit_result() {
         "$(shell_quote "$CHECKOUT_BRANCH")" \
         "$(shell_quote "$CHECKOUT_CREATED")" \
         "$(shell_quote "$CHECKOUT_PATH")" \
+        "$(shell_quote "$SERIES_ROOT")" \
         "$(shell_quote "$PR_URL")" \
         "$(shell_quote "$MESSAGE")"
 }
 
-if [ "$ACTION" = noop ] || [ "$ensure" = false ]; then
-    emit_result
-    exit 0
-fi
-
-command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
-command -v git >/dev/null 2>&1 || die "git is required"
-
-wt_stderr=$(mktemp)
-trap 'rm -f "$wt_stderr"' EXIT HUP INT TERM
-
 fetch_pr_head() {
-    # Materialize GitHub's PR head locally so disposable branches pin to headRefOid,
+    # Materialize GitHub's PR head locally so the checkout pins to headRefOid,
     # not a stale local PR-branch tip.
     if git rev-parse --verify "${HEAD_SHA}^{commit}" >/dev/null 2>&1; then
         return 0
@@ -231,6 +251,56 @@ fetch_pr_head() {
     git rev-parse --verify "${HEAD_SHA}^{commit}" >/dev/null 2>&1 || \
         die "fetched PR head does not contain ${HEAD_SHA}"
 }
+
+ensure_cloud_checkout() {
+    command -v git >/dev/null 2>&1 || die "git is required"
+
+    clone_toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || \
+        die "cloud review requires a git clone in the current directory"
+    case "$clone_toplevel" in
+        /*) ;;
+        *) die "git toplevel is not absolute: ${clone_toplevel}" ;;
+    esac
+
+    clone_name=$(gh repo view --json nameWithOwner --jq '.nameWithOwner') || \
+        die "failed to resolve repository via gh repo view"
+    [ "$clone_name" = "${OWNER}/${REPO}" ] || \
+        die "clone repository ${clone_name} is not ${OWNER}/${REPO}"
+
+    current_head=$(git rev-parse HEAD) || die "failed to read HEAD"
+    if [ "$current_head" != "$HEAD_SHA" ]; then
+        if [ -n "$(git status --porcelain)" ]; then
+            die "project clone is dirty; refusing to check out ${HEAD_SHA}"
+        fi
+        fetch_pr_head
+        git checkout --detach "$HEAD_SHA" >/dev/null 2>&1 || \
+            die "failed to detach project clone at ${HEAD_SHA}"
+        current_head=$(git rev-parse HEAD) || die "failed to read HEAD"
+        [ "$current_head" = "$HEAD_SHA" ] || \
+            die "project clone HEAD ${current_head} does not match ${HEAD_SHA}"
+    fi
+
+    CHECKOUT_CREATED=no
+    CHECKOUT_PATH=$clone_toplevel
+    MESSAGE="${MESSAGE}; project clone ${CHECKOUT_PATH}"
+}
+
+if [ "$ACTION" = noop ] || [ "$ensure" = false ]; then
+    emit_result
+    exit 0
+fi
+
+if [ "$review_runtime" = cloud ]; then
+    ensure_cloud_checkout
+    emit_result
+    exit 0
+fi
+
+command -v wt >/dev/null 2>&1 || die "WorkTrunk (wt) is required but not found"
+command -v git >/dev/null 2>&1 || die "git is required"
+
+wt_stderr=$(mktemp)
+trap 'rm -f "$wt_stderr"' EXIT HUP INT TERM
 
 pin_checkout_to_head() {
     checkout_path=$1

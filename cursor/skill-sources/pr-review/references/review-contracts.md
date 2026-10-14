@@ -18,13 +18,16 @@ All three artifacts record `ModeSelection: default|explicit` next to `Mode`. Thi
 
 ## Review-Series Identity
 
-A GitHub PR has one stable review-series root:
+A GitHub PR has one stable review series for the review that is running. A local review and a cloud review use different roots and do not read or write each other's files:
 
 ```text
-~/.cdx-artifacts/pr-reviews/<owner>--<repo>/pr-<number>/
+Local: ~/.cdx-artifacts/pr-reviews/<owner>--<repo>/pr-<number>/
+Cloud: $CURSOR_AGENT_STORE_FILES_DIR/pr-reviews/<owner>--<repo>/pr-<number>/
 ```
 
-It contains exactly three canonical handoff files:
+A cloud review is one whose `CURSOR_AGENT_SOCKET` metadata runtime is exactly `managed`, with `CURSOR_AGENT_STORE_FILES_DIR` an absolute path of an existing directory. If that socket is set but the runtime check fails or returns anything else, including `self_hosted`, stop. Do not use the local root. A local review does not set `CURSOR_AGENT_SOCKET` and uses the home root. A ready series under the other root does not make this review a no-op.
+
+Either root contains exactly three canonical handoff files:
 
 - `context-brief.md`
 - `findings-ledger.md`
@@ -34,9 +37,9 @@ The owner, repository, and PR number identify the series. `ObservedBase` and `Ob
 
 ## Review Runs
 
-Each run on a PR gets the next ordinal, `R1`, `R2`, and so on, recorded as `CurrentEpoch` in all three artifacts. The launcher names the disposable checkout `pr-<PR_NUMBER>-<CurrentEpoch>` and pins it to that run's `ObservedHead`.
+Each run on a PR gets the next ordinal, `R1`, `R2`, and so on, recorded as `CurrentEpoch` in all three artifacts. On a local review the launcher names the disposable checkout `pr-<PR_NUMBER>-<CurrentEpoch>` and pins it to that run's `ObservedHead`. On a cloud review that label is identity only: the checkout is the project clone at `ObservedHead`, not that branch, and the review never calls WorkTrunk or removes the clone.
 
-A default re-review on the same GitHub head as the series' current `ObservedHead` with readiness already `ready` is a no-op. A same-head `UNABLE TO REVIEW` retry replaces the published artifacts under the same ordinal. `--full-rebuild` and a new head take the next ordinal. Every run rewrites all three files from current evidence; prior judgments survive in each finding's `DispositionHistory`, not in a parallel history section.
+A default re-review on the same GitHub head as the selected series' current `ObservedHead` with readiness already `ready` is a no-op. A ready series under the other root does not count. A same-head `UNABLE TO REVIEW` retry replaces the published artifacts under the same ordinal. `--full-rebuild` and a new head take the next ordinal. Every run rewrites all three files from current evidence; prior judgments survive in each finding's `DispositionHistory`, not in a parallel history section.
 
 A rebase changes observed SHAs and may move anchors; it does not change series identity or a finding ID.
 
