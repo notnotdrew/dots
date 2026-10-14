@@ -426,7 +426,8 @@ EOF
   chmod +x "$bin/agent"
 }
 
-# Records cwd, argc, and each arg. Optionally copies a note and a log, then exits.
+# Records cwd, argc, and each arg. Copies a note only when the -p prompt names
+# that path, and a log when one is configured, then exits.
 install_agent_mock() {
   cat >"$TEST_ROOT/agent-mock" <<'EOF'
 #!/usr/bin/env bash
@@ -445,13 +446,22 @@ printf '%s\n' "$count" >"$count_file"
 printf '%s\n' "$PWD" >"$record/cwd-$count"
 printf '%s\n' "$#" >"$record/argc-$count"
 i=0
+prompt=
+prev=
 for arg in "$@"; do
   printf '%s' "$arg" >"$record/arg-$count-$i"
+  if [[ "$prev" == "-p" ]]; then
+    prompt=$arg
+  fi
+  prev=$arg
   i=$((i + 1))
 done
 
-if [[ -n "${UNTANGLE_AGENT_NOTE_SRC:-}" ]]; then
-  cp "$UNTANGLE_AGENT_NOTE_SRC" "${UNTANGLE_AGENT_NOTE:?}"
+if [[ -n "${UNTANGLE_AGENT_NOTE_SRC:-}" && -n "${UNTANGLE_AGENT_NOTE:-}" ]] && printf '%s' "$prompt" | grep -F -q -- "$UNTANGLE_AGENT_NOTE"; then
+  cp "$UNTANGLE_AGENT_NOTE_SRC" "$UNTANGLE_AGENT_NOTE"
+fi
+if [[ -n "${UNTANGLE_AGENT_CHANGE_NOTE_SRC:-}" && -n "${UNTANGLE_AGENT_CHANGE_NOTE:-}" ]] && printf '%s' "$prompt" | grep -F -q -- "$UNTANGLE_AGENT_CHANGE_NOTE"; then
+  cp "$UNTANGLE_AGENT_CHANGE_NOTE_SRC" "$UNTANGLE_AGENT_CHANGE_NOTE"
 fi
 if [[ -n "${UNTANGLE_AGENT_LOG_SRC:-}" ]]; then
   cp "$UNTANGLE_AGENT_LOG_SRC" "${UNTANGLE_AGENT_LOG_FILE:?}"
@@ -476,6 +486,8 @@ reset_run_env() {
   RUN_AGENT_STATUS=
   RUN_AGENT_NOTE=
   RUN_AGENT_NOTE_SRC=
+  RUN_AGENT_CHANGE_NOTE=
+  RUN_AGENT_CHANGE_NOTE_SRC=
   RUN_AGENT_LOG_FILE=
   RUN_AGENT_LOG_SRC=
 }
@@ -629,6 +641,16 @@ invoke_run() {
     else
       unset UNTANGLE_AGENT_NOTE_SRC
     fi
+    if [[ -n "${RUN_AGENT_CHANGE_NOTE:-}" ]]; then
+      export UNTANGLE_AGENT_CHANGE_NOTE="$RUN_AGENT_CHANGE_NOTE"
+    else
+      unset UNTANGLE_AGENT_CHANGE_NOTE
+    fi
+    if [[ -n "${RUN_AGENT_CHANGE_NOTE_SRC:-}" ]]; then
+      export UNTANGLE_AGENT_CHANGE_NOTE_SRC="$RUN_AGENT_CHANGE_NOTE_SRC"
+    else
+      unset UNTANGLE_AGENT_CHANGE_NOTE_SRC
+    fi
     if [[ -n "${RUN_AGENT_LOG_FILE:-}" ]]; then
       export UNTANGLE_AGENT_LOG_FILE="$RUN_AGENT_LOG_FILE"
     else
@@ -701,6 +723,8 @@ use_agent_mock() {
   RUN_AGENT_STATUS=
   RUN_AGENT_NOTE=
   RUN_AGENT_NOTE_SRC=
+  RUN_AGENT_CHANGE_NOTE=
+  RUN_AGENT_CHANGE_NOTE_SRC=
   RUN_AGENT_LOG_FILE=
   RUN_AGENT_LOG_SRC=
   mkdir -p "$record"
@@ -748,6 +772,60 @@ EOF
   printf '%s' "$text" >"$dest"
 }
 
+# Keep this identical to change_orchestrator_prompt in bin/untangle.
+write_expected_change_prompt() {
+  local dest=$1
+  local repo=$2
+  local yymmdd=$3
+  local bucket=$4
+  local change_guide="${repo}/untangle/change-guide.md"
+  local log="${repo}/untangle/log.md"
+  local note="${repo}/untangle/notes/${yymmdd}-change.md"
+  local text
+  text=$(cat <<EOF
+You are the Untangle change orchestrator.
+
+Follow the guide at ${change_guide} for the bucket ${bucket} only. Do not look at the other buckets.
+
+Ask what valuable change this bucket makes slow or unsafe.
+
+Write the log at ${log} and the change note at ${note} itself. Subagents do not.
+
+You may delegate a code read. Subagents do not write those files.
+
+Do not edit or commit application files.
+Do not open a pull request.
+
+The note opens with the word plan or the word quiet.
+
+A plan names the change, the constraint, what gets faster or safer, a completion condition, and behavior-preserving steps.
+
+A quiet note says what change was considered and why this bucket is not the constraint.
+EOF
+)
+  printf '%s' "$text" >"$dest"
+}
+
+# Keep this identical to write_change_guide in bin/untangle.
+write_expected_change_guide() {
+  local dest=$1
+  cat >"$dest" <<'EOF'
+# Change guide
+
+The buckets, in cursor order, are Language, Ownership, Boundaries, Representation, Flow, Dependencies, Consolidation, and Removal.
+
+Look at one bucket. Ask what valuable change it makes slow or unsafe. A clean kitchen earns its keep by making food safer and faster to cook. Changeable code earns its keep the same way.
+
+A plan names the change, the constraint, what gets faster or safer, a completion condition, and behavior-preserving steps. A quiet note says what change was considered and why this bucket is not the constraint.
+
+The note opens with the word `plan` or the word `quiet`.
+
+Do not edit the app, commit, or open a pull request.
+
+One orchestrator writes `log.md` and `notes/<yymmdd>-change.md`. It may delegate a code read. Subagents do not write those files.
+EOF
+}
+
 write_plan_note() {
   local dest=$1
   cat >"$dest" <<'EOF'
@@ -765,6 +843,27 @@ write_quiet_note() {
 quiet
 Looked at the checkout names.
 Nothing is ready because no single knot is worth the change.
+EOF
+}
+
+write_change_plan_note() {
+  local dest=$1
+  cat >"$dest" <<'EOF'
+plan
+Change: one checkout name.
+Constraint: both generations are still called.
+Faster or safer: one name to call.
+Completion condition: callers still pass.
+Behavior-preserving steps: rename one caller at a time.
+EOF
+}
+
+write_quiet_change_note() {
+  local dest=$1
+  cat >"$dest" <<'EOF'
+quiet
+Considered collapsing the checkout names.
+This bucket is not the constraint because the names are already one generation.
 EOF
 }
 
@@ -1053,7 +1152,7 @@ test_docs_manual_step_and_script_silence() {
   if ! grep -F -q -- 'The coordinator keeps a note only when it opens with `plan` or `quiet`.' "$DOCS_FILE"; then
     problems="${problems}docs do not say a note is kept only when it opens with plan or quiet"$'\n'
   fi
-  if ! grep -F -q -- 'A plan is recorded as the open plan and later runs skip. A quiet note is not an open plan.' "$DOCS_FILE"; then
+  if ! grep -F -q -- 'A plan is recorded as the open plan and later knot looks skip. A quiet note is not an open plan.' "$DOCS_FILE"; then
     problems="${problems}docs do not say a plan is the open plan and a quiet note is not"$'\n'
   fi
   if ! grep -F -q -- 'A quiet note advances the cursor and wraps after Removal.' "$DOCS_FILE"; then
@@ -1061,6 +1160,12 @@ test_docs_manual_step_and_script_silence() {
   fi
   if ! grep -F -q -- 'A plan leaves the cursor on that bucket.' "$DOCS_FILE"; then
     problems="${problems}docs do not say a plan leaves the cursor on that bucket"$'\n'
+  fi
+  if ! grep -F -q -- 'An open change plan blocks only later change looks.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say an open change plan blocks only later change looks"$'\n'
+  fi
+  if ! grep -F -q -- 'The change look leaves the cursor alone. One worktree serves both looks.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the change look leaves the cursor alone and one worktree serves both looks"$'\n'
   fi
   if ! grep -F -q -- '`untangle done` clears the open plan and then advances.' "$DOCS_FILE"; then
     problems="${problems}docs do not say untangle done clears the open plan and then advances"$'\n'
@@ -1233,12 +1338,13 @@ test_guide_omits_slowfriday_notes() {
 }
 
 test_run_success_leaves_week_unstamped_and_probes_again() {
-  local test_name="Wednesday probe success leaves the note absent, a second run probes again, and an unset probe runs one agent"
+  local test_name="Wednesday probe success leaves the note absent, a second run probes again, and an unset probe runs the knot and change agents"
   local config_dir="$TEST_ROOT/run-ok-config"
   local repo_dir="$TEST_ROOT/run-ok-repo"
   local log="$TEST_ROOT/run-ok-log"
   local snapshot="$TEST_ROOT/run-ok-snapshot"
   local out_file="$TEST_ROOT/run-ok-out.txt"
+  local change_guide_expected="$TEST_ROOT/run-ok-change-guide.md"
   local repo_yml count ints status agents problems=""
 
   reset_run_env
@@ -1247,6 +1353,7 @@ test_run_success_leaves_week_unstamped_and_probes_again() {
     return
   }
   repo_yml="$repo_dir/untangle/config.yml"
+  write_expected_change_guide "$change_guide_expected"
   use_probe_stub "$log" "$snapshot"
   RUN_PROBE_STATUS=0
 
@@ -1319,14 +1426,20 @@ test_run_success_leaves_week_unstamped_and_probes_again() {
   if [[ "$count" != "2" ]]; then
     problems="${problems}unset probe invoked the probe, count=$count"$'\n'
   fi
-  if [[ "$agents" != "1" ]]; then
-    problems="${problems}unset probe expected one PATH agent, count=$agents"$'\n'
+  if [[ "$agents" != "2" ]]; then
+    problems="${problems}unset probe expected the knot and change agents, count=$agents"$'\n'
   fi
   if [[ -e "$repo_dir/untangle/notes/261014.md" ]]; then
     problems="${problems}unset probe wrote notes/261014.md"$'\n'
   fi
+  if ! files_match "$change_guide_expected" "$repo_dir/untangle/change-guide.md"; then
+    problems="${problems}unset probe change-guide.md bytes mismatch"$'\n'
+  fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — week left unstamped" "$out_file"; then
     problems="${problems}unset probe did not say the week was left unstamped"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change left unstamped" "$out_file"; then
+    problems="${problems}unset probe did not say the change was left unstamped"$'\n'
   fi
   if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
     problems="${problems}unset probe left progress_pid set"$'\n'
@@ -1340,13 +1453,17 @@ test_run_success_leaves_week_unstamped_and_probes_again() {
 }
 
 test_run_skips_when_current_note_exists() {
-  local test_name="existing notes/261014.md skips the probe and keeps the file bytes"
+  local test_name="a knot stamp still runs the change look, and a change stamp still runs the knot look"
   local config_dir="$TEST_ROOT/run-stamped-config"
   local repo_dir="$TEST_ROOT/run-stamped-repo"
   local log="$TEST_ROOT/run-stamped-log"
   local out_file="$TEST_ROOT/run-stamped-out.txt"
   local note="$repo_dir/untangle/notes/261014.md"
   local expected="$TEST_ROOT/run-stamped-expected"
+  local guide_expected="$TEST_ROOT/run-stamped-guide"
+  local change_guide_expected="$TEST_ROOT/run-stamped-change-guide.md"
+  local change_note="$repo_dir/untangle/notes/261014-change.md"
+  local change_expected="$TEST_ROOT/run-stamped-change-expected.md"
   local status count problems=""
 
   reset_run_env
@@ -1356,6 +1473,8 @@ test_run_skips_when_current_note_exists() {
   }
   printf '%s\n' 'already stamped this week' >"$note"
   cp "$note" "$expected"
+  cp "$repo_dir/untangle/guide.md" "$guide_expected"
+  write_expected_change_guide "$change_guide_expected"
   use_probe_stub "$log"
   RUN_PROBE_STATUS=0
 
@@ -1365,14 +1484,54 @@ test_run_skips_when_current_note_exists() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
   fi
-  if [[ "$count" != "0" ]]; then
-    problems="${problems}probe ran despite the stamp, count=$count"$'\n'
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}change look expected the probe once, got $count"$'\n'
   fi
   if ! files_match "$expected" "$note"; then
     problems="${problems}notes/261014.md bytes changed"$'\n'
   fi
+  if ! files_match "$guide_expected" "$repo_dir/untangle/guide.md"; then
+    problems="${problems}guide.md bytes changed"$'\n'
+  fi
+  if ! files_match "$change_guide_expected" "$repo_dir/untangle/change-guide.md"; then
+    problems="${problems}change look change-guide.md bytes mismatch"$'\n'
+  fi
   if ! grep -F -x -q -- "untangle: skip ${repo_dir} — week already stamped" "$out_file"; then
     problems="${problems}did not say the week was already stamped"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change left unstamped" "$out_file"; then
+    problems="${problems}change look did not leave the change unstamped"$'\n'
+  fi
+
+  rm -f -- "$note"
+  write_quiet_change_note "$change_note"
+  cp "$change_note" "$change_expected"
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}change stamp expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "2" ]]; then
+    problems="${problems}change stamp expected the probe once more, got $count"$'\n'
+  fi
+  if [[ -e "$note" ]]; then
+    problems="${problems}change stamp left a knot note"$'\n'
+  fi
+  if ! files_match "$change_expected" "$change_note"; then
+    problems="${problems}change stamp changed the change note"$'\n'
+  fi
+  if ! files_match "$guide_expected" "$repo_dir/untangle/guide.md"; then
+    problems="${problems}change stamp changed guide.md"$'\n'
+  fi
+  if ! files_match "$change_guide_expected" "$repo_dir/untangle/change-guide.md"; then
+    problems="${problems}change stamp changed change-guide.md"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — week left unstamped" "$out_file"; then
+    problems="${problems}change stamp did not leave the week unstamped"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — change already stamped" "$out_file"; then
+    problems="${problems}change stamp did not say the change was already stamped"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -1835,7 +1994,7 @@ test_run_window_edges() {
 }
 
 test_run_two_repos_probes_only_the_unstamped_one() {
-  local test_name="only the repo without notes/261014.md is probed"
+  local test_name="only the repo without this week's knot and change stamps is probed"
   local config_dir="$TEST_ROOT/run-two-config"
   local stamped="$TEST_ROOT/run-two-stamped"
   local open="$TEST_ROOT/run-two-open"
@@ -1855,6 +2014,7 @@ test_run_two_repos_probes_only_the_unstamped_one() {
     return
   }
   printf '%s\n' 'this week is done' >"$note"
+  printf '%s\n' 'quiet' 'change already considered' >"$stamped/untangle/notes/261014-change.md"
   cp "$note" "$expected"
   use_probe_stub "$log"
   RUN_PROBE_STATUS=0
@@ -1868,6 +2028,12 @@ test_run_two_repos_probes_only_the_unstamped_one() {
   fi
   if [[ "$stamped_count" != "0" ]]; then
     problems="${problems}stamped repo was probed, count=$stamped_count"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${stamped} — week already stamped" "$out_file"; then
+    problems="${problems}stamped repo did not say the week was already stamped"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${stamped} — change already stamped" "$out_file"; then
+    problems="${problems}stamped repo did not say the change was already stamped"$'\n'
   fi
   if [[ "$open_count" != "1" ]]; then
     problems="${problems}unstamped repo expected one probe, got $open_count"$'\n'
@@ -2743,11 +2909,51 @@ test_yaml_helpers_cursor_note_and_open_plan() {
   if ! yaml_expect "$kept" "open_plan=str:${dir}/notes/261014.md"; then
     problems="${problems}set_open_plan did not store the absolute note path"$'\n'
   fi
+  if ! yaml_expect "$kept" "open_change_plan=absent"; then
+    problems="${problems}set_open_plan set open_change_plan"$'\n'
+  fi
+
+  got=$(ruby_untangle open_change_plan_value "$ownership")
+  status=$?
+  if [[ "$status" -ne 0 || -n "$got" ]]; then
+    problems="${problems}open_change_plan_value without the key expected empty, status=$status got=$got"$'\n'
+  fi
+  ruby_untangle set_open_change_plan "$kept" "$dir/notes/261014-change.md"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}set_open_change_plan exited $status"$'\n'
+  fi
+  if ! yaml_expect "$kept" "open_change_plan=str:${dir}/notes/261014-change.md"; then
+    problems="${problems}set_open_change_plan did not store the absolute note path"$'\n'
+  fi
+  if ! yaml_expect "$kept" "open_plan=str:${dir}/notes/261014.md"; then
+    problems="${problems}set_open_change_plan changed open_plan"$'\n'
+  fi
+  if ! yaml_expect "$kept" "cursor=str:Ownership"; then
+    problems="${problems}set_open_change_plan changed the cursor"$'\n'
+  fi
+  if ! yaml_expect "$kept" "version=int:1"; then
+    problems="${problems}set_open_change_plan dropped version"$'\n'
+  fi
+  if ! yaml_expect "$kept" "trunk=blank"; then
+    problems="${problems}set_open_change_plan dropped the blank trunk"$'\n'
+  fi
+  got=$(ruby_untangle open_change_plan_value "$kept")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "${dir}/notes/261014-change.md" ]]; then
+    problems="${problems}open_change_plan_value expected the change note, status=$status got=$got"$'\n'
+  fi
+  got=$(ruby_untangle open_plan_value "$kept")
+  status=$?
+  if [[ "$status" -ne 0 || "$got" != "${dir}/notes/261014.md" ]]; then
+    problems="${problems}open_plan_value changed after set_open_change_plan, status=$status got=$got"$'\n'
+  fi
 
   local next="$dir/next.yml"
   local removal="$dir/removal.yml"
   local bare="$dir/bare.yml"
   cp "$ownership" "$next"
+  ruby_untangle set_open_change_plan "$next" "$dir/notes/261014-change.md"
   printf '%s\n' '---' 'version: 1' "trunk: ''" 'cursor: Removal' >"$removal"
   printf '%s\n' '---' 'version: 1' "trunk: ''" >"$bare"
 
@@ -2767,6 +2973,9 @@ test_yaml_helpers_cursor_note_and_open_plan() {
   fi
   if ! yaml_expect "$next" "open_plan=absent"; then
     problems="${problems}advance_cursor set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$next" "open_change_plan=str:${dir}/notes/261014-change.md"; then
+    problems="${problems}advance_cursor changed open_change_plan"$'\n'
   fi
 
   ruby_untangle advance_cursor "$removal"
@@ -2816,6 +3025,9 @@ test_yaml_helpers_cursor_note_and_open_plan() {
   if ! yaml_expect "$kept" "trunk=blank"; then
     problems="${problems}clear_open_plan dropped the blank trunk"$'\n'
   fi
+  if ! yaml_expect "$kept" "open_change_plan=str:${dir}/notes/261014-change.md"; then
+    problems="${problems}clear_open_plan changed open_change_plan"$'\n'
+  fi
 
   if [[ -n "$problems" ]]; then
     fail "$test_name" "$problems"
@@ -2864,8 +3076,8 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}first run expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}first run expected the agent once"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}first run expected the knot and change agents"$'\n'
   fi
   if [[ -z "$wt" || ! -d "$wt" || "$cwd" != "$wt" ]]; then
     problems="${problems}agent cwd is not the delivered worktree (cwd=$cwd worktree=$wt)"$'\n'
@@ -2940,10 +3152,20 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   if ! grep -F -x -q -- "untangle: ${repo_dir} — open plan" "$out_file"; then
     problems="${problems}first run did not say open plan"$'\n'
   fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change left unstamped" "$out_file"; then
+    problems="${problems}first run did not leave the change unstamped"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}first run set open_change_plan"$'\n'
+  fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- "${repo_dir}/untangle/notes/261014-change.md" "$record/arg-2-1"; then
+    problems="${problems}first run change prompt does not name the change note"$'\n'
+  fi
 
   cp "$note" "$TEST_ROOT/run-plan-note-kept.md"
   cp "$repo_yml" "$TEST_ROOT/run-plan-config-kept.yml"
   cp "$log_file" "$TEST_ROOT/run-plan-log-kept.md"
+  printf '%s\n' 'quiet' 'change already considered' >"$repo_dir/untangle/notes/261014-change.md"
   herdr_before=$(wc -l <"$herdr_log" | tr -d '[:space:]')
   invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
   status=$?
@@ -2951,7 +3173,7 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}same Wednesday expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
     problems="${problems}same Wednesday started the agent"$'\n'
   fi
   if [[ "$herdr_after" != "$herdr_before" ]]; then
@@ -2966,6 +3188,9 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
     problems="${problems}same Wednesday did not skip for the open plan"$'\n'
   fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — change already stamped" "$out_file"; then
+    problems="${problems}same Wednesday did not skip for the change stamp"$'\n'
+  fi
 
   old=$(git -C "$repo_dir" rev-parse origin/main)
   new=$(advance_bare_branch "$repo_dir" main) || {
@@ -2978,6 +3203,7 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
     return
   fi
   RUN_HERDR_LOG=$later_herdr
+  printf '%s\n' 'quiet' 'change already considered' >"$repo_dir/untangle/notes/261021-change.md"
   invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
   status=$?
   after=$(git -C "$repo_dir" rev-parse origin/main)
@@ -2990,7 +3216,7 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   if [[ -s "$later_herdr" ]]; then
     problems="${problems}2026-10-21 called herdr"$'\n'"$(cat "$later_herdr")"'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
     problems="${problems}2026-10-21 started the agent"$'\n'
   fi
   if ! files_match "$TEST_ROOT/run-plan-note-kept.md" "$note"; then
@@ -3004,6 +3230,9 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   fi
   if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
     problems="${problems}2026-10-21 did not skip for the open plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — change already stamped" "$out_file"; then
+    problems="${problems}2026-10-21 did not skip for the change stamp"$'\n'
   fi
 
   local status_out="$TEST_ROOT/run-plan-status-out.txt"
@@ -3126,8 +3355,8 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}first run expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}first run expected the agent once"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}first run expected the knot and change agents"$'\n'
   fi
   if ! files_match "$note_src" "$note"; then
     problems="${problems}quiet note bytes were not kept"$'\n'
@@ -3153,8 +3382,20 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if [[ ! -f "$record/arg-1-1" ]] || ! grep -F -q -- 'for the bucket Language only' "$record/arg-1-1"; then
     problems="${problems}first prompt does not name the Language bucket"$'\n'
   fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- 'for the bucket Language only' "$record/arg-2-1"; then
+    problems="${problems}change prompt does not name the Language bucket from the start of the tick"$'\n'
+  fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- "${repo_dir}/untangle/notes/261014-change.md" "$record/arg-2-1"; then
+    problems="${problems}change prompt does not name the change note"$'\n'
+  fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
     problems="${problems}first run did not say quiet note"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change left unstamped" "$out_file"; then
+    problems="${problems}first run did not leave the change unstamped"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}first run set open_change_plan"$'\n'
   fi
 
   cp "$note" "$TEST_ROOT/run-quiet-note-kept.md"
@@ -3163,8 +3404,8 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}same Wednesday expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}same Wednesday started the agent"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "3" ]]; then
+    problems="${problems}same Wednesday expected the change look once more"$'\n'
   fi
   if ! files_match "$TEST_ROOT/run-quiet-note-kept.md" "$note"; then
     problems="${problems}same Wednesday changed the quiet note"$'\n'
@@ -3178,25 +3419,31 @@ test_run_quiet_note_stamps_the_week_and_the_next_wednesday_runs() {
   if ! yaml_expect "$repo_yml" "open_plan=absent"; then
     problems="${problems}same Wednesday set open_plan"$'\n'
   fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}same Wednesday set open_change_plan"$'\n'
+  fi
+  if [[ ! -f "$record/arg-3-1" ]] || ! grep -F -q -- 'for the bucket Ownership only' "$record/arg-3-1"; then
+    problems="${problems}same Wednesday change prompt does not name Ownership"$'\n'
+  fi
 
   RUN_AGENT_NOTE=$next_note
   invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
   status=$?
   wt=$(worktree_from_output "$out_file" "$repo_dir")
-  cwd=$(cat "$record/cwd-2" 2>/dev/null || true)
+  cwd=$(cat "$record/cwd-4" 2>/dev/null || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}2026-10-21 expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
-    problems="${problems}2026-10-21 did not start the agent again"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "5" ]]; then
+    problems="${problems}2026-10-21 did not start the knot and change agents"$'\n'
   fi
   if [[ -z "$wt" || "$cwd" != "$wt" ]]; then
     problems="${problems}2026-10-21 agent cwd is not the worktree (cwd=$cwd worktree=$wt)"$'\n'
   fi
-  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- 'for the bucket Ownership only' "$record/arg-2-1"; then
+  if [[ ! -f "$record/arg-4-1" ]] || ! grep -F -q -- 'for the bucket Ownership only' "$record/arg-4-1"; then
     problems="${problems}2026-10-21 prompt does not name the Ownership bucket"$'\n'
   fi
-  if [[ ! -f "$record/arg-2-1" ]] || ! grep -F -q -- "$next_note" "$record/arg-2-1"; then
+  if [[ ! -f "$record/arg-4-1" ]] || ! grep -F -q -- "$next_note" "$record/arg-4-1"; then
     problems="${problems}2026-10-21 prompt does not name notes/261021.md"$'\n'
   fi
   if ! files_match "$note_src" "$next_note"; then
@@ -3262,8 +3509,8 @@ test_run_ownership_cursor_stays_after_plan_note() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}expected the agent once"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}expected the knot and change agents"$'\n'
   fi
   if [[ ! -f "$record/arg-1-1" ]]; then
     problems="${problems}agent prompt was not recorded"$'\n'
@@ -3302,7 +3549,7 @@ test_run_ownership_cursor_stays_after_plan_note() {
 }
 
 test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
-  local test_name="Plan and planning notes are rejected and a later plan note is kept"
+  local test_name="Plan and planning knot and change notes are rejected and later plan notes are kept"
   local config_dir="$TEST_ROOT/run-reject-config"
   local repo_dir="$TEST_ROOT/run-reject-repo"
   local out_file="$TEST_ROOT/run-reject-out.txt"
@@ -3310,8 +3557,12 @@ test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
   local plan_src="$TEST_ROOT/run-reject-plan.md"
   local case_src="$TEST_ROOT/run-reject-case.md"
   local prefix_src="$TEST_ROOT/run-reject-prefix.md"
+  local change_plan_src="$TEST_ROOT/run-reject-change-plan.md"
+  local change_case_src="$TEST_ROOT/run-reject-change-case.md"
+  local change_prefix_src="$TEST_ROOT/run-reject-change-prefix.md"
   local log_src="$TEST_ROOT/run-reject-log.md"
   local note="$repo_dir/untangle/notes/261014.md"
+  local change_note="$repo_dir/untangle/notes/261014-change.md"
   local log_file="$repo_dir/untangle/log.md"
   local repo_yml status problems=""
 
@@ -3323,11 +3574,16 @@ test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
   repo_yml="$repo_dir/untangle/config.yml"
   write_opening_note "$case_src" "Plan"
   write_opening_note "$prefix_src" "planning"
+  write_opening_note "$change_case_src" "Plan"
+  write_opening_note "$change_prefix_src" "planning"
   write_plan_note "$plan_src"
+  write_change_plan_note "$change_plan_src"
   write_agent_log "$log_src"
   use_agent_mock "$record"
   RUN_AGENT_NOTE=$note
   RUN_AGENT_NOTE_SRC=$case_src
+  RUN_AGENT_CHANGE_NOTE=$change_note
+  RUN_AGENT_CHANGE_NOTE_SRC=$change_case_src
   RUN_AGENT_LOG_FILE=$log_file
   RUN_AGENT_LOG_SRC=$log_src
 
@@ -3336,58 +3592,87 @@ test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}Plan tick expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}Plan tick expected the agent once"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}Plan tick expected the knot and change agents"$'\n'
   fi
   if [[ -e "$note" ]]; then
     problems="${problems}Plan note was kept"$'\n'
   fi
+  if [[ -e "$change_note" ]]; then
+    problems="${problems}Plan change note was kept"$'\n'
+  fi
   if ! yaml_expect "$repo_yml" "open_plan=absent"; then
     problems="${problems}Plan note set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}Plan change note set open_change_plan"$'\n'
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — note rejected; the week is unstamped" "$out_file"; then
     problems="${problems}Plan tick did not reject the note"$'\n'
   fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change note rejected; the change is unstamped" "$out_file"; then
+    problems="${problems}Plan tick did not reject the change note"$'\n'
+  fi
 
   RUN_AGENT_NOTE_SRC=$prefix_src
+  RUN_AGENT_CHANGE_NOTE_SRC=$change_prefix_src
   invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
   status=$?
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}planning tick expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
-    problems="${problems}planning tick did not start the agent"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "4" ]]; then
+    problems="${problems}planning tick did not start the knot and change agents"$'\n'
   fi
   if [[ -e "$note" ]]; then
     problems="${problems}planning note was kept"$'\n'
   fi
+  if [[ -e "$change_note" ]]; then
+    problems="${problems}planning change note was kept"$'\n'
+  fi
   if ! yaml_expect "$repo_yml" "open_plan=absent"; then
     problems="${problems}planning note set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}planning change note set open_change_plan"$'\n'
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — note rejected; the week is unstamped" "$out_file"; then
     problems="${problems}planning tick did not reject the note"$'\n'
   fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change note rejected; the change is unstamped" "$out_file"; then
+    problems="${problems}planning tick did not reject the change note"$'\n'
+  fi
 
   RUN_AGENT_NOTE_SRC=$plan_src
+  RUN_AGENT_CHANGE_NOTE_SRC=$change_plan_src
   invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
   status=$?
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}plan tick expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "3" ]]; then
-    problems="${problems}plan tick did not start the agent"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "6" ]]; then
+    problems="${problems}plan tick did not start the knot and change agents"$'\n'
   fi
   if ! files_match "$plan_src" "$note"; then
     problems="${problems}plan note bytes were not kept"$'\n'
   fi
+  if ! files_match "$change_plan_src" "$change_note"; then
+    problems="${problems}change plan note bytes were not kept"$'\n'
+  fi
   if ! yaml_expect "$repo_yml" "open_plan=str:${note}"; then
     problems="${problems}plan note did not set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=str:${change_note}"; then
+    problems="${problems}change plan note did not set open_change_plan"$'\n'
   fi
   if ! yaml_expect "$repo_yml" "cursor=absent"; then
     problems="${problems}plan note wrote a cursor"$'\n'
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — open plan" "$out_file"; then
     problems="${problems}plan tick did not say open plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — open change plan" "$out_file"; then
+    problems="${problems}plan tick did not say open change plan"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -3425,8 +3710,8 @@ test_run_agent_failure_then_quiet_note_is_not_an_open_plan() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}failed agent expected untangle exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}failed agent was not started"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}failed agent was not started for the knot and the change"$'\n'
   fi
   if [[ -e "$note" ]]; then
     problems="${problems}failed agent wrote a note"$'\n'
@@ -3440,6 +3725,9 @@ test_run_agent_failure_then_quiet_note_is_not_an_open_plan() {
   if ! grep -F -x -q -- "untangle: skip ${repo_dir} — agent failed; the week is unstamped" "$out_file"; then
     problems="${problems}failed agent did not say the week is unstamped"$'\n'
   fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — agent failed; the change is unstamped" "$out_file"; then
+    problems="${problems}failed agent did not say the change is unstamped"$'\n'
+  fi
 
   RUN_AGENT_STATUS=0
   RUN_AGENT_NOTE=$note
@@ -3451,8 +3739,8 @@ test_run_agent_failure_then_quiet_note_is_not_an_open_plan() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}quiet retry expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
-    problems="${problems}quiet retry did not start the agent"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "4" ]]; then
+    problems="${problems}quiet retry did not start the knot and change agents"$'\n'
   fi
   if ! files_match "$note_src" "$note"; then
     problems="${problems}quiet note bytes were not kept"$'\n'
@@ -3475,13 +3763,14 @@ test_run_agent_failure_then_quiet_note_is_not_an_open_plan() {
 }
 
 test_run_existing_open_plan_skips_without_fetch_or_agent() {
-  local test_name="an existing open plan skips the run and keeps the key"
+  local test_name="an existing open plan and open change plan skip the run and keep the keys"
   local config_dir="$TEST_ROOT/run-open-config"
   local repo_dir="$TEST_ROOT/run-open-repo"
   local out_file="$TEST_ROOT/run-open-out.txt"
   local record="$TEST_ROOT/run-open-record"
   local herdr_log="$TEST_ROOT/run-open-herdr.log"
   local kept="$TEST_ROOT/already-open-plan.md"
+  local kept_change="$TEST_ROOT/already-open-change-plan.md"
   local repo_yml old new stale after status problems=""
 
   reset_run_env
@@ -3491,6 +3780,7 @@ test_run_existing_open_plan_skips_without_fetch_or_agent() {
   }
   repo_yml="$repo_dir/untangle/config.yml"
   yaml_set_key "$repo_yml" open_plan "$kept"
+  yaml_set_key "$repo_yml" open_change_plan "$kept_change"
   cp "$repo_yml" "$TEST_ROOT/run-open-config-kept.yml"
   old=$(git -C "$repo_dir" rev-parse origin/main)
   new=$(advance_bare_branch "$repo_dir" main) || {
@@ -3529,8 +3819,14 @@ test_run_existing_open_plan_skips_without_fetch_or_agent() {
   if ! yaml_expect "$repo_yml" "open_plan=str:${kept}"; then
     problems="${problems}open plan key was not left in place"$'\n'
   fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=str:${kept_change}"; then
+    problems="${problems}open change plan key was not left in place"$'\n'
+  fi
   if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
     problems="${problems}did not skip for the open plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open change plan" "$out_file"; then
+    problems="${problems}did not skip for the open change plan"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -3642,8 +3938,8 @@ test_run_removal_quiet_note_wraps_cursor_to_language() {
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
   fi
-  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
-    problems="${problems}expected the agent once"$'\n'
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}expected the knot and change agents"$'\n'
   fi
   if [[ ! -f "$record/arg-1-1" ]]; then
     problems="${problems}agent prompt was not recorded"$'\n'
@@ -3672,6 +3968,401 @@ test_run_removal_quiet_note_wraps_cursor_to_language() {
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
     problems="${problems}did not say quiet note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_open_plan_still_runs_the_change_look() {
+  local test_name="an open plan still runs the change look on the cursor bucket"
+  local config_dir="$TEST_ROOT/run-change-open-config"
+  local repo_dir="$TEST_ROOT/run-change-open-repo"
+  local out_file="$TEST_ROOT/run-change-open-out.txt"
+  local record="$TEST_ROOT/run-change-open-record"
+  local herdr_log="$TEST_ROOT/run-change-open-herdr.log"
+  local note_src="$TEST_ROOT/run-change-open-note-src.md"
+  local prompt_file="$TEST_ROOT/run-change-open-prompt.txt"
+  local guide_expected="$TEST_ROOT/run-change-open-guide.md"
+  local change_guide_expected="$TEST_ROOT/run-change-open-change-guide.md"
+  local kept="$TEST_ROOT/run-change-open-kept-plan.md"
+  local knot_note="$repo_dir/untangle/notes/261014.md"
+  local knot_expected="$TEST_ROOT/run-change-open-knot.md"
+  local change_note="$repo_dir/untangle/notes/261014-change.md"
+  local repo_yml wt cwd creates status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  yaml_set_key "$repo_yml" cursor Ownership
+  printf '%s\n' 'plan' 'already open' >"$kept"
+  yaml_set_key "$repo_yml" open_plan "$kept"
+  printf '%s\n' 'plan' 'knot note stays' >"$knot_note"
+  cp "$knot_note" "$knot_expected"
+  cp "$repo_dir/untangle/guide.md" "$guide_expected"
+  write_change_plan_note "$note_src"
+  write_expected_change_prompt "$prompt_file" "$repo_dir" "261014" "Ownership"
+  write_expected_change_guide "$change_guide_expected"
+  use_agent_mock "$record"
+  RUN_AGENT_CHANGE_NOTE=$change_note
+  RUN_AGENT_CHANGE_NOTE_SRC=$note_src
+  RUN_HERDR_LOG=$herdr_log
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  cwd=$(cat "$record/cwd-1" 2>/dev/null || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main" "$herdr_log" || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$creates" != "1" ]]; then
+    problems="${problems}expected one herdr create, got $creates"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}expected the change agent once"$'\n'
+  fi
+  if [[ -z "$wt" || ! -d "$wt" || "$cwd" != "$wt" ]]; then
+    problems="${problems}agent cwd is not the delivered worktree (cwd=$cwd worktree=$wt)"$'\n'
+  fi
+  if [[ "$(cat "$record/argc-1" 2>/dev/null || true)" != "2" ]]; then
+    problems="${problems}agent argc is not 2"$'\n'
+  fi
+  if [[ "$(cat "$record/arg-1-0" 2>/dev/null || true)" != "-p" ]]; then
+    problems="${problems}agent argv does not start with -p"$'\n'
+  fi
+  if [[ -e "$record/arg-1-2" ]]; then
+    problems="${problems}agent received an extra argument"$'\n'
+  fi
+  if [[ ! -f "$record/arg-1-1" ]] || ! files_match "$prompt_file" "$record/arg-1-1"; then
+    problems="${problems}change prompt mismatch"$'\n'"$(diff -u "$prompt_file" "$record/arg-1-1" 2>/dev/null || true)"$'\n'
+  fi
+  if ! files_match "$change_guide_expected" "$repo_dir/untangle/change-guide.md"; then
+    problems="${problems}change-guide.md was not written"$'\n'
+  fi
+  if ! files_match "$guide_expected" "$repo_dir/untangle/guide.md"; then
+    problems="${problems}guide.md bytes changed"$'\n'
+  fi
+  if ! files_match "$knot_expected" "$knot_note"; then
+    problems="${problems}knot note bytes changed"$'\n'
+  fi
+  if ! files_match "$note_src" "$change_note"; then
+    problems="${problems}change plan note was not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=str:${change_note}"; then
+    problems="${problems}open_change_plan is not the absolute change note path"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=str:${kept}"; then
+    problems="${problems}open_plan changed"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}cursor changed"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "progress_pid=absent"; then
+    problems="${problems}left progress_pid set"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open plan" "$out_file"; then
+    problems="${problems}did not skip the knot look for the open plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — open change plan" "$out_file"; then
+    problems="${problems}did not say open change plan"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_change_plan_blocks_only_the_change_look() {
+  local test_name="an open change plan blocks the next change look and the knot look still runs"
+  local config_dir="$TEST_ROOT/run-change-block-config"
+  local repo_dir="$TEST_ROOT/run-change-block-repo"
+  local out_file="$TEST_ROOT/run-change-block-out.txt"
+  local record="$TEST_ROOT/run-change-block-record"
+  local change_src="$TEST_ROOT/run-change-block-change.md"
+  local quiet_src="$TEST_ROOT/run-change-block-quiet.md"
+  local trap_src="$TEST_ROOT/run-change-block-trap.md"
+  local prompt_file="$TEST_ROOT/run-change-block-prompt.txt"
+  local knot_note="$repo_dir/untangle/notes/261014.md"
+  local knot_expected="$TEST_ROOT/run-change-block-knot.md"
+  local change_note="$repo_dir/untangle/notes/261014-change.md"
+  local next_note="$repo_dir/untangle/notes/261021.md"
+  local next_change="$repo_dir/untangle/notes/261021-change.md"
+  local repo_yml wt cwd status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  printf '%s\n' 'already stamped this week' >"$knot_note"
+  cp "$knot_note" "$knot_expected"
+  write_change_plan_note "$change_src"
+  write_quiet_note "$quiet_src"
+  write_change_plan_note "$trap_src"
+  use_agent_mock "$record"
+  RUN_AGENT_CHANGE_NOTE=$change_note
+  RUN_AGENT_CHANGE_NOTE_SRC=$change_src
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}first Wednesday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "1" ]]; then
+    problems="${problems}first Wednesday expected the change agent once"$'\n'
+  fi
+  if ! files_match "$change_src" "$change_note"; then
+    problems="${problems}first Wednesday did not keep the change plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=str:${change_note}"; then
+    problems="${problems}first Wednesday did not record open_change_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}first Wednesday set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=absent"; then
+    problems="${problems}first Wednesday wrote a cursor"$'\n'
+  fi
+  if ! files_match "$knot_expected" "$knot_note"; then
+    problems="${problems}first Wednesday changed the knot note"$'\n'
+  fi
+
+  write_expected_prompt "$prompt_file" "$repo_dir" "261021" "Language"
+  RUN_AGENT_NOTE=$next_note
+  RUN_AGENT_NOTE_SRC=$quiet_src
+  RUN_AGENT_CHANGE_NOTE=$next_change
+  RUN_AGENT_CHANGE_NOTE_SRC=$trap_src
+  invoke_run "$config_dir" "2026-10-21T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  cwd=$(cat "$record/cwd-2" 2>/dev/null || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}next Wednesday expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}next Wednesday expected the knot agent once more"$'\n'
+  fi
+  if [[ -e "$record/arg-3-0" ]]; then
+    problems="${problems}next Wednesday started a second agent"$'\n'
+  fi
+  if [[ -z "$wt" || "$cwd" != "$wt" ]]; then
+    problems="${problems}next Wednesday agent cwd is not the worktree (cwd=$cwd worktree=$wt)"$'\n'
+  fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! files_match "$prompt_file" "$record/arg-2-1"; then
+    problems="${problems}next Wednesday knot prompt mismatch"$'\n'"$(diff -u "$prompt_file" "$record/arg-2-1" 2>/dev/null || true)"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: skip ${repo_dir} — open change plan" "$out_file"; then
+    problems="${problems}next Wednesday did not skip for the open change plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
+    problems="${problems}next Wednesday did not say quiet note"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=str:${change_note}"; then
+    problems="${problems}next Wednesday changed open_change_plan"$'\n'
+  fi
+  if [[ -e "$next_change" ]]; then
+    problems="${problems}next Wednesday wrote a change note"$'\n'
+  fi
+  if ! files_match "$change_src" "$change_note"; then
+    problems="${problems}next Wednesday changed the change plan"$'\n'
+  fi
+  if ! files_match "$quiet_src" "$next_note"; then
+    problems="${problems}next Wednesday did not keep the quiet knot note"$'\n'
+  fi
+  if ! files_match "$knot_expected" "$knot_note"; then
+    problems="${problems}next Wednesday changed the previous knot note"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}next Wednesday left the cursor off Ownership"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}next Wednesday set open_plan"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_both_looks_share_one_worktree() {
+  local test_name="one Wednesday tick runs the knot look then the change look in one worktree"
+  local config_dir="$TEST_ROOT/run-both-config"
+  local repo_dir="$TEST_ROOT/run-both-repo"
+  local out_file="$TEST_ROOT/run-both-out.txt"
+  local record="$TEST_ROOT/run-both-record"
+  local herdr_log="$TEST_ROOT/run-both-herdr.log"
+  local knot_src="$TEST_ROOT/run-both-knot.md"
+  local change_src="$TEST_ROOT/run-both-change.md"
+  local knot_prompt="$TEST_ROOT/run-both-knot-prompt.txt"
+  local change_prompt="$TEST_ROOT/run-both-change-prompt.txt"
+  local guide_expected="$TEST_ROOT/run-both-guide.md"
+  local change_guide="$repo_dir/untangle/change-guide.md"
+  local change_guide_expected="$TEST_ROOT/run-both-change-guide.md"
+  local note="$repo_dir/untangle/notes/261014.md"
+  local change_note="$repo_dir/untangle/notes/261014-change.md"
+  local repo_yml wt cwd1 cwd2 creates status problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  repo_yml="$repo_dir/untangle/config.yml"
+  printf '%s\n' 'custom change guide bytes' >"$change_guide"
+  cp "$change_guide" "$change_guide_expected"
+  cp "$repo_dir/untangle/guide.md" "$guide_expected"
+  write_quiet_note "$knot_src"
+  write_quiet_change_note "$change_src"
+  write_expected_prompt "$knot_prompt" "$repo_dir" "261014" "Language"
+  write_expected_change_prompt "$change_prompt" "$repo_dir" "261014" "Language"
+  use_agent_mock "$record"
+  RUN_AGENT_NOTE=$note
+  RUN_AGENT_NOTE_SRC=$knot_src
+  RUN_AGENT_CHANGE_NOTE=$change_note
+  RUN_AGENT_CHANGE_NOTE_SRC=$change_src
+  RUN_HERDR_LOG=$herdr_log
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  wt=$(worktree_from_output "$out_file" "$repo_dir")
+  cwd1=$(cat "$record/cwd-1" 2>/dev/null || true)
+  cwd2=$(cat "$record/cwd-2" 2>/dev/null || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main" "$herdr_log" || true)
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$creates" != "1" ]]; then
+    problems="${problems}expected one herdr create, got $creates"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ "$(agent_invocation_count "$record")" != "2" ]]; then
+    problems="${problems}expected the knot agent then the change agent"$'\n'
+  fi
+  if [[ -z "$wt" || "$cwd1" != "$wt" || "$cwd2" != "$wt" ]]; then
+    problems="${problems}both agents did not share the worktree (cwd1=$cwd1 cwd2=$cwd2 worktree=$wt)"$'\n'
+  fi
+  if [[ "$cwd1" == "$repo_dir" ]]; then
+    problems="${problems}agent started in the registered checkout"$'\n'
+  fi
+  if [[ ! -f "$record/arg-1-1" ]] || ! files_match "$knot_prompt" "$record/arg-1-1"; then
+    problems="${problems}knot prompt mismatch"$'\n'"$(diff -u "$knot_prompt" "$record/arg-1-1" 2>/dev/null || true)"$'\n'
+  fi
+  if [[ ! -f "$record/arg-2-1" ]] || ! files_match "$change_prompt" "$record/arg-2-1"; then
+    problems="${problems}change prompt mismatch"$'\n'"$(diff -u "$change_prompt" "$record/arg-2-1" 2>/dev/null || true)"$'\n'
+  fi
+  if ! grep -F -q -- 'for the bucket Language only' "$record/arg-2-1"; then
+    problems="${problems}change prompt does not name Language"$'\n'
+  fi
+  if ! files_match "$change_guide_expected" "$change_guide"; then
+    problems="${problems}existing change-guide.md bytes changed"$'\n'
+  fi
+  if ! files_match "$guide_expected" "$repo_dir/untangle/guide.md"; then
+    problems="${problems}guide.md bytes changed"$'\n'
+  fi
+  if ! files_match "$knot_src" "$note"; then
+    problems="${problems}quiet knot note was not kept"$'\n'
+  fi
+  if ! files_match "$change_src" "$change_note"; then
+    problems="${problems}quiet change note was not kept"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "cursor=str:Ownership"; then
+    problems="${problems}quiet knot note left the cursor off Ownership"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_plan=absent"; then
+    problems="${problems}quiet knot note set open_plan"$'\n'
+  fi
+  if ! yaml_expect "$repo_yml" "open_change_plan=absent"; then
+    problems="${problems}quiet change note set open_change_plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet note" "$out_file"; then
+    problems="${problems}did not say quiet note"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet change note" "$out_file"; then
+    problems="${problems}did not say quiet change note"$'\n'
+  fi
+
+  if [[ -n "$problems" ]]; then
+    fail "$test_name" "$problems" "output:" "$(cat "$out_file")"
+    return
+  fi
+  pass "$test_name"
+}
+
+test_run_probe_writes_the_change_guide_once() {
+  local test_name="a probed Wednesday writes the change guide and calls the probe once"
+  local config_dir="$TEST_ROOT/run-change-probe-config"
+  local repo_dir="$TEST_ROOT/run-change-probe-repo"
+  local out_file="$TEST_ROOT/run-change-probe-out.txt"
+  local log="$TEST_ROOT/run-change-probe-log"
+  local marker="$TEST_ROOT/run-change-probe-marker"
+  local probe="$TEST_ROOT/change-guide-probe"
+  local guide_expected="$TEST_ROOT/run-change-probe-guide.md"
+  local change_guide_expected="$TEST_ROOT/run-change-probe-change-guide.md"
+  local agents_before agents_after status count problems=""
+
+  reset_run_env
+  prepare_registered_repo "$repo_dir" "$config_dir" || {
+    fail "$test_name" "prepare failed"
+    return
+  }
+  cp "$repo_dir/untangle/guide.md" "$guide_expected"
+  write_expected_change_guide "$change_guide_expected"
+  cat >"$probe" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$1" >>"$log"
+if [[ -f "\$1/untangle/change-guide.md" ]]; then
+  printf '%s\n' present >>"$marker"
+else
+  printf '%s\n' missing >>"$marker"
+fi
+exit 0
+EOF
+  chmod +x "$probe"
+  RUN_PROBE=$probe
+  agents_before=$(path_agent_invocations)
+
+  invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
+  status=$?
+  agents_after=$(path_agent_invocations)
+  count=$(path_count_in_log "$log" "$repo_dir")
+  if [[ "$status" -ne 0 ]]; then
+    problems="${problems}expected exit 0, got $status"$'\n'
+  fi
+  if [[ "$count" != "1" ]]; then
+    problems="${problems}expected the probe once, got $count"$'\n'
+  fi
+  if [[ "$agents_after" != "$agents_before" ]]; then
+    problems="${problems}probe seam started a PATH agent"$'\n'
+  fi
+  if ! grep -F -x -q -- present "$marker"; then
+    problems="${problems}change guide was missing when the probe ran"$'\n'
+  fi
+  if ! files_match "$change_guide_expected" "$repo_dir/untangle/change-guide.md"; then
+    problems="${problems}change-guide.md bytes mismatch"$'\n'
+  fi
+  if ! files_match "$guide_expected" "$repo_dir/untangle/guide.md"; then
+    problems="${problems}guide.md bytes changed"$'\n'
+  fi
+  if [[ -e "$repo_dir/untangle/notes/261014.md" || -e "$repo_dir/untangle/notes/261014-change.md" ]]; then
+    problems="${problems}probe wrote a note"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — week left unstamped" "$out_file"; then
+    problems="${problems}did not leave the week unstamped"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — change left unstamped" "$out_file"; then
+    problems="${problems}did not leave the change unstamped"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -4078,6 +4769,10 @@ run_test test_run_ownership_cursor_stays_after_plan_note
 run_test test_run_rejects_plan_case_and_planning_then_keeps_a_plan
 run_test test_run_agent_failure_then_quiet_note_is_not_an_open_plan
 run_test test_run_existing_open_plan_skips_without_fetch_or_agent
+run_test test_run_open_plan_still_runs_the_change_look
+run_test test_run_change_plan_blocks_only_the_change_look
+run_test test_run_both_looks_share_one_worktree
+run_test test_run_probe_writes_the_change_guide_once
 run_test test_run_invalid_cursor_skips_before_fetch
 run_test test_run_removal_quiet_note_wraps_cursor_to_language
 run_test test_done_without_open_plan_leaves_ownership_cursor

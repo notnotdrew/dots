@@ -210,25 +210,27 @@ def note_word(path)
   ""
 end
 
-def open_plan_value(data)
+def open_plan_value(data, key = "open_plan")
   return "" unless data.is_a?(Hash)
 
-  key =
-    if data.key?("open_plan")
-      "open_plan"
-    elsif data.key?(:open_plan)
-      :open_plan
+  string_key = key.to_s
+  symbol_key = string_key.to_sym
+  found =
+    if data.key?(string_key)
+      string_key
+    elsif data.key?(symbol_key)
+      symbol_key
     end
-  return "" if key.nil?
+  return "" if found.nil?
 
-  value = data[key]
+  value = data[found]
   value.is_a?(String) ? value : ""
 end
 
 # Store an absolute path string. Other keys stay.
-def store_open_plan(data, note_path)
+def store_open_plan(data, note_path, key = "open_plan")
   data = {} unless data.is_a?(Hash)
-  data["open_plan"] = File.expand_path(note_path.to_s)
+  data[key.to_s] = File.expand_path(note_path.to_s)
   data
 end
 
@@ -362,6 +364,14 @@ when "set_open_plan"
 when "clear_open_plan"
   repo_yml = ARGV.fetch(1)
   data = clear_open_plan(load_yaml(repo_yml))
+  dump_yaml(repo_yml, data)
+
+when "open_change_plan_value"
+  puts open_plan_value(load_yaml(ARGV.fetch(1)), "open_change_plan")
+
+when "set_open_change_plan"
+  repo_yml = ARGV.fetch(1)
+  data = store_open_plan(load_yaml(repo_yml), ARGV.fetch(2), "open_change_plan")
   dump_yaml(repo_yml, data)
 
 when "advance_cursor"

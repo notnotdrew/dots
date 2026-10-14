@@ -25,13 +25,15 @@ A second init keeps a single registry entry and a single gitignore line. A secon
 
 `untangle run` considers each registered repository on Wednesday, from 08:00 until 16:00 local time. 08:00 is inside the window. 16:00 is outside.
 
-`untangle/notes/<yymmdd>.md` is the weekly stamp. When that note exists, the repo is skipped. A live `progress_pid` in `untangle/config.yml` blocks another run. A pid whose process is gone is cleared, and the tick continues. A missing `untangle/config.yml` skips the repo. If preflight fails, the note is not written, so the week stays unstamped and a later Wednesday tick can retry.
+`untangle/notes/<yymmdd>.md` is the weekly stamp. When that note exists, the knot look is skipped. A live `progress_pid` in `untangle/config.yml` blocks another run. A pid whose process is gone is cleared, and the tick continues. A missing `untangle/config.yml` skips the repo. If preflight fails, the note is not written, so the week stays unstamped and a later Wednesday tick can retry.
 
 An eligible run fetches the trunk (blank means main), opens `drew/untangle-<yymmdd>` with herdr, and links the worktree `untangle/` at the registered directory. A delivery failure leaves the week unstamped.
 
-The orchestrator runs in the worktree. It follows the guide for the cursor's bucket only, may delegate a code read, and writes the log and the note. The coordinator keeps a note only when it opens with `plan` or `quiet`. A plan is recorded as the open plan and later runs skip. A quiet note is not an open plan.
+The orchestrator runs in the worktree. It follows the guide for the cursor's bucket only, may delegate a code read, and writes the log and the note. The coordinator keeps a note only when it opens with `plan` or `quiet`. A plan is recorded as the open plan and later knot looks skip. A quiet note is not an open plan.
 
 A quiet note advances the cursor and wraps after Removal. A plan leaves the cursor on that bucket.
+
+On that same Wednesday tick, a change look asks what valuable change this bucket makes slow or unsafe. Its note is `untangle/notes/<yymmdd>-change.md`. `untangle/change-guide.md` is written on a tick when that file is missing. An open change plan blocks only later change looks. The change look leaves the cursor alone. One worktree serves both looks.
 
 ## Done
 
