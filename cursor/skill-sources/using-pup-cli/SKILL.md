@@ -108,7 +108,7 @@ Before executing a mutation:
 5. Preserve interactive confirmation. Do not add `--yes` unless the user explicitly requested unattended execution.
 6. Re-read the resource after the operation and report the result.
 
-Never expose OAuth tokens, API keys, application keys, or credential files.
+Never expose OAuth tokens, API keys, application keys, or credential files. Never retrieve them either. Pup reads its own credentials. Agents do not.
 
 ## Agent Mode and Scripts
 
@@ -122,14 +122,28 @@ pup --no-agent monitors list --tags="env:prod" | jq '.[].name'
 
 ## Authentication and Errors
 
+Call the installed `pup` (`/opt/homebrew/bin/pup` on this machine). Do not look up its credential.
+
+Pup stores OAuth tokens itself. With `token_storage: file` or `DD_TOKEN_STORAGE=file`, that is `~/.config/pup/` (`tokens_<site>.json`, mode `0600`). On macOS the default is the login keychain, locked to the installed Homebrew binary. Agents do not read either store. A `security` lookup raises a keychain prompt for an item named `pup`.
+
+When authentication fails, ask Drew to reauth. For any other pup failure, report it. Do not work around either by calling the Datadog API yourself.
+
+Never:
+
+- run `security`, including `find-generic-password`, `find-internet-password`, or `dump-keychain`
+- copy, re-sign, or run `pup` from another path (`/tmp/pup-debug` and the same kind of copy)
+- read `~/.config/pup/` or `~/Library/Application Support/pup/`, print a token, or write one to a file
+- search the environment, shell history, or other files for `DD_API_KEY` or `DD_APP_KEY`
+
 Check authentication only when a command reports an authentication problem:
 
 ```bash
 pup auth status
-pup auth test
 ```
 
-- `401`: refresh or repeat `pup auth login`; do not blindly retry.
+If that is not authenticated, ask Drew to reauth with `pup auth login`. Run `pup auth refresh` once when the token is expired, then ask Drew to reauth if it is still invalid.
+
+- `401`: ask Drew to reauth with `pup auth login`, or run `pup auth refresh` once. Do not hunt for another credential.
 - `403`: report the missing permission or scope; reauthentication alone may not fix it.
 - Rate limits or oversized responses: narrow the time range, filters, or result limit before retrying.
 - Unknown command or flag: inspect the installed command's `--help`; do not rely on remembered syntax.
