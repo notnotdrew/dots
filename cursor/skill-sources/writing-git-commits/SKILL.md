@@ -87,10 +87,12 @@ The default is no body. The diff is the what and nearly always the how. Code doe
 
 Add a body only for something the diff cannot show:
 
-- why: the failure, constraint, or request that led here. For a bug fix this is the bug, what actually went wrong; the subject already says the fix, and the diff does not show the old behavior
+- why: the failure or constraint that led here. For a bug fix this is the bug, what actually went wrong; the subject already says the fix, and the diff does not show the old behavior
 - how, only when the approach is surprising enough that a reader might undo it
 - a behavior change a casual reader would miss
 - an alternative that was tried and rejected, and why
+
+Who asked is never the why. Do not write "the reviewer asked for it", "Drew wanted this", or "address review feedback". If the request rests on a failure or constraint the diff cannot show, write that. If the request is the whole story, there is no body.
 
 These are not reasons for a body: the change spans several files, the subject had to be simplified, the change feels big, or the work took a long time. Size is not context.
 
@@ -152,6 +154,7 @@ Check:
 - subject is one plain clause you would say out loud
 - subject passes the completion test and is imperative, capitalized, unpunctuated, within 72 characters
 - body is absent, or every sentence survives the diff-redundancy test
+- the why, when present, is a failure or constraint, never who asked
 - body is at most two short paragraphs
 - body names no files, functions, or things left unchanged
 - blank line before the body, lines wrap at 72
