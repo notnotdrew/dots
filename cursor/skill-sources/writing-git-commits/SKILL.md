@@ -92,7 +92,7 @@ Add a body only for something the diff cannot show:
 - a behavior change a casual reader would miss
 - an alternative that was tried and rejected, and why
 
-Who asked is never the why. Do not write "the reviewer asked for it", "Drew wanted this", or "address review feedback". If the request rests on a failure or constraint the diff cannot show, write that. If the request is the whole story, there is no body.
+Who asked is never the why. A body that opens with someone's name and "asked" is the request, not the reason. Strip that, then run the diff-redundancy test on what is left. If nothing survives, there is no body.
 
 These are not reasons for a body: the change spans several files, the subject had to be simplified, the change feels big, or the work took a long time. Size is not context.
 
@@ -219,6 +219,30 @@ Use a fast model for mechanical review jobs
 
 Auto started routing to a slower model and every job inherited it.
 ```
+
+**Who asked is not a why**
+
+```text
+Add Knip to the script list
+
+Blake asked for it next to the other scripts.
+```
+
+```text
+Drop trailing blank lines
+
+Blake asked to remove the extra blank line at the end of the
+audio helpers.
+```
+
+```text
+Drop the removed helper from the test note
+
+Blake asked the comment to name only the function that still
+exists.
+```
+
+Each of these is the subject alone. "Blake asked" is not a why, and what follows it is already in the subject or the diff.
 
 ## Reference Files
 

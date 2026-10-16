@@ -68,7 +68,7 @@ Touching many files is not a trigger.
 
 ## What the Body Should Do
 
-The body explains why, in one or two short paragraphs. It does not describe what changed; the diff does that. It does not list the files or pieces touched, and it does not say what was left alone. Who asked is not that why. "The reviewer asked for it" does not belong in the body. Write the failure or constraint under the request, or leave the body out.
+The body explains why, in one or two short paragraphs. It does not describe what changed; the diff does that. It does not list the files or pieces touched, and it does not say what was left alone. Who asked is not that why. "Blake asked for it" does not belong in the body. Strip the name, then keep a failure or constraint the diff cannot show, or leave the body out.
 
 ## Common Patterns
 
