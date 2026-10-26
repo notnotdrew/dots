@@ -208,7 +208,7 @@ install_untangle_link() {
 deliver_worktree() {
   local repo_path=$1
   local yymmdd=$2
-  local repo_abs trunk branch herdr path create_status json_file list_file
+  local repo_abs trunk branch checkout herdr path create_status json_file list_file
 
   DELIVERED_WORKTREE=""
   repo_abs=$repo_path
@@ -238,6 +238,8 @@ deliver_worktree() {
   fi
 
   branch="drew/untangle-${yymmdd}"
+  # Beside the registered checkout. Herdr's default is ~/.herdr/worktrees.
+  checkout="${repo_abs}.${branch//\//-}"
   herdr=${UNTANGLE_HERDR:-herdr}
   json_file=$(mktemp "${TMPDIR:-/tmp}/untangle-herdr.XXXXXX") || {
     retry_later "$repo_path" "delivery failed"
@@ -254,6 +256,8 @@ deliver_worktree() {
     --cwd "$repo_abs" \
     --branch "$branch" \
     --base "origin/${trunk}" \
+    --path "$checkout" \
+    --no-focus \
     >"$json_file" 2>/dev/null; then
     create_status=1
   fi
@@ -351,7 +355,9 @@ A quiet note says what change was considered and why this bucket is not the cons
 EOF
 }
 
-# cwd is the delivered worktree. Arguments are only -p and the prompt.
+# cwd is the delivered worktree. -p is print mode; the next argument is the
+# prompt. --trust lets a headless run write the note. Without it the agent
+# stops on workspace trust and the week stays unstamped.
 run_orchestrator() {
   local worktree=$1
   local prompt=$2
@@ -361,7 +367,7 @@ run_orchestrator() {
   status=0
   (
     cd "$worktree" || exit 1
-    "$agent" -p "$prompt"
+    "$agent" -p "$prompt" --trust
   ) || status=$?
   return "$status"
 }

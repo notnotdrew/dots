@@ -338,6 +338,13 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || exit 1
       shift 2
       ;;
+    --path)
+      [[ $# -ge 2 ]] || exit 1
+      shift 2
+      ;;
+    --no-focus|--focus|--trust-repository)
+      shift
+      ;;
     *)
       shift
       ;;
@@ -1149,6 +1156,18 @@ test_docs_manual_step_and_script_silence() {
   fi
   if ! grep -F -q -- 'The orchestrator runs in the worktree. It follows the guide for the cursor'"'"'s bucket only, may delegate a code read, and writes the log and the note.' "$DOCS_FILE"; then
     problems="${problems}docs do not say the orchestrator runs in the worktree for the cursor's bucket"$'\n'
+  fi
+  if ! grep -F -q -- 'The checkout is the registered directory plus `.drew-untangle-<yymmdd>`.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the checkout sits beside the registered directory"$'\n'
+  fi
+  if ! grep -F -q -- 'The create passes `--path` and `--no-focus`.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the create passes --path and --no-focus"$'\n'
+  fi
+  if ! grep -F -q -- 'It is `agent -p` with `--trust`, so a headless run can write the note.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the orchestrator passes --trust"$'\n'
+  fi
+  if ! grep -F -q -- 'Without `--trust` the agent stops on workspace trust and the week stays unstamped.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a missing --trust leaves the week unstamped"$'\n'
   fi
   if ! grep -F -q -- 'The coordinator keeps a note only when it opens with `plan` or `quiet`.' "$DOCS_FILE"; then
     problems="${problems}docs do not say a note is kept only when it opens with plan or quiet"$'\n'
@@ -2233,7 +2252,7 @@ test_run_fetches_main_and_links_untangle() {
   after=$(git -C "$repo_dir" rev-parse origin/main)
   head=$(git -C "$repo_dir" rev-parse HEAD)
   wt=$(worktree_from_output "$out_file" "$repo_dir")
-  expected="worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main"
+  expected="worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main --path ${repo_dir}.drew-untangle-261014 --no-focus"
 
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
@@ -2327,7 +2346,7 @@ test_run_trunk_develop_fetches_that_base() {
   status=$?
   count=$(path_count_in_log "$log" "$repo_dir")
   after=$(git -C "$repo_dir" rev-parse origin/develop)
-  expected="worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/develop"
+  expected="worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/develop --path ${repo_dir}.drew-untangle-261014 --no-focus"
 
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
@@ -2465,7 +2484,7 @@ test_run_herdr_create_failure_without_branch_retries() {
   invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
   status=$?
   count=$(path_count_in_log "$log" "$repo_dir")
-  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main" "$herdr_log" || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main --path ${repo_dir}.drew-untangle-261014 --no-focus" "$herdr_log" || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}failed create expected exit 0, got $status"$'\n'
   fi
@@ -2493,7 +2512,7 @@ test_run_herdr_create_failure_without_branch_retries() {
   invoke_run "$config_dir" "2026-10-14T10:00:00" "$out_file"
   status=$?
   count=$(path_count_in_log "$log" "$repo_dir")
-  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main" "$herdr_log" || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main --path ${repo_dir}.drew-untangle-261014 --no-focus" "$herdr_log" || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}retry expected exit 0, got $status"$'\n'
   fi
@@ -3092,13 +3111,16 @@ test_run_plan_note_records_open_plan_and_later_wednesdays_skip() {
   if [[ "$cwd" == "$repo_dir" ]]; then
     problems="${problems}agent started in the registered checkout"$'\n'
   fi
-  if [[ "$(cat "$record/argc-1" 2>/dev/null || true)" != "2" ]]; then
-    problems="${problems}agent argc is not 2"$'\n'
+  if [[ "$(cat "$record/argc-1" 2>/dev/null || true)" != "3" ]]; then
+    problems="${problems}agent argc is not 3"$'\n'
   fi
   if [[ "$(cat "$record/arg-1-0" 2>/dev/null || true)" != "-p" ]]; then
     problems="${problems}agent argv does not start with -p"$'\n'
   fi
-  if [[ -e "$record/arg-1-2" ]]; then
+  if [[ "$(cat "$record/arg-1-2" 2>/dev/null || true)" != "--trust" ]]; then
+    problems="${problems}agent argv does not pass --trust"$'\n'
+  fi
+  if [[ -e "$record/arg-1-3" ]]; then
     problems="${problems}agent received an extra argument"$'\n'
   fi
   if [[ ! -f "$record/arg-1-1" ]]; then
@@ -4025,7 +4047,7 @@ test_run_open_plan_still_runs_the_change_look() {
   status=$?
   wt=$(worktree_from_output "$out_file" "$repo_dir")
   cwd=$(cat "$record/cwd-1" 2>/dev/null || true)
-  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main" "$herdr_log" || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main --path ${repo_dir}.drew-untangle-261014 --no-focus" "$herdr_log" || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
   fi
@@ -4038,13 +4060,16 @@ test_run_open_plan_still_runs_the_change_look() {
   if [[ -z "$wt" || ! -d "$wt" || "$cwd" != "$wt" ]]; then
     problems="${problems}agent cwd is not the delivered worktree (cwd=$cwd worktree=$wt)"$'\n'
   fi
-  if [[ "$(cat "$record/argc-1" 2>/dev/null || true)" != "2" ]]; then
-    problems="${problems}agent argc is not 2"$'\n'
+  if [[ "$(cat "$record/argc-1" 2>/dev/null || true)" != "3" ]]; then
+    problems="${problems}agent argc is not 3"$'\n'
   fi
   if [[ "$(cat "$record/arg-1-0" 2>/dev/null || true)" != "-p" ]]; then
     problems="${problems}agent argv does not start with -p"$'\n'
   fi
-  if [[ -e "$record/arg-1-2" ]]; then
+  if [[ "$(cat "$record/arg-1-2" 2>/dev/null || true)" != "--trust" ]]; then
+    problems="${problems}agent argv does not pass --trust"$'\n'
+  fi
+  if [[ -e "$record/arg-1-3" ]]; then
     problems="${problems}agent received an extra argument"$'\n'
   fi
   if [[ ! -f "$record/arg-1-1" ]] || ! files_match "$prompt_file" "$record/arg-1-1"; then
@@ -4246,7 +4271,7 @@ test_run_both_looks_share_one_worktree() {
   wt=$(worktree_from_output "$out_file" "$repo_dir")
   cwd1=$(cat "$record/cwd-1" 2>/dev/null || true)
   cwd2=$(cat "$record/cwd-2" 2>/dev/null || true)
-  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main" "$herdr_log" || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/untangle-261014 --base origin/main --path ${repo_dir}.drew-untangle-261014 --no-focus" "$herdr_log" || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
   fi
