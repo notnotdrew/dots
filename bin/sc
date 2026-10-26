@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Start Cursor Agent with the simplify-code skill.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+#
+#   sc                  /simplify-code
+#   sc "on head"        /simplify-code "on head"
+#   sc path/to-file     /simplify-code path/to-file
+set -euo pipefail
+
+prompt=/simplify-code
+if [[ $# -gt 0 ]]; then
+  target="$*"
+  case "$target" in
+    *[[:space:]]*|*[\"\\]*)
+      target=${target//\\/\\\\}
+      target=${target//\"/\\\"}
+      prompt="/simplify-code \"${target}\""
+      ;;
+    *)
+      prompt="/simplify-code ${target}"
+      ;;
+  esac
+fi
+
+exec agent "$prompt"
