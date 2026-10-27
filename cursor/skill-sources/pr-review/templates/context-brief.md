@@ -8,14 +8,14 @@
 - PRURL: <github-pr-url>
 - Title: <pull-request-title>
 - Author: <github-login>
-- Mode: <Standard|Deep>
+- Mode: <Standard|Deep|Quick>
 - ModeSelection: <default|explicit>
 - ObservedBase: <full-base-commit-sha>
 - ObservedHead: <full-head-commit-sha>
 - CurrentEpoch: <R1|R2|...>
 
 Observed revisions are evidence, not review-series identity.
-`ModeSelection` records whether the mode was defaulted or explicitly requested. Standard permits either value; Deep requires `explicit`. Preserve this provenance rather than automatically escalating Standard to Deep.
+`ModeSelection` records whether the mode was defaulted or explicitly requested. Standard permits either value; Deep and Quick require `explicit`. Preserve this provenance rather than automatically escalating Standard to Deep or Quick.
 `CurrentEpoch` counts review runs on this PR, starting at R1; the launcher names the disposable checkout `pr-<PRNumber>-<CurrentEpoch>`. `ObservedHead` is the head that run examined.
 
 ## Intent

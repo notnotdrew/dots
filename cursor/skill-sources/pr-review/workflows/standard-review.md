@@ -27,7 +27,7 @@ Mode: Standard
 ModeSelection: default
 ```
 
-An explicit Standard request means `ModeSelection: explicit`. The entry point routes explicit Deep, existing-series, full-rebuild, and single-finding requests before this workflow begins. If one reaches this route, stop and report the routing mismatch; do not silently run Standard instead.
+An explicit Standard request means `ModeSelection: explicit`. The entry point routes explicit Deep, explicit Quick, existing-series, full-rebuild, and single-finding requests before this workflow begins. If one reaches this route, stop and report the routing mismatch; do not silently run Standard instead.
 
 Run `scripts/gh-pr-parse` against the original reference:
 

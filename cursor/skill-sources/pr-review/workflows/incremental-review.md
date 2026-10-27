@@ -2,6 +2,8 @@
 
 Use this workflow when the resolved GitHub PR already has a canonical review series, when `--full-rebuild` is explicitly selected, or when `--finding F<positive-integer>` requests one finding revision. Incremental review updates the same three canonical files; it never creates per-run or per-finding canonical artifacts.
 
+Quick does not use this workflow. If `--mode quick` reaches it, stop and use [quick-review.md](quick-review.md).
+
 Apply [review-contracts.md](../references/review-contracts.md) and reuse the coordinator stages in [standard-review.md](standard-review.md), including isolated gathering from [isolated-jobs.md](../references/isolated-jobs.md). Standard's initial-only series rejection and directory-rename publication do not apply to this update path. For explicit Deep mode, reuse the planning, broader-context, justified-overlap, readiness, and independent-verification requirements in [deep-review.md](deep-review.md), not its initial-series resolution or publication. This file defines recovery, same-head handling, inheritance, and update publication.
 
 Keep Linear, PR metadata, Git history, and the review checkout read-only. Never change issue state, edit reviewed files, switch or mutate the user's PR branch worktree, reply on existing threads, post issue comments, or let a reviewer mutate canonical artifacts. After successful artifact publication, the coordinator may draft an unpublished (`PENDING`) GitHub review per Standard's pending-review step; never submit it unless Drew explicitly asks later. Artifact-series writes, that pending draft, and removal of a local disposable epoch checkout created by this invocation remain coordinator-only operations. A cloud review never calls WorkTrunk and never removes the project clone.
@@ -97,6 +99,8 @@ For a normal incremental run:
 5. select focused reviewers for newly relevant or changed risks;
 6. synthesize new candidates together with affected prior findings through the shared synthesis boundary; and
 7. derive current coverage, verdicts, and outcome from the resulting current ledger state.
+
+A finding came from Quick when its latest `DispositionHistory` entry names Quick, or when the published series `Mode` is Quick and that finding's history does not name a Standard or Deep verification. On a new head, a `--full-rebuild`, or a same-head `UNABLE TO REVIEW` retry, do not inherit such a finding as already verified. Recheck it under the selected Standard or Deep rules before retaining, dismissing, or carrying its disposition. Quick evidence is a lead, not Standard or Deep verification. Do not recheck a finding whose latest history entry is already a Standard or Deep verification. Do not change Standard or Deep depth, planning, overlap, or independent verification for findings that did not come from Quick. `--finding` still revises only the requested finding; when that finding came from Quick, recheck it under Standard, and do not widen the revision to every Quick finding. A ready same-head review remains the Section 2 no-op even when the published `Mode` is Quick. Do not bypass that no-op because the published mode and the selected mode differ.
 
 Explicit Deep mode applies the Deep planning and overlap rules to affected and broadly relevant scope. Before a Deep final compilation, independently verify every finding retained in the current review, including an inherited finding whose prior run lacks current, independent evidence.
 

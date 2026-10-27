@@ -5,14 +5,14 @@
 - Owner: <github-owner>
 - Repository: <github-repository>
 - PRNumber: <positive-integer>
-- Mode: <Standard|Deep>
+- Mode: <Standard|Deep|Quick>
 - ModeSelection: <default|explicit>
 - ObservedHead: <full-head-commit-sha>
 - CurrentEpoch: <R1|R2|...>
 - Readiness: <ready|UNABLE TO REVIEW>
 - UnresolvedMaterialDecisions: <none|concise unresolved material dispute or Purpose decision>
 
-`ModeSelection` records selection provenance and prevents automatic escalation: Standard permits `default` or `explicit`, while Deep requires `explicit`.
+`ModeSelection` records selection provenance and prevents automatic escalation: Standard permits `default` or `explicit`, while Deep and Quick require `explicit`.
 `UnresolvedMaterialDecisions` feeds the outcome table in `review-contracts.md`.
 `CurrentEpoch` counts review runs on this PR, starting at R1, and matches the other two artifacts.
 

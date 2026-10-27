@@ -1,11 +1,11 @@
 ---
 name: pr-review
-description: "Reviews and updates GitHub pull requests using PERFECT: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, Taste. Use for Standard reviews by default, explicitly requested Deep reviews, or follow-up review updates."
+description: "Reviews and updates GitHub pull requests using PERFECT: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, Taste. Use for Standard reviews by default, explicitly requested Deep or Quick reviews, or follow-up review updates."
 ---
 
 # PR Review
 
-Review or update a GitHub pull request with the artifact-backed PERFECT workflow. Standard is the default; Deep is available by explicit selection. Apply PERFECT in priority order: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, then Taste.
+Review or update a GitHub pull request with the artifact-backed PERFECT workflow. Standard is the default; Deep and Quick are available only by explicit selection. Apply PERFECT in priority order: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, then Taste.
 
 ## Quick Start
 
@@ -21,6 +21,7 @@ repository containing the pull request:
 pr-review 42
 pr-review https://github.com/org/repo/pull/42
 pr-review --mode deep 42
+pr-review --mode quick 42
 pr-review --finding F01 42
 ```
 
@@ -39,12 +40,12 @@ Use [scripts/gh-pr-parse](scripts/gh-pr-parse) to validate and parse the referen
 
 - **PR number**: e.g. `42`
 - **PR URL**: e.g. `https://github.com/org/repo/pull/42`
-- **Mode**: omitted or `--mode standard` for Standard; `--mode deep` for explicit Deep
+- **Mode**: omitted or `--mode standard` for Standard; `--mode deep` for explicit Deep; `--mode quick` for explicit Quick
 - **Update controls**: `--full-rebuild` or `--finding F<positive-integer>`
 
 Run both forms from the repository that contains the pull request. A local review does that so WorkTrunk can create or locate a disposable epoch checkout without mutating the user's PR branch worktree. A cloud review uses that clone as the review checkout.
 
-Standard is the omitted-mode default. Deep must be selected explicitly and never results from automatic escalation.
+Standard is the omitted-mode default. Deep and Quick must be selected explicitly and never result from automatic escalation. Quick is never the default.
 
 A review is a cloud review only when `CURSOR_AGENT_SOCKET` is set and this command succeeds and prints exactly `managed`:
 
@@ -67,7 +68,7 @@ Read same-head no-op, epoch, and readiness from the selected root only. A ready 
 
 A local review checkout is disposable and epoch-scoped: `pr-<number>-R<epochOrdinal>` (for example `pr-7166-R1`). It is created at that epoch's `ObservedHead` and must never mutate the user's PR branch worktree. A cloud review does not create that branch or a WorkTrunk worktree. It reviews the project clone at the observed head, ignores the epoch branch-name requirement, and never removes that clone. `CHECKOUT_BRANCH` remains the epoch label for identity only. Checkouts are evidence; the series under the selected root is the review identity.
 
-When the current GitHub head equals the selected series' current `ObservedHead` and readiness is already `ready`, a default re-review is a no-op. Use `--full-rebuild` or `--finding` to force more work on an unchanged head. A prior `UNABLE TO REVIEW` on the same head may be retried under the same `CurrentEpoch`.
+When the current GitHub head equals the selected series' current `ObservedHead` and readiness is already `ready`, a default re-review is a no-op. Use `--full-rebuild` or `--finding` to force more work on an unchanged head. Quick rejects both flags, so a ready Quick review of the same head stays a no-op. A prior `UNABLE TO REVIEW` on the same head may be retried under the same `CurrentEpoch`.
 
 `--finding` requires an existing review series and one existing ID matching `F0*[1-9][0-9]*`. Match by integer so `F1`, `F01`, and `F001` select the same stored record. New IDs display with at least two digits (`F01`); additional digits are allowed, and existing three-digit IDs stay as stored. Use Standard verification depth. It is incompatible with `--mode deep` and `--full-rebuild`. A full rebuild also requires an existing series.
 
@@ -75,23 +76,36 @@ When the current GitHub head equals the selected series' current `ObservedHead` 
 
 Resolve PR identity and the canonical series path under the selected `SERIES_ROOT` before choosing a workflow. The other root is not this series:
 
-1. If the canonical series path is absent, use [standard-review.md](workflows/standard-review.md) for omitted or explicit Standard, or [deep-review.md](workflows/deep-review.md) for explicitly selected Deep.
-2. If the series path exists, route to [incremental-review.md](workflows/incremental-review.md) before inspecting its contents so that workflow can recover an interrupted publication or report a precise collision. Inherit unaffected evidence by default; `--full-rebuild` selects its full-rebuild path under the selected mode.
-3. Reject `--full-rebuild` or `--finding` when the series path is absent. An empty, partial, invalid, or noncanonical existing path is a collision or recovery blocker, not an initial review.
+1. Reject `--mode quick` combined with `--finding` or `--full-rebuild` before any workflow starts.
+2. Explicit Quick uses [quick-review.md](workflows/quick-review.md) whether or not a series exists. Do not send Quick through the incremental workflow.
+3. If the canonical series path is absent, use [standard-review.md](workflows/standard-review.md) for omitted or explicit Standard, or [deep-review.md](workflows/deep-review.md) for explicitly selected Deep.
+4. If the series path exists for omitted or explicit Standard, or for explicit Deep, route to [incremental-review.md](workflows/incremental-review.md) before inspecting its contents so that workflow can recover an interrupted publication or report a precise collision. Inherit unaffected evidence by default; `--full-rebuild` selects its full-rebuild path under the selected mode.
+5. Reject `--full-rebuild` or `--finding` when the series path is absent. An empty, partial, invalid, or noncanonical existing path is a collision or recovery blocker, not an initial review.
 
 The selected workflow owns the complete procedure. Do not replace it with an inline single-agent review or duplicate Standard stages in the entry point.
 
 ## Shared Workflow Boundaries
 
-Every route reuses the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, pending GitHub review drafting, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, inheritance, and recoverable replacement while preserving those shared boundaries.
+Standard, Deep, and incremental review reuse the contracts and Standard coordinator stages for isolated gathering, readiness, bounded synthesis, ledger-derived PERFECT compilation, exactly-three-file persistence, pending GitHub review drafting, and ownership-aware cleanup. Deep changes planning, context breadth, justified reviewer overlap, and verification depth. Incremental review adds recovery, inheritance, and recoverable replacement while preserving those shared boundaries.
+
+Quick stays in one session. It reads the diff and the changed files, reuses checkout, publication, and pending review, and does not start the gatherer, reviewers, or synthesis.
 
 Standard may recommend a later Deep review but must complete under Standard guarantees or return `UNABLE TO REVIEW`. Deep must independently verify every retained actionable finding. Incremental review revalidates changed and dependency-affected scope, preserves unaffected history, and performs a full rebuild only when explicitly requested or when broad invalidation makes inheritance unsafe.
 
 ## Role Loading
 
-The coordinator executes the selected workflow in this session. Isolated jobs run in fresh agents and return through files. Follow [isolated-jobs.md](references/isolated-jobs.md). Do not open gatherer-only files or stack skill bodies in the coordinator session.
+The coordinator executes the selected workflow in this session. On Standard, Deep, and incremental routes, isolated jobs run in fresh agents and return through files. Follow [isolated-jobs.md](references/isolated-jobs.md) on those routes. Do not open gatherer-only files or stack skill bodies in the coordinator session.
 
-Coordinator loads:
+Quick loads:
+
+- [review-contracts.md](references/review-contracts.md)
+- [perfect-principles.md](references/perfect-principles.md) when compiling
+- [pending-github-review.md](references/pending-github-review.md) after successful artifact publication
+- [context-brief.md](templates/context-brief.md), [findings-ledger.md](templates/findings-ledger.md), and [perfect-review.md](templates/perfect-review.md) when writing staging
+
+Quick does not load [isolated-jobs.md](references/isolated-jobs.md), [reviewer-orchestration.md](references/reviewer-orchestration.md), [finding-synthesis.md](references/finding-synthesis.md), [context-gathering.md](references/context-gathering.md), or [language-skill-mapping.md](references/language-skill-mapping.md).
+
+Coordinator loads on Standard, Deep, and incremental routes:
 
 - [review-contracts.md](references/review-contracts.md)
 - [isolated-jobs.md](references/isolated-jobs.md)
@@ -122,7 +136,7 @@ Keep Linear, PR metadata, Git history, and the reviewed checkout read-only. Do n
 - Review code, not the author.
 - Do not block on taste.
 - Do not invent missing requirements.
-- Focus on changed behavior and its immediate callers, models, tests, history, and boundaries.
+- Focus on changed behavior and its immediate callers, models, tests, history, and boundaries. Quick does not trace callers; it reads the diff and the changed files.
 - Do not expand into unrelated refactoring requests.
 - Skip generated files, lockfiles, binary assets, and prose-only files as primary review targets unless changed behavior depends on them.
 - Focused reviewers load only stack skills named in their handoff; preserve unmatched-language limitations as coverage gaps.

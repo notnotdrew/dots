@@ -1,6 +1,6 @@
 # PR Review Contracts
 
-These contracts define the stable vocabulary and artifact shape shared by initial, Deep, and incremental review. Workflow files define orchestration and publication.
+These contracts define the stable vocabulary and artifact shape shared by initial, Deep, incremental, and Quick review. Workflow files define orchestration and publication.
 
 ## Review Modes
 
@@ -14,7 +14,13 @@ Deep must be selected explicitly. It adds a planning pass, broader subsystem and
 
 Standard may recommend a later Deep review, but it never switches modes automatically. A Standard review must finish under the Standard guarantee or report a gap or `UNABLE TO REVIEW`.
 
-All three artifacts record `ModeSelection: default|explicit` next to `Mode`. This field records selection provenance rather than review depth. Deep requires `ModeSelection: explicit`; Standard permits either value. A recommendation to run Deep does not alter the current artifact's mode or selection provenance, preventing automatic escalation.
+### Quick
+
+Quick must be selected explicitly. An initial Quick review reads the pull request diff and the changed files in one session. A new head reviews only the diff since the prior `ObservedHead`. A ready review of the same head is a no-op. `--finding` and `--full-rebuild` are rejected. It does not run isolated gathering, reviewers, or synthesis, and it never results from automatic escalation. All three artifacts record `Mode: Quick`.
+
+A later Standard or Deep run rechecks findings that came from Quick and does not treat Quick verification as Standard or Deep verification. A finding came from Quick when its latest `DispositionHistory` entry names Quick, or when the published series `Mode` is Quick and that finding's history does not name a Standard or Deep verification.
+
+All three artifacts record `ModeSelection: default|explicit` next to `Mode`. This field records selection provenance rather than review depth. Deep and Quick require `ModeSelection: explicit`; Standard permits either value. Quick is never the default. A recommendation to run Deep does not alter the current artifact's mode or selection provenance, preventing automatic escalation.
 
 ## Review-Series Identity
 

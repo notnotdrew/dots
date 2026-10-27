@@ -6,7 +6,7 @@
 - Repository: <github-repository>
 - PRNumber: <positive-integer>
 - PRURL: <github-pr-url>
-- Mode: <Standard|Deep>
+- Mode: <Standard|Deep|Quick>
 - ModeSelection: <default|explicit>
 - ObservedHead: <full-head-commit-sha>
 - CurrentEpoch: <R1|R2|...>
@@ -14,7 +14,7 @@
 - ContextArtifact: context-brief.md
 - LedgerArtifact: findings-ledger.md
 
-`ModeSelection` records selection provenance and prevents automatic escalation: Standard permits `default` or `explicit`, while Deep requires `explicit`.
+`ModeSelection` records selection provenance and prevents automatic escalation: Standard permits `default` or `explicit`, while Deep and Quick require `explicit`.
 `CurrentEpoch` counts review runs on this PR, starting at R1, and matches the other two artifacts.
 
 ## Readiness Summary

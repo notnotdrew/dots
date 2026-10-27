@@ -1,5 +1,7 @@
 # Isolated Review Jobs
 
+Quick review does not use this file. It stays in one session and launches none of these jobs.
+
 Keep the coordinator small. Gathering, Deep planning, focused review, synthesis,
 and the pending-comment jobs run in fresh agents and return through files. The
 coordinator reads the files, then decides.
