@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Fixture tests for `prrr start --requested`: leave an in-flight review alone,
 # still no-op a same head, and start when the PR is new or the head has moved.
+# Quick mode is checked by sourcing prrr: alt-q wiring, and --mode quick on the
+# pane command without --full-rebuild.
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +34,51 @@ assert_not_logged() {
   local name=$1 needle=$2
   if grep -F -q -- "$needle" "$log"; then
     printf 'not ok  %s\nfound %s in:\n%s\n' "$name" "$needle" "$(cat "$log")"
+    failures=1
+  else
+    printf 'ok  %s\n' "$name"
+  fi
+}
+
+assert_contains() {
+  local name=$1 needle=$2 body=$3
+  if grep -F -q -- "$needle" <<<"$body"; then
+    printf 'ok  %s\n' "$name"
+  else
+    printf 'not ok  %s\nmissing %s in:\n%s\n' "$name" "$needle" "$body"
+    failures=1
+  fi
+}
+
+pane_line() {
+  grep -F 'pane run' "$log" || true
+}
+
+assert_pane_has() {
+  local name=$1 needle=$2
+  local line
+  line="$(pane_line)"
+  if grep -F -q -- "$needle" <<<"$line"; then
+    printf 'ok  %s\n' "$name"
+  else
+    printf 'not ok  %s\nmissing %s in pane run:\n%s\nlog:\n%s\nstderr:\n%s\n' \
+      "$name" "$needle" "$line" "$(cat "$log")" "$(cat "$err")"
+    failures=1
+  fi
+}
+
+assert_pane_lacks() {
+  local name=$1 needle=$2
+  local line
+  line="$(pane_line)"
+  if [[ -z "$line" ]]; then
+    printf 'not ok  %s\nno pane run in:\n%s\nstderr:\n%s\n' \
+      "$name" "$(cat "$log")" "$(cat "$err")"
+    failures=1
+    return
+  fi
+  if grep -F -q -- "$needle" <<<"$line"; then
+    printf 'not ok  %s\nfound %s in pane run:\n%s\n' "$name" "$needle" "$line"
     failures=1
   else
     printf 'ok  %s\n' "$name"
@@ -201,6 +248,61 @@ run_prrr() {
   last_status=$status
 }
 
+# Source prrr in a subshell so die() cannot exit the test script. The
+# environment matches run_prrr; $log is cleared before the call.
+# Assignments have to be in the subshell itself. A prefix on source lasts
+# only for that command, so PATH would point at the real herdr afterwards.
+call_sourced() {
+  local status=0
+  local dir=
+  if [[ "${1:-}" == --cd ]]; then
+    dir=$2
+    shift 2
+  fi
+  : >"$log"
+  (
+    if [[ -n "$dir" ]]; then
+      cd "$dir" || exit 1
+    fi
+    export PRRR_ARTIFACTS_ROOT="$art"
+    export PRRR_DEV_ROOT="$dev"
+    export PRRR_RESOLVE_CHECKOUT="$bin/resolve-review-checkout"
+    export PATH="$bin:${PATH}"
+    # shellcheck disable=SC1090
+    source "$PRRR"
+    "$@"
+  ) >"$out" 2>"$err" || status=$?
+  last_status=$status
+}
+
+fn_body() {
+  local fn=$1
+  (
+    export PRRR_ARTIFACTS_ROOT="$art"
+    export PRRR_DEV_ROOT="$dev"
+    export PRRR_RESOLVE_CHECKOUT="$bin/resolve-review-checkout"
+    export PATH="$bin:${PATH}"
+    # shellcheck disable=SC1090
+    source "$PRRR"
+    declare -f "$fn"
+  )
+}
+
+# declare -f reprints a case arm with a trailing semicolon. Return the
+# rerun_review line for that arm, without the semicolon.
+case_arm_call() {
+  local body=$1 arm=$2
+  local found
+  found="$(awk -v arm="${arm})" '
+    $1 == arm { capture = 1; next }
+    capture && $1 == ";;" { exit }
+    capture && $0 ~ /rerun_review/ { print; exit }
+  ' <<<"$body")"
+  found="${found#"${found%%[![:space:]]*}"}"
+  found="${found%"${found##*[![:space:]]}"}"
+  printf '%s\n' "${found%;}"
+}
+
 # A PR with no workspace and no in-progress review starts, without taking focus.
 reset_artifacts
 write_snapshot
@@ -213,6 +315,8 @@ assert_eq 'new review starts' \
 assert_logged 'new review opens a workspace' 'worktree open'
 assert_logged 'new review does not take focus' '--no-focus'
 assert_not_logged 'new review adds no extra tab' 'tab create'
+assert_not_logged 'new review passes no mode' '--mode'
+assert_not_logged 'new review passes no full rebuild' '--full-rebuild'
 
 # Same head already reviewed: resolver no-op, no workspace touched.
 reset_artifacts
@@ -356,6 +460,94 @@ assert_eq 'direct start exits 0' 0 "$last_status"
 assert_logged 'direct start adds a tab' 'tab create'
 assert_logged 'direct start does not take focus' '--no-focus'
 assert_eq 'direct start is not left alone' '' "$(leave_line)"
+assert_not_logged 'direct start passes no mode' '--mode'
+assert_not_logged 'direct start passes no full rebuild' '--full-rebuild'
+
+# Quick reaches pr-review as --mode quick and does not force a new epoch.
+# An empty snapshot makes launch open a workspace, so the herdr log has pane run.
+reset_artifacts
+mkdir -p "$art/acme--widgets/pr-7"
+write_snapshot
+write_resolve review "$checkout" "$head_a"
+review_dir="$art/acme--widgets/pr-7"
+
+call_sourced rerun_review "$review_dir" quick
+assert_eq 'quick rerun exits 0' 0 "$last_status"
+assert_pane_has 'quick rerun passes --mode quick' '--mode quick'
+assert_pane_lacks 'quick rerun does not force a rebuild' '--full-rebuild'
+
+call_sourced rerun_review "$review_dir" deep
+assert_eq 'deep rerun exits 0' 0 "$last_status"
+assert_pane_has 'deep rerun passes --mode deep' '--mode deep'
+assert_pane_has 'deep rerun forces a rebuild' '--full-rebuild'
+
+call_sourced rerun_review "$review_dir"
+assert_eq 'plain rerun exits 0' 0 "$last_status"
+assert_pane_has 'plain rerun passes the PR URL' "$url"
+assert_pane_lacks 'plain rerun passes no mode' '--mode'
+assert_pane_lacks 'plain rerun does not force a rebuild' '--full-rebuild'
+
+call_sourced start_review_from_url "$url" quick
+assert_eq 'quick start exits 0' 0 "$last_status"
+assert_pane_has 'quick start passes --mode quick' '--mode quick'
+assert_pane_lacks 'quick start does not force a rebuild' '--full-rebuild'
+
+# A local home row is action, label, review dir. The open arm rebuilds the
+# PR URL and has to forward quick onto that pane command.
+open_row="$(printf 'open\tlocal\t%s' "$review_dir")"
+call_sourced start_review_from_row "$open_row" quick
+assert_eq 'open row quick exits 0' 0 "$last_status"
+assert_pane_has 'open row quick passes the PR URL' "$url"
+assert_pane_has 'open row quick passes --mode quick' '--mode quick'
+assert_pane_lacks 'open row quick does not force a rebuild' '--full-rebuild'
+
+# A new home row carries the PR URL in the last field. That arm has to forward
+# quick too; the open-row example does not call it.
+start_row="$(printf 'start\t+ acme/widgets #7  Example PR\t%s' "$url")"
+call_sourced start_review_from_row "$start_row" quick
+assert_eq 'start row quick exits 0' 0 "$last_status"
+assert_pane_has 'start row quick passes --mode quick' '--mode quick'
+assert_pane_lacks 'start row quick does not force a rebuild' '--full-rebuild'
+
+# A typed URL and a typed number are different arms of the same function.
+call_sourced start_review_from_ref "$url" quick
+assert_eq 'typed URL quick exits 0' 0 "$last_status"
+assert_pane_has 'typed URL quick passes --mode quick' '--mode quick'
+assert_pane_lacks 'typed URL quick does not force a rebuild' '--full-rebuild'
+
+call_sourced --cd "$dev/acme/widgets" start_review_from_ref 7 quick
+assert_eq 'typed number quick exits 0' 0 "$last_status"
+assert_pane_has 'typed number quick passes --mode quick' '--mode quick'
+assert_pane_lacks 'typed number quick does not force a rebuild' '--full-rebuild'
+
+call_sourced rerun_review "$review_dir" banana
+assert_eq 'unknown mode fails' 1 "$last_status"
+if grep -F -q 'unknown review mode: banana' "$err"; then
+  printf 'ok  %s\n' 'unknown mode says why'
+else
+  printf 'not ok  unknown mode says why\n%s\n' "$(cat "$err")"
+  failures=1
+fi
+
+home_fn="$(fn_body pick_home)"
+artifact_fn="$(fn_body pick_artifact)"
+
+assert_contains 'home expect binds alt-q' '--expect=ctrl-n,alt-q' "$home_fn"
+assert_contains 'alt-q starts the highlighted row quick' \
+  'start_review_from_row "$selection" quick' "$home_fn"
+assert_contains 'alt-q starts a typed ref quick' \
+  'start_review_from_ref "$query" quick' "$home_fn"
+assert_eq 'space reruns standard' \
+  'rerun_review "$review_dir"' \
+  "$(case_arm_call "$artifact_fn" space)"
+assert_eq 'ctrl-d reruns deep' \
+  'rerun_review "$review_dir" deep' \
+  "$(case_arm_call "$artifact_fn" ctrl-d)"
+assert_eq 'alt-q reruns quick' \
+  'rerun_review "$review_dir" quick' \
+  "$(case_arm_call "$artifact_fn" alt-q)"
+assert_contains 'artifact expect binds alt-q' \
+  '--expect=tab,space,ctrl-r,ctrl-d,alt-q' "$artifact_fn"
 
 if [[ "$failures" -ne 0 ]]; then
   exit 1

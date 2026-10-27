@@ -20,11 +20,14 @@
 #   enter    start the review (+ rows) or browse artifacts (local rows)
 #   ctrl-n   start/re-run a review for the highlighted row, or for a typed
 #            PR number or URL when nothing matches
+#   alt-q    start a quick review for the highlighted row, or for a typed
+#            PR number or URL when nothing matches
 #
 # Artifact picker:
 #   enter  open in vim
 #   tab    open Cursor agent (ask mode) ready to discuss the file
 #   space  re-run the PR review (standard)
+#   alt-q  quick re-review
 #   ctrl-d deep review with --full-rebuild (same-head needs a forced epoch)
 #   ctrl-r resume the most recent agent session for this PR
 #
@@ -726,9 +729,19 @@ launch_review() {
 }
 
 # Resolve clone + start a review for a GitHub PR URL.
+# Optional mode is empty (no extra args) or quick (--mode quick only).
 start_review_from_url() {
   local pr_url=$1
+  local mode=${2:-}
   local parsed owner repo pr_number clone_dir
+  local -a review_args=()
+
+  case "$mode" in
+    '' | quick) ;;
+    *)
+      die "start accepts only quick, got: ${mode}"
+      ;;
+  esac
 
   [[ -x "$PR_PARSE" ]] || die "missing parser: $PR_PARSE"
 
@@ -743,12 +756,18 @@ start_review_from_url() {
     die "no local clone of ${owner}/${repo} (checked cwd and ${DEV_ROOT}/${owner}/${repo}; set PRRR_DEV_ROOT to override)"
   fi
 
-  launch_review "$clone_dir" "$owner" "$repo" "$pr_number" "$pr_url"
+  if [[ "$mode" == quick ]]; then
+    review_args+=(--mode quick)
+  fi
+
+  launch_review "$clone_dir" "$owner" "$repo" "$pr_number" "$pr_url" "${review_args[@]}"
 }
 
 # Start a review for a home picker row, whichever section it came from.
+# Optional mode is empty or quick, forwarded to start_review_from_url.
 start_review_from_row() {
   local row=$1
+  local mode=${2:-}
   local action payload owner repo pr_number
 
   action="${row%%$'\t'*}"
@@ -757,11 +776,11 @@ start_review_from_row() {
 
   case "$action" in
     start)
-      start_review_from_url "$payload"
+      start_review_from_url "$payload" "$mode"
       ;;
     open)
       parse_review_identity "$payload" owner repo pr_number
-      start_review_from_url "https://github.com/${owner}/${repo}/pull/${pr_number}"
+      start_review_from_url "https://github.com/${owner}/${repo}/pull/${pr_number}" "$mode"
       ;;
     *)
       die "unexpected home picker action: ${action}"
@@ -807,13 +826,15 @@ repo_slug_for_pr_number() {
 }
 
 # Start a review for a typed PR reference: a full GitHub PR URL, or a number.
+# Optional mode is empty or quick, forwarded to start_review_from_url.
 start_review_from_ref() {
   local ref=$1
+  local mode=${2:-}
   local repo_slug
 
   case "$ref" in
     https://github.com/*/pull/*)
-      start_review_from_url "$ref"
+      start_review_from_url "$ref" "$mode"
       ;;
     '' | 0)
       die "expected a PR number or GitHub PR URL"
@@ -825,7 +846,7 @@ start_review_from_ref() {
       if ! repo_slug="$(repo_slug_for_pr_number "$ref")"; then
         die "cannot find PR #${ref}; run from its repo, or type the full PR URL"
       fi
-      start_review_from_url "https://github.com/${repo_slug}/pull/${ref}"
+      start_review_from_url "https://github.com/${repo_slug}/pull/${ref}" "$mode"
       ;;
   esac
 }
@@ -899,7 +920,7 @@ pick_home() {
 
   header="$(
     printf '%s\n%s' \
-      "enter: open  ·  ctrl-n: start or re-run a review  ·  esc: quit" \
+      "enter: open  ·  ctrl-n: start or re-run a review  ·  alt-q: quick review  ·  esc: quit" \
       "+ ${new_count} new  ·  * ${awaiting_count} awaiting your review  ·  ${local_count} local"
   )"
 
@@ -911,7 +932,7 @@ pick_home() {
       --header="$header" \
       --no-multi \
       --print-query \
-      --expect=ctrl-n
+      --expect=ctrl-n,alt-q
   )" || status=$?
 
   # fzf: 0 selected, 1 no match, 2 error, 130 aborted.
@@ -934,6 +955,17 @@ pick_home() {
       start_review_from_ref "$query"
     else
       die "ctrl-n needs a highlighted row, or a typed PR number or URL"
+    fi
+    return 0
+  fi
+
+  if [[ "$key" == alt-q ]]; then
+    if [[ -n "$selection" ]]; then
+      start_review_from_row "$selection" quick
+    elif [[ -n "$query" ]]; then
+      start_review_from_ref "$query" quick
+    else
+      die "alt-q needs a highlighted row, or a typed PR number or URL"
     fi
     return 0
   fi
@@ -984,9 +1016,10 @@ discuss_artifact() {
 }
 
 # Re-run pr-review for an existing series.
-# Optional mode: standard|deep (default: omitted). Deep always includes
+# Optional mode: ''|standard|quick|deep (default: omitted). Deep always includes
 # --full-rebuild so a same-head ready series can append a Deep epoch instead
-# of no-oping; prior epochs and finding history are preserved.
+# of no-oping; prior epochs and finding history are preserved. Quick passes
+# --mode quick without --full-rebuild.
 rerun_review() {
   local review_dir=$1
   local mode=${2:-}
@@ -996,7 +1029,7 @@ rerun_review() {
   [[ -x "$PR_REVIEW" ]] || die "missing launcher: $PR_REVIEW"
 
   case "$mode" in
-    '' | standard | deep) ;;
+    '' | standard | quick | deep) ;;
     *)
       die "unknown review mode: ${mode}"
       ;;
@@ -1143,15 +1176,15 @@ pick_artifact() {
   artifact_lines="$(list_artifacts "$review_dir")"
   [[ -n "$artifact_lines" ]] || die "no artifacts in ${review_dir}"
 
-  # enter → vim; tab → discuss; space → re-review; ctrl-d → deep; ctrl-r → resume
+  # enter → vim; tab → discuss; space → re-review; alt-q → quick; ctrl-d → deep; ctrl-r → resume
   result="$(
     printf '%s\n' "$artifact_lines" | fzf \
       --delimiter=$'\t' \
       --with-nth=1 \
       --prompt='artifact> ' \
-      --header="enter: vim  |  tab: discuss  |  ctrl-r: resume agent  |  space: re-review  |  ctrl-d: deep review (full rebuild)  |  ${review_dir#"${ARTIFACTS_ROOT}/"}" \
+      --header="enter: vim  |  tab: discuss  |  ctrl-r: resume agent  |  space: re-review  |  alt-q: quick review  |  ctrl-d: deep review (full rebuild)  |  ${review_dir#"${ARTIFACTS_ROOT}/"}" \
       --no-multi \
-      --expect=tab,space,ctrl-r,ctrl-d \
+      --expect=tab,space,ctrl-r,ctrl-d,alt-q \
       --bind 'enter:become(vim {2})' \
       || true
   )"
@@ -1165,6 +1198,10 @@ pick_artifact() {
       ;;
     ctrl-d)
       rerun_review "$review_dir" deep
+      return 0
+      ;;
+    alt-q)
+      rerun_review "$review_dir" quick
       return 0
       ;;
     ctrl-r)
@@ -1496,4 +1533,7 @@ main() {
   pick_artifact "$review_dir"
 }
 
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
 main "$@"
