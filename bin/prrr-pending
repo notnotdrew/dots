@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Recurring pending reviews: run `prrr start --requested` on a LaunchAgent schedule.
+# prrr itself has no cron flag; this script owns the agent install path.
+#
+#   prrr-pending              run prrr start --requested once
+#   prrr-pending --install    write and load the LaunchAgent (every 30 minutes)
+#   prrr-pending --uninstall  unload and remove the LaunchAgent
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "$0")"
+LAUNCHD_LABEL="com.drew.prrr-pending"
+LAUNCHD_PLIST="${PRRR_PENDING_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist}"
+# Seconds. Keep in sync with launchd/${LAUNCHD_LABEL}.plist.template StartInterval.
+START_INTERVAL_SECONDS=1800
+
+die() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME [--install|--uninstall]
+
+Run \`prrr start --requested\` (start a review for every PR requesting your
+review). No flags: run once.
+
+  --install     generate ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist and
+                load it (every 30 minutes / ${START_INTERVAL_SECONDS}s)
+  --uninstall   boot out the agent and remove that plist
+
+LaunchAgent plists are generated (user-specific paths), not symlinked.
+EOF
+}
+
+resolve_launchd_template() {
+  local candidate dir
+  if [[ -n "${PRRR_PENDING_LAUNCHD_TEMPLATE:-}" && -f "${PRRR_PENDING_LAUNCHD_TEMPLATE}" ]]; then
+    printf '%s\n' "$PRRR_PENDING_LAUNCHD_TEMPLATE"
+    return 0
+  fi
+  for candidate in \
+    "${SCRIPT_DIR}/../launchd/${LAUNCHD_LABEL}.plist.template" \
+    "${HOME}/dots/launchd/${LAUNCHD_LABEL}.plist.template"
+  do
+    if [[ -f "$candidate" ]]; then
+      dir="$(CDPATH= cd "$(dirname "$candidate")" && pwd)"
+      printf '%s/%s\n' "$dir" "$(basename "$candidate")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+launchd_path() {
+  printf '%s' "/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+write_launchd_plist() {
+  local template=$1
+  local dest=$2
+  local script=$3
+  local agent_path tmp
+  agent_path="$(launchd_path)"
+  mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/prrr-pending-plist.XXXXXX")"
+  sed \
+    -e "s|@HOME@|${HOME}|g" \
+    -e "s|@PATH@|${agent_path}|g" \
+    -e "s|@SCRIPT@|${script}|g" \
+    "$template" >"$tmp"
+  mv "$tmp" "$dest"
+}
+
+reload_launchd_agent() {
+  local plist=$1
+  local uid
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/${LAUNCHD_LABEL}" 2>/dev/null || true
+  # Replace a stale symlink to an old repo plist with the generated file.
+  if [[ -L "$plist" ]]; then
+    rm -f "$plist"
+  fi
+  launchctl bootstrap "gui/${uid}" "$plist"
+}
+
+unload_launchd_agent() {
+  local plist=$1
+  local uid
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/${LAUNCHD_LABEL}" 2>/dev/null || true
+  if [[ -e "$plist" || -L "$plist" ]]; then
+    rm -f "$plist"
+  fi
+}
+
+cmd_install() {
+  local template script
+  script="${HOME}/bin/${SCRIPT_NAME}"
+  [[ -x "$script" ]] || die "missing executable $script (symlink ~/bin from dots)"
+  if ! template="$(resolve_launchd_template)"; then
+    die "missing launchd plist template (expected launchd/${LAUNCHD_LABEL}.plist.template)"
+  fi
+  write_launchd_plist "$template" "$LAUNCHD_PLIST" "$script"
+  reload_launchd_agent "$LAUNCHD_PLIST"
+  printf 'loaded %s (every 30 minutes / %ss)\n' "$LAUNCHD_LABEL" "$START_INTERVAL_SECONDS"
+  printf 'logs: %s/Library/Logs/prrr-pending.out.log\n' "$HOME"
+}
+
+cmd_uninstall() {
+  unload_launchd_agent "$LAUNCHD_PLIST"
+  printf 'unloaded %s\n' "$LAUNCHD_LABEL"
+}
+
+cmd_run() {
+  command -v prrr >/dev/null 2>&1 || die "prrr not on PATH"
+  command prrr start --requested
+}
+
+mode=run
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --install)
+      mode=install
+      shift
+      ;;
+    --uninstall)
+      mode=uninstall
+      shift
+      ;;
+    -*)
+      die "unknown option: $1"
+      ;;
+    *)
+      die "unexpected argument: $1"$'\n'"$(usage)"
+      ;;
+  esac
+done
+
+case "$mode" in
+  install) cmd_install ;;
+  uninstall) cmd_uninstall ;;
+  run) cmd_run ;;
+esac
