@@ -61,7 +61,7 @@ assert_command() {
     printf '%s\n' "ok - $test_name"
 }
 
-usage_error='error: usage: pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
+usage_error='error: usage: pr-review [--dry-run] [--mode standard|deep|quick] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
 
 assert_command "defaults to Standard mode" 0 'worktree: pr-42-R1
 prompt: /pr-review 42' --dry-run 42
@@ -71,6 +71,9 @@ prompt: /pr-review --mode standard 42' --dry-run --mode standard 42
 
 assert_command "forwards Deep mode" 0 'worktree: pr-42-R1
 prompt: /pr-review --mode deep 42' --dry-run --mode deep 42
+
+assert_command "forwards Quick mode" 0 'worktree: pr-42-R1
+prompt: /pr-review --mode quick 42' --dry-run --mode quick 42
 
 assert_command "forwards an omitted-mode full rebuild" 0 'worktree: pr-42-R1
 prompt: /pr-review --full-rebuild 42' --dry-run --full-rebuild 42
@@ -83,6 +86,9 @@ prompt: /pr-review --mode deep --full-rebuild 42' --dry-run --mode deep --full-r
 
 assert_command "forwards a single-finding revision" 0 'worktree: pr-42-R1
 prompt: /pr-review --finding F01 42' --dry-run --finding F01 42
+
+assert_command "forwards an explicit-Standard single-finding revision" 0 'worktree: pr-42-R1
+prompt: /pr-review --mode standard --finding F01 42' --dry-run --mode standard --finding F01 42
 
 assert_command "forwards an unpadded single-finding revision" 0 'worktree: pr-42-R1
 prompt: /pr-review --finding F1 42' --dry-run --finding F1 42
@@ -101,7 +107,11 @@ assert_command "rejects a missing mode value" 1 'error: missing value for --mode
 assert_command "rejects a missing finding value" 1 'error: missing value for --finding' --dry-run --finding
 
 assert_command "rejects a Deep single-finding revision" 1 'error: --finding cannot be combined with --mode deep' --dry-run --mode deep --finding F01 42
+assert_command "rejects Quick mode with a finding" 1 'error: --finding cannot be combined with --mode quick' --dry-run --mode quick --finding F01 42
 assert_command "rejects a full-rebuild single-finding revision" 1 'error: --finding cannot be combined with --full-rebuild' --dry-run --full-rebuild --finding F01 42
+assert_command "rejects Quick mode with a full rebuild" 1 'error: --full-rebuild cannot be combined with --mode quick' --dry-run --mode quick --full-rebuild 42
+assert_command "rejects Quick mode with a finding and a full rebuild" 1 'error: --finding cannot be combined with --mode quick' --dry-run --mode quick --full-rebuild --finding F01 42
+assert_command "rejects a Deep single-finding revision with a full rebuild" 1 'error: --finding cannot be combined with --mode deep' --dry-run --mode deep --full-rebuild --finding F01 42
 
 assert_command "rejects a zero finding ID" 1 'error: invalid finding ID: F0 (expected F followed by a positive integer)' --dry-run --finding F0 42
 assert_command "rejects an all-zero padded finding ID" 1 'error: invalid finding ID: F000 (expected F followed by a positive integer)' --dry-run --finding F000 42

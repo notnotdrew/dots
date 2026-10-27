@@ -4,13 +4,13 @@
 # `pr-review` skill. Run this from the repository containing the pull request.
 #
 # Usage:
-#   pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>
+#   pr-review [--dry-run] [--mode standard|deep|quick] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>
 
 set -eu
 
 PR_PARSE="${HOME}/.codex/skills/pr-review/scripts/gh-pr-parse"
 RESOLVE_CHECKOUT="${HOME}/.codex/skills/pr-review/scripts/resolve-review-checkout"
-usage='usage: pr-review [--dry-run] [--mode standard|deep] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
+usage='usage: pr-review [--dry-run] [--mode standard|deep|quick] [--full-rebuild] [--finding F<positive-integer>] <PR-URL-or-ID>'
 
 die() {
     printf 'error: %s\n' "$1" >&2
@@ -45,7 +45,7 @@ while [ $# -gt 0 ]; do
             esac
             mode=$1
             case "$mode" in
-                standard|deep) ;;
+                standard|deep|quick) ;;
                 *) die "unknown mode: $mode" ;;
             esac
             shift
@@ -90,6 +90,11 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$pr_ref" ] || die "$usage"
+
+if [ "$mode" = "quick" ]; then
+    [ "$finding_seen" = false ] || die "--finding cannot be combined with --mode quick"
+    [ "$full_rebuild" = false ] || die "--full-rebuild cannot be combined with --mode quick"
+fi
 
 if [ "$finding_seen" = true ]; then
     [ "$mode" != "deep" ] || die "--finding cannot be combined with --mode deep"
