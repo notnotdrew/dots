@@ -169,7 +169,7 @@ The workspace stays open after the command exits so the next intake can reuse
 it. While the command runs, its Agents-panel row makes the pane findable from
 wherever Drew happens to be.
 
-A worktree plan carries the JSON fields above. The script reuses the checkout already on the plan's branch and creates one only when there is none, then sets `$note` and starts a `cursor` agent on the task in its root pane. The new space opens unfocused and everything after it is addressed by pane id, so Drew keeps the pane he was in and steps over when he wants to. Reusing means a second run on the same ticket lands back in that worktree and hands the task to the agent already sitting there.
+A worktree plan carries the JSON fields above. The script reuses the checkout already on the plan's branch and creates one only when there is none. A branch that already exists, locally or on a remote, is opened with `wt switch` and no `--create`, which uses the worktree or adds one. `--create` is only for a branch that is not there yet. The script then sets `$note` and starts a `cursor` agent on the task in its root pane. The new space opens unfocused and everything after it is addressed by pane id, so Drew keeps the pane he was in and steps over when he wants to. Reusing means a second run on the same ticket lands back in that worktree and hands the task to the agent already sitting there.
 
 A commands plan is `{"kind":"commands","summary":…,"commands":[…]}`. The script shows it, runs it, and exits without opening anything. Only `prrr` can be dispatched, and only as literal arguments, so a plan cannot act as a shell.
 

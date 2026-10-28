@@ -189,6 +189,38 @@ is_scratch_path() {
   return 1
 }
 
+# A local branch, or the same name on any remote. wt switch without --create
+# is find-or-create for that name: it opens the worktree when one exists, and
+# adds one when the branch is only a ref. --create is a new branch, and it
+# refuses a name that is already taken.
+branch_known() {
+  local repo=$1 branch=$2 ref short
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch" && return 0
+  while IFS= read -r ref; do
+    short=${ref#*/}
+    [ "$short" = "$branch" ] && return 0
+  done < <(git -C "$repo" for-each-ref --format='%(refname:short)' refs/remotes)
+  return 1
+}
+
+# Path of the worktree git has for this branch. Herdr's list is only the
+# checkouts it has opened, so a worktree wt already made can be missing there.
+worktree_for_branch() {
+  local repo=$1 branch=$2 path='' line
+  while IFS= read -r line; do
+    case "$line" in
+      worktree\ *) path=${line#worktree } ;;
+      branch\ *)
+        if [ "${line#branch }" = "refs/heads/$branch" ] && [ -d "$path" ]; then
+          printf '%s\n' "$path"
+          return 0
+        fi
+        ;;
+    esac
+  done < <(git -C "$repo" worktree list --porcelain)
+  return 1
+}
+
 # Set up the planner's home and trim its run log.
 prepare_plan_home() {
   mkdir -p "$PLAN_HOME/runs"
@@ -495,6 +527,9 @@ checkout="${repo_root}.$(printf '%s' "$branch" | tr '/' '-')"
 existing=$(jq -r --arg branch "$branch" \
   '[.result.worktrees[]? | select(.branch == $branch)][0].path // empty' <<<"$worktrees")
 [ -d "$existing" ] || existing=
+if [ -z "$existing" ]; then
+  existing=$(worktree_for_branch "$repo_root" "$branch" || true)
+fi
 
 # The sibling path is named for this branch, but Herdr lists a worktree under
 # the branch it has checked out right now. A clean checkout that was switched
@@ -547,9 +582,20 @@ else
   # pre-start hooks never run. Create through wt, then register the checkout
   # the same way an existing one is opened. Hooks are already approved; do
   # not pass -y.
+  #
+  # wt switch without --create is find-or-create once the branch exists. It
+  # opens the worktree, or adds one for a local or remote branch. --create
+  # is only for a name that is not taken; passing it then is the
+  # "branch already exists" failure.
   action=create
-  spin_label='Creating worktree'
   command -v wt >/dev/null 2>&1 || die 'wt is required'
+  if branch_known "$repo_root" "$branch"; then
+    spin_label='Opening worktree'
+    wt_create=
+  else
+    spin_label='Creating worktree'
+    wt_create=1
+  fi
 fi
 
 worktree_out=$(mktemp)
@@ -560,8 +606,12 @@ if [ "$action" = open ]; then
   "$HERDR" "${worktree_args[@]}" >"$worktree_out" 2>"$worktree_err" &
 else
   (
-    wt_args=(switch --create "$branch")
-    [ -n "$base" ] && wt_args+=(--base "$base")
+    if [ -n "${wt_create:-}" ]; then
+      wt_args=(switch --create "$branch")
+      [ -n "$base" ] && wt_args+=(--base "$base")
+    else
+      wt_args=(switch "$branch")
+    fi
     wt_args+=(--no-cd --format=json)
     wt_json=$(wt -C "$repo_root" "${wt_args[@]}" 2>"$worktree_err") || exit 1
     created=$(jq -r '.path // empty' <<<"$wt_json" 2>/dev/null) || created=
