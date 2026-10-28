@@ -6041,6 +6041,12 @@ test_review_unique_draft_switches_worktree_and_launches_agent() {
   if ! grep -qiE 'far enough|dead code' "$TEST_ROOT/agent-invocations.log"; then
     problems="${problems}agent prompt must check whether the change goes far enough (dead code vs a tiny fix)"$'\n'
   fi
+  if ! grep -qiE 'N\+1' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent prompt must tell review to remove N+1 / Rails loading specs"$'\n'
+  fi
+  if ! grep -qiE 'behavioral gap' "$TEST_ROOT/agent-invocations.log"; then
+    problems="${problems}agent prompt must keep specs that cover a behavioral gap"$'\n'
+  fi
   if grep -E '(^|[[:space:]])-p([[:space:]]|$)|(^|[[:space:]])--print([[:space:]]|$)' \
     "$TEST_ROOT/agent-invocations.log" >/dev/null; then
     problems="${problems}review agent must be interactive (no -p/--print)"$'\n'

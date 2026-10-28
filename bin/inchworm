@@ -563,9 +563,13 @@ match_review_selector() {
 
 review_agent_prompt() {
   cat <<'EOF'
-Review the PR for this branch and be prepared to discuss it. Before discussing, do two checks.
+Review the PR for this branch and be prepared to discuss it. Before discussing, do three checks.
 
-Relics: odd agent-like leftovers from the agent that worked on it — unnecessary or overly verbose comments, "tombstone" comments or specs, and similar. If you find any, address them and fold them into the existing commits on this branch only (amend or squash; do not add a stack of cleanup commits named after tooling). Then git push --force-with-lease. Briefly summarize those changes. If there are no relics, say so.
+Relics: odd agent-like leftovers from the agent that worked on it — unnecessary or overly verbose comments, "tombstone" comments or specs, and similar. If you find any, address them. If there are no relics, say so.
+
+Loading specs: specs that test Rails loading, including N+1 tests. A loading spec counts queries, compares a small collection to a large one to prove the count does not grow, or asserts that an association is already loaded. An example that counts courses and lesson_versions for a one-row article list and a five-row list, and expects those counts to match, is a loading spec even when the same example also checks a response attribute. These checks are useful while developing the fix. They do not belong in the long-term suite, so remove them. For an N+1 fix, keep a spec only when it covers a behavioral gap the suite does not already cover (what the response or the caller does). If that behavior sits in the same example as the query counts, keep the behavior and drop the loading assertions. If the example's only point is the load, delete the example. If there are no loading specs, say so.
+
+If you changed anything for relics or loading specs, fold it into the existing commits on this branch only (amend or squash; do not add a stack of cleanup commits named after tooling). Then git push --force-with-lease. Briefly summarize those changes.
 
 Adequacy: whether the change goes far enough. Look at the surrounding code, not only the diff. If the patch only repairs a tiny spot in unused, unreferenced, or otherwise dead code, the real work was to delete that code, not to fix its internals. Lead the discussion with that. Do not treat the tiny fix as complete. Do not silently expand the PR into a large deletion; bring the deletion (or that it is too large) to the human.
 

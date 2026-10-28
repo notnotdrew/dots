@@ -69,7 +69,7 @@ Phase 5 owns the weekday create-window schedule via LaunchAgent `com.inchworm` (
 - **Planner** — short thin-check prompt; writes `.inchworm/plan.md` or `not_thin`. It does not follow `writing-simple-plans`. `not_thin` skips the implementer and marks `too_large`
 - **Implementer** — implements that plan, commits, writes `pr/title.txt` and `pr/body.md`, and stops (see [implementer-prompt](references/implementer-prompt.md))
 - **Coordinator** — owns checkout, push, draft PR, Standard review, fixer, ping, and cleanup (see [implement-boundary](references/implement-boundary.md))
-- **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep and an adequacy check (did the change go far enough, or is it a nibble in dead code?) (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop
+- **Human review** — `inchworm review` sits on a Worktrunk checkout of an open draft for discussion after a relic sweep, a pass that removes Rails loading and N+1 specs, and an adequacy check (did the change go far enough, or is it a nibble in dead code?) (see [human-review](references/human-review.md)); not the daily Standard `pr-review` loop
 
 ## References
 
