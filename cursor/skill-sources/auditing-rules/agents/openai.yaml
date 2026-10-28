@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rule audit"
+  short_description: "Report rule gaps from recent PR reviews"
+  default_prompt: "Audit this repo's rules against recent pull request reviews"
