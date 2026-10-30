@@ -1,4 +1,4 @@
 interface:
   display_name: "Pare Code"
   short_description: "Take away until nothing else can go"
-  default_prompt: "Pare the recent code until the next deletion would change behavior or erase a fact the code cannot show. Do not add."
+  default_prompt: "Pare the recent code until the next deletion would change behavior or erase a fact the code cannot show. Reshape when a clearer shape lets something gross go."
