@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Start Cursor Agent with the paring-code skill.
+#
+# Lives in ~/dots/bin (exposed as ~/bin via update_symlinks).
+#
+#   pc                  /paring-code
+#   pc "on head"        /paring-code "on head"
+#   pc path/to-file     /paring-code path/to-file
+set -euo pipefail
+
+prompt=/paring-code
+if [[ $# -gt 0 ]]; then
+  target="$*"
+  case "$target" in
+    *[[:space:]]*|*[\"\\]*)
+      target=${target//\\/\\\\}
+      target=${target//\"/\\\"}
+      prompt="/paring-code \"${target}\""
+      ;;
+    *)
+      prompt="/paring-code ${target}"
+      ;;
+  esac
+fi
+
+exec agent "$prompt"
