@@ -269,11 +269,17 @@ fi
 
 cwd=
 branch=
+workspace=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cwd)
       [[ $# -ge 2 ]] || exit 1
       cwd=$2
+      shift 2
+      ;;
+    --workspace)
+      [[ $# -ge 2 ]] || exit 1
+      workspace=$2
       shift 2
       ;;
     --branch)
@@ -284,6 +290,13 @@ while [[ $# -gt 0 ]]; do
     --base)
       [[ $# -ge 2 ]] || exit 1
       shift 2
+      ;;
+    --path)
+      [[ $# -ge 2 ]] || exit 1
+      shift 2
+      ;;
+    --no-focus|--focus)
+      shift
       ;;
     *)
       shift
@@ -329,10 +342,11 @@ if [[ "$group" == "worktree" && "$action" == "create" ]]; then
   mkdir -p "$state" "$checkout"
   printf '%s\n' "$branch" >"$state/branch"
   printf '%s\n' "$checkout" >"$state/path"
+  printf '%s\n' "w${slug}" >"$state/workspace"
   plant_slowfriday "$checkout" "$cwd"
   status=${SLOWFRIDAY_HERDR_CREATE_STATUS:-0}
   if [[ "$status" == "0" ]]; then
-    printf '{"result":{"worktree":{"path":"%s"}}}\n' "$checkout"
+    printf '{"result":{"workspace":{"workspace_id":"w%s"},"worktree":{"path":"%s"}}}\n' "$slug" "$checkout"
   else
     printf '%s\n' '{"result":{"worktree":{"path":""}}}'
   fi
@@ -350,7 +364,30 @@ if [[ "$group" == "worktree" && "$action" == "list" ]]; then
   fi
   listed_branch=$(cat "$state/branch")
   listed_path=$(cat "$state/path")
-  printf '{"result":{"worktrees":[{"branch":"%s","path":"%s"}]}}\n' "$listed_branch" "$listed_path"
+  listed_workspace=""
+  if [[ -f "$state/workspace" ]]; then
+    listed_workspace=$(cat "$state/workspace")
+  fi
+  printf '{"result":{"worktrees":[{"branch":"%s","path":"%s","open_workspace_id":"%s"}]}}\n' \
+    "$listed_branch" "$listed_path" "$listed_workspace"
+  exit 0
+fi
+
+if [[ "$group" == "pane" && "$action" == "list" ]]; then
+  [[ -n "$workspace" ]] || exit 1
+  found=""
+  for state_dir in "$root/state"/*; do
+    [[ -f "$state_dir/workspace" && -f "$state_dir/path" ]] || continue
+    if [[ "$(cat "$state_dir/workspace")" == "$workspace" ]]; then
+      found=$(cat "$state_dir/path")
+      break
+    fi
+  done
+  if [[ -z "$found" ]]; then
+    printf '%s\n' '{"result":{"panes":[]}}'
+    exit 0
+  fi
+  printf '{"result":{"panes":[{"pane_id":"%s:p1","cwd":"%s"}]}}\n' "$workspace" "$found"
   exit 0
 fi
 
@@ -945,6 +982,15 @@ test_docs_manual_step_and_script_silence() {
   fi
   if grep -F -q -- 'dots-private' "$YAML_HELPER"; then
     problems="${problems}bin/lib/slowfriday_yaml.rb contains dots-private"$'\n'
+  fi
+  if ! grep -F -q -- 'The checkout is the registered directory plus `.drew-slowfriday-<yymmdd>`.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the checkout sits beside the registered directory"$'\n'
+  fi
+  if ! grep -F -q -- 'The create passes `--path` and `--no-focus`.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say the create passes --path and --no-focus"$'\n'
+  fi
+  if ! grep -F -q -- 'When that note is written, it is shown in the worktree pane with `bat --paging=never`, or with `cat` when `bat` is not on that pane'"'"'s PATH. A week left unstamped is not shown.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a written note is shown with bat or cat"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -1714,7 +1760,7 @@ test_run_fetches_main_and_links_slowfriday() {
   after=$(git -C "$repo_dir" rev-parse origin/main)
   head=$(git -C "$repo_dir" rev-parse HEAD)
   wt=$(worktree_from_output "$out_file" "$repo_dir")
-  expected="worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main"
+  expected="worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main --path ${repo_dir}.drew-slowfriday-261009 --no-focus"
 
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
@@ -1808,7 +1854,7 @@ test_run_trunk_develop_fetches_that_base() {
   status=$?
   count=$(path_count_in_log "$log" "$repo_dir")
   after=$(git -C "$repo_dir" rev-parse origin/develop)
-  expected="worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/develop"
+  expected="worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/develop --path ${repo_dir}.drew-slowfriday-261009 --no-focus"
 
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}expected exit 0, got $status"$'\n'
@@ -1937,7 +1983,7 @@ test_run_herdr_create_failure_without_branch_retries() {
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
   count=$(path_count_in_log "$log" "$repo_dir")
-  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main" "$herdr_log" || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main --path ${repo_dir}.drew-slowfriday-261009 --no-focus" "$herdr_log" || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}failed create expected exit 0, got $status"$'\n'
   fi
@@ -1965,7 +2011,7 @@ test_run_herdr_create_failure_without_branch_retries() {
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
   count=$(path_count_in_log "$log" "$repo_dir")
-  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main" "$herdr_log" || true)
+  creates=$(grep -F -c -x -- "worktree create --cwd ${repo_dir} --branch drew/slowfriday-261009 --base origin/main --path ${repo_dir}.drew-slowfriday-261009 --no-focus" "$herdr_log" || true)
   if [[ "$status" -ne 0 ]]; then
     problems="${problems}retry expected exit 0, got $status"$'\n'
   fi
@@ -2201,7 +2247,8 @@ test_run_agent_writes_note_and_second_friday_skips() {
   local expected_note="$TEST_ROOT/run-agent-ok-expected-note"
   local expected_log="$TEST_ROOT/run-agent-ok-expected-log"
   local guide="${repo_dir}/slowfriday/guide.md"
-  local head_before head_after wt cwd argc app_status status problems=""
+  local herdr_log="$TEST_ROOT/run-agent-ok-herdr"
+  local head_before head_after wt cwd argc app_status shows status problems=""
 
   reset_run_env
   prepare_registered_repo "$repo_dir" "$config_dir" || {
@@ -2223,6 +2270,7 @@ NOTE
   RUN_AGENT_NOTE=$note
   RUN_AGENT_LOG_FILE=$log_file
   RUN_GH_LOG=$gh_log
+  RUN_HERDR_LOG=$herdr_log
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
@@ -2285,6 +2333,22 @@ NOTE
   if [[ -z "$wt" || ! -d "$wt" ]]; then
     problems="${problems}Herdr worktree from the first run is missing (${wt})"$'\n'
   fi
+  if ! grep -F -q -- "pane list --workspace" "$herdr_log"; then
+    problems="${problems}did not list the worktree pane"$'\n'
+  fi
+  if ! grep -F -q -- "bat --paging=never -- slowfriday/notes/261009.md" "$herdr_log"; then
+    problems="${problems}did not show the note with bat"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! grep -F -q -- "cat -- slowfriday/notes/261009.md" "$herdr_log"; then
+    problems="${problems}did not fall back to cat"$'\n'
+  fi
+  shows=$(grep -F -c -- "pane run " "$herdr_log" || true)
+  if [[ "$shows" != "1" ]]; then
+    problems="${problems}expected one pane run, got $shows"$'\n'
+  fi
+  if ! grep -F -x -q -- "slowfriday: ${repo_dir} — showed the note" "$out_file"; then
+    problems="${problems}did not say the note was shown"$'\n'
+  fi
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
@@ -2298,6 +2362,13 @@ NOTE
   fi
   if ! grep -F -q -- "week already stamped" "$out_file"; then
     problems="${problems}second run did not say the week was already stamped"$'\n'
+  fi
+  if grep -F -q -- "showed the note" "$out_file"; then
+    problems="${problems}second run showed the note again"$'\n'
+  fi
+  shows=$(grep -F -c -- "pane run " "$herdr_log" || true)
+  if [[ "$shows" != "1" ]]; then
+    problems="${problems}second run ran the pane again, got $shows"$'\n'
   fi
   if ! files_match "$expected_note" "$note"; then
     problems="${problems}second run changed the note"$'\n'
@@ -2340,7 +2411,8 @@ test_run_quiet_note_stamps_the_week_and_keeps_the_worktree() {
   local note="$repo_dir/slowfriday/notes/261009.md"
   local log_file="$repo_dir/slowfriday/log.md"
   local expected_note="$TEST_ROOT/run-quiet-note-expected"
-  local wt status problems=""
+  local herdr_log="$TEST_ROOT/run-quiet-note-herdr"
+  local wt shows status problems=""
 
   reset_run_env
   prepare_registered_repo "$repo_dir" "$config_dir" || {
@@ -2356,6 +2428,7 @@ NOTE
   RUN_AGENT_WRITE=quiet
   RUN_AGENT_NOTE=$note
   RUN_AGENT_LOG_FILE=$log_file
+  RUN_HERDR_LOG=$herdr_log
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
@@ -2373,6 +2446,12 @@ NOTE
   if [[ -z "$wt" || ! -d "$wt" ]]; then
     problems="${problems}Herdr worktree is missing: ${wt}"$'\n'
   fi
+  if ! grep -F -q -- "bat --paging=never -- slowfriday/notes/261009.md" "$herdr_log"; then
+    problems="${problems}did not show the quiet note with bat"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! grep -F -x -q -- "slowfriday: ${repo_dir} — showed the note" "$out_file"; then
+    problems="${problems}did not say the quiet note was shown"$'\n'
+  fi
 
   invoke_run "$config_dir" "2026-10-09T10:00:00" "$out_file"
   status=$?
@@ -2381,6 +2460,10 @@ NOTE
   fi
   if [[ "$(agent_invocation_count "$agent_record")" != "1" ]]; then
     problems="${problems}second run started the agent"$'\n'
+  fi
+  shows=$(grep -F -c -- "pane run " "$herdr_log" || true)
+  if [[ "$shows" != "1" ]]; then
+    problems="${problems}second run ran the pane again, got $shows"$'\n'
   fi
   if ! grep -F -q -- "week already stamped" "$out_file"; then
     problems="${problems}second run did not say the week was already stamped"$'\n'
@@ -2425,6 +2508,9 @@ test_run_agent_quiet_success_retries() {
   fi
   if [[ -e "$note" ]]; then
     problems="${problems}quiet agent wrote notes/261009.md"$'\n'
+  fi
+  if grep -F -q -- "showed the note" "$out_file"; then
+    problems="${problems}unstamped week was shown"$'\n'
   fi
   if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
     problems="${problems}first run left progress_pid set"$'\n'
@@ -2476,6 +2562,9 @@ test_run_agent_failure_writes_nothing_and_retries() {
   fi
   if [[ -e "$note" ]]; then
     problems="${problems}failed agent wrote notes/261009.md"$'\n'
+  fi
+  if grep -F -q -- "showed the note" "$out_file"; then
+    problems="${problems}unstamped week was shown"$'\n'
   fi
   if ! yaml_expect "$repo_dir/slowfriday/config.yml" "progress_pid=absent"; then
     problems="${problems}failed agent left progress_pid set"$'\n'

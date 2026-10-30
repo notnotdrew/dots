@@ -25,9 +25,11 @@ Init is idempotent. A second init keeps a single registry entry and a single git
 
 `slowfriday/notes/<yymmdd>.md` is the weekly stamp. `yymmdd` is the local date as six digits. When that note exists, the repo is skipped. A live `progress_pid` in `slowfriday/config.yml` blocks another run. A pid whose process is gone is cleared, and the tick continues. If preflight or the queries fail, the note is not written, so the week stays unstamped and a later Friday tick can retry.
 
-An eligible run fetches the configured trunk (`trunk` blank means main) and opens `drew/slowfriday-<yymmdd>` with `herdr worktree create --cwd`, `--branch`, and `--base origin/<trunk>`. The worktree's `slowfriday/` entry becomes a symlink to the registered checkout's directory. If the fetch or the Herdr open fails, the note is not written and a later tick retries.
+An eligible run fetches the configured trunk (`trunk` blank means main) and opens `drew/slowfriday-<yymmdd>` with herdr. The checkout is the registered directory plus `.drew-slowfriday-<yymmdd>`. The create passes `--path` and `--no-focus`. The worktree's `slowfriday/` entry becomes a symlink to the registered checkout's directory. If the fetch or the Herdr open fails, the note is not written and a later tick retries.
 
 The orchestrator runs in the dated worktree. It follows the registered guide, and it writes the log and the weekly note itself.
+
+When that note is written, it is shown in the worktree pane with `bat --paging=never`, or with `cat` when `bat` is not on that pane's PATH. A week left unstamped is not shown.
 
 ## LaunchAgent
 
