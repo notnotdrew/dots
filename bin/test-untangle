@@ -322,11 +322,17 @@ fi
 
 cwd=
 branch=
+workspace=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cwd)
       [[ $# -ge 2 ]] || exit 1
       cwd=$2
+      shift 2
+      ;;
+    --workspace)
+      [[ $# -ge 2 ]] || exit 1
+      workspace=$2
       shift 2
       ;;
     --branch)
@@ -389,10 +395,11 @@ if [[ "$group" == "worktree" && "$action" == "create" ]]; then
   mkdir -p "$state" "$checkout"
   printf '%s\n' "$branch" >"$state/branch"
   printf '%s\n' "$checkout" >"$state/path"
+  printf '%s\n' "w${slug}" >"$state/workspace"
   plant_untangle "$checkout" "$cwd"
   status=${UNTANGLE_HERDR_CREATE_STATUS:-0}
   if [[ "$status" == "0" ]]; then
-    printf '{"result":{"worktree":{"path":"%s"}}}\n' "$checkout"
+    printf '{"result":{"workspace":{"workspace_id":"w%s"},"worktree":{"path":"%s"}}}\n' "$slug" "$checkout"
   else
     printf '%s\n' '{"result":{"worktree":{"path":""}}}'
   fi
@@ -410,7 +417,30 @@ if [[ "$group" == "worktree" && "$action" == "list" ]]; then
   fi
   listed_branch=$(cat "$state/branch")
   listed_path=$(cat "$state/path")
-  printf '{"result":{"worktrees":[{"branch":"%s","path":"%s"}]}}\n' "$listed_branch" "$listed_path"
+  listed_workspace=""
+  if [[ -f "$state/workspace" ]]; then
+    listed_workspace=$(cat "$state/workspace")
+  fi
+  printf '{"result":{"worktrees":[{"branch":"%s","path":"%s","open_workspace_id":"%s"}]}}\n' \
+    "$listed_branch" "$listed_path" "$listed_workspace"
+  exit 0
+fi
+
+if [[ "$group" == "pane" && "$action" == "list" ]]; then
+  [[ -n "$workspace" ]] || exit 1
+  found=""
+  for state_dir in "$root/state"/*; do
+    [[ -f "$state_dir/workspace" && -f "$state_dir/path" ]] || continue
+    if [[ "$(cat "$state_dir/workspace")" == "$workspace" ]]; then
+      found=$(cat "$state_dir/path")
+      break
+    fi
+  done
+  if [[ -z "$found" ]]; then
+    printf '%s\n' '{"result":{"panes":[]}}'
+    exit 0
+  fi
+  printf '{"result":{"panes":[{"pane_id":"%s:p1","cwd":"%s"}]}}\n' "$workspace" "$found"
   exit 0
 fi
 
@@ -1186,6 +1216,9 @@ test_docs_manual_step_and_script_silence() {
   fi
   if ! grep -F -q -- 'The change look leaves the cursor alone. One worktree serves both looks.' "$DOCS_FILE"; then
     problems="${problems}docs do not say the change look leaves the cursor alone and one worktree serves both looks"$'\n'
+  fi
+  if ! grep -F -q -- 'Each kept note is shown in the worktree pane with `bat --paging=never`, or with `cat` when `bat` is not on that pane'"'"'s PATH. A rejected note is not shown.' "$DOCS_FILE"; then
+    problems="${problems}docs do not say a kept note is shown with bat or cat"$'\n'
   fi
   if ! grep -F -q -- '`untangle done` clears the open plan and then advances.' "$DOCS_FILE"; then
     problems="${problems}docs do not say untangle done clears the open plan and then advances"$'\n'
@@ -3642,6 +3675,9 @@ test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
   if ! grep -F -x -q -- "untangle: ${repo_dir} — change note rejected; the change is unstamped" "$out_file"; then
     problems="${problems}Plan tick did not reject the change note"$'\n'
   fi
+  if grep -F -q -- "showed the note" "$out_file"; then
+    problems="${problems}rejected notes were shown"$'\n'
+  fi
 
   RUN_AGENT_NOTE_SRC=$prefix_src
   RUN_AGENT_CHANGE_NOTE_SRC=$change_prefix_src
@@ -3702,6 +3738,9 @@ test_run_rejects_plan_case_and_planning_then_keeps_a_plan() {
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — open change plan" "$out_file"; then
     problems="${problems}plan tick did not say open change plan"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — showed the note" "$out_file"; then
+    problems="${problems}kept notes were not shown"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then
@@ -4322,6 +4361,22 @@ test_run_both_looks_share_one_worktree() {
   fi
   if ! grep -F -x -q -- "untangle: ${repo_dir} — quiet change note" "$out_file"; then
     problems="${problems}did not say quiet change note"$'\n'
+  fi
+  if ! grep -F -q -- "pane list --workspace" "$herdr_log"; then
+    problems="${problems}did not list the worktree pane"$'\n'
+  fi
+  if ! grep -F -q -- "bat --paging=never -- untangle/notes/261014.md untangle/notes/261014-change.md" "$herdr_log"; then
+    problems="${problems}did not show both notes with bat"$'\n'"$(cat "$herdr_log" 2>/dev/null || true)"$'\n'
+  fi
+  if ! grep -F -q -- "cat -- untangle/notes/261014.md untangle/notes/261014-change.md" "$herdr_log"; then
+    problems="${problems}did not fall back to cat"$'\n'
+  fi
+  shows=$(grep -F -c -- "pane run " "$herdr_log" || true)
+  if [[ "$shows" != "1" ]]; then
+    problems="${problems}expected one pane run, got $shows"$'\n'
+  fi
+  if ! grep -F -x -q -- "untangle: ${repo_dir} — showed the note" "$out_file"; then
+    problems="${problems}did not say the note was shown"$'\n'
   fi
 
   if [[ -n "$problems" ]]; then

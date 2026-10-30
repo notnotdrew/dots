@@ -154,6 +154,7 @@ list_registered_repos() {
 # file, so a skip of someone else's live pid leaves their lock alone.
 CURRENT_PROGRESS_YML=""
 DELIVERED_WORKTREE=""
+DELIVERED_WORKSPACE=""
 
 release_progress() {
   local repo_yml
@@ -211,6 +212,7 @@ deliver_worktree() {
   local repo_abs trunk branch checkout herdr path create_status json_file list_file
 
   DELIVERED_WORKTREE=""
+  DELIVERED_WORKSPACE=""
   repo_abs=$repo_path
   if [[ "$repo_abs" != /* ]]; then
     if ! repo_abs=$(CDPATH= cd "$repo_path" && pwd); then
@@ -263,19 +265,24 @@ deliver_worktree() {
   fi
 
   path=""
+  workspace=""
   if [[ "$create_status" -eq 0 ]]; then
     path=$(ruby_yaml herdr_create_path "$json_file" 2>/dev/null || true)
+    workspace=$(ruby_yaml herdr_create_workspace "$json_file" 2>/dev/null || true)
     if [[ "$path" != /* || ! -d "$path" || "$path" == "$repo_abs" ]]; then
       path=""
+      workspace=""
     fi
   fi
 
   if [[ -z "$path" ]]; then
     if "$herdr" worktree list --cwd "$repo_abs" >"$list_file" 2>/dev/null; then
       path=$(ruby_yaml herdr_list_path "$list_file" "$branch" 2>/dev/null || true)
+      workspace=$(ruby_yaml herdr_list_workspace "$list_file" "$branch" 2>/dev/null || true)
     fi
     if [[ "$path" != /* || ! -d "$path" || "$path" == "$repo_abs" ]]; then
       path=""
+      workspace=""
     fi
   fi
 
@@ -291,7 +298,62 @@ deliver_worktree() {
   fi
 
   DELIVERED_WORKTREE=$path
+  DELIVERED_WORKSPACE=$workspace
   return 0
+}
+
+# The launchd PATH is not the pane's PATH. The pane shell picks bat, then cat.
+# --paging=never leaves the note in the workspace instead of a pager.
+show_kept_notes() {
+  local repo_path=$1
+  local worktree=$2
+  local workspace=$3
+  local note_path=$4
+  local change_note=$5
+  local herdr pane_file pane file files=() viewer
+
+  [[ -n "$worktree" && -n "$workspace" ]] || return 0
+
+  if [[ -f "$note_path" ]]; then
+    files+=("untangle/notes/$(basename -- "$note_path")")
+  fi
+  if [[ -f "$change_note" ]]; then
+    files+=("untangle/notes/$(basename -- "$change_note")")
+  fi
+  [[ ${#files[@]} -gt 0 ]] || return 0
+
+  herdr=${UNTANGLE_HERDR:-herdr}
+  pane_file=$(mktemp "${TMPDIR:-/tmp}/untangle-herdr.XXXXXX") || {
+    printf 'untangle: %s — could not show the note\n' "$repo_path"
+    return 0
+  }
+  if ! "$herdr" pane list --workspace "$workspace" >"$pane_file" 2>/dev/null; then
+    rm -f "$pane_file"
+    printf 'untangle: %s — could not show the note\n' "$repo_path"
+    return 0
+  fi
+  pane=$(ruby_yaml herdr_pane_id "$pane_file" "$worktree" 2>/dev/null || true)
+  rm -f "$pane_file"
+  if [[ -z "$pane" ]]; then
+    printf 'untangle: %s — could not show the note\n' "$repo_path"
+    return 0
+  fi
+
+  viewer="if command -v bat >/dev/null 2>&1; then bat --paging=never --"
+  for file in "${files[@]}"; do
+    viewer+=" $(printf '%q' "$file")"
+  done
+  viewer+="; else cat --"
+  for file in "${files[@]}"; do
+    viewer+=" $(printf '%q' "$file")"
+  done
+  viewer+="; fi"
+
+  if ! "$herdr" pane run "$pane" "$viewer" >/dev/null 2>&1; then
+    printf 'untangle: %s — could not show the note\n' "$repo_path"
+    return 0
+  fi
+  printf 'untangle: %s — showed the note\n' "$repo_path"
 }
 
 # Prompt for the one orchestrator. Paths are the registered checkout, the same
@@ -599,6 +661,7 @@ consider_repo() {
   if [[ "$change_due" -eq 1 ]]; then
     classify_change_note "$repo_path" "$repo_yml" "$change_note" "$change_status"
   fi
+  show_kept_notes "$repo_path" "$DELIVERED_WORKTREE" "$DELIVERED_WORKSPACE" "$note_path" "$change_note"
   return 0
 }
 

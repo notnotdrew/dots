@@ -106,6 +106,67 @@ def herdr_list_path(data, branch)
   ""
 end
 
+def herdr_create_workspace(data)
+  return "" unless data.is_a?(Hash)
+
+  result = data["result"]
+  return "" unless result.is_a?(Hash)
+
+  workspace = result["workspace"]
+  return "" unless workspace.is_a?(Hash)
+
+  workspace["workspace_id"].to_s
+end
+
+def herdr_list_workspace(data, branch)
+  return "" unless data.is_a?(Hash)
+
+  result = data["result"]
+  return "" unless result.is_a?(Hash)
+
+  worktrees = result["worktrees"]
+  return "" unless worktrees.is_a?(Array)
+
+  worktrees.each do |entry|
+    next unless entry.is_a?(Hash)
+    next unless entry["branch"].to_s == branch
+
+    return entry["open_workspace_id"].to_s
+  end
+  ""
+end
+
+# Prefer the pane whose cwd is the delivered checkout. A one-pane workspace
+# still counts when cwd is blank.
+def herdr_pane_id(data, checkout)
+  return "" unless data.is_a?(Hash)
+
+  result = data["result"]
+  return "" unless result.is_a?(Hash)
+
+  panes = result["panes"]
+  return "" unless panes.is_a?(Array)
+
+  ids = []
+  panes.each do |pane|
+    next unless pane.is_a?(Hash)
+
+    id = pane["pane_id"].to_s
+    next if id.empty?
+
+    cwd = pane["cwd"].to_s
+    foreground = pane["foreground_cwd"].to_s
+    if !checkout.empty? && (cwd == checkout || foreground == checkout)
+      return id
+    end
+
+    ids << id
+  end
+  return ids.first.to_s if ids.length == 1
+
+  ""
+end
+
 def protected_identities(path)
   idents = []
   listed = File.lstat(path)
@@ -344,6 +405,19 @@ when "herdr_list_path"
   json_path = ARGV.fetch(1)
   branch = ARGV.fetch(2)
   puts herdr_list_path(json_load(json_path), branch)
+
+when "herdr_create_workspace"
+  puts herdr_create_workspace(json_load(ARGV.fetch(1)))
+
+when "herdr_list_workspace"
+  json_path = ARGV.fetch(1)
+  branch = ARGV.fetch(2)
+  puts herdr_list_workspace(json_load(json_path), branch)
+
+when "herdr_pane_id"
+  json_path = ARGV.fetch(1)
+  checkout = ARGV.fetch(2)
+  puts herdr_pane_id(json_load(json_path), checkout)
 
 when "remove_copied_dir"
   remove_copied_dir(ARGV.fetch(1), ARGV.fetch(2))

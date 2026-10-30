@@ -35,6 +35,8 @@ A quiet note advances the cursor and wraps after Removal. A plan leaves the curs
 
 On that same Wednesday tick, a change look asks what valuable change this bucket makes slow or unsafe. Its note is `untangle/notes/<yymmdd>-change.md`. `untangle/change-guide.md` is written on a tick when that file is missing. An open change plan blocks only later change looks. The change look leaves the cursor alone. One worktree serves both looks.
 
+Each kept note is shown in the worktree pane with `bat --paging=never`, or with `cat` when `bat` is not on that pane's PATH. A rejected note is not shown.
+
 ## Done
 
 `untangle done` clears the open plan and then advances. It reads `untangle/config.yml` in the current directory. With no open plan, it exits non-zero and leaves the cursor. `untangle done change` clears the open change plan and leaves the cursor.
