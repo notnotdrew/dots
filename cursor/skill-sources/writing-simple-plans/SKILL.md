@@ -15,7 +15,7 @@ This is the default “how do we get there” skill. It is not a review, not a g
 2. Ask only if a load-bearing fact is missing. One short ask.
 3. Write `plan.md` with Now, Done when, Not doing, and ordered Steps.
 4. Check grain: each step is one meaningful slice a reviewer could read in the log, not a tiny chore.
-5. Loop `simplify-code` on the implementation that `plan.md` describes. Fresh subagent each pass. Stop when that subagent says the plan is already simple enough, or (rarely) when a rewrite is not desirable.
+5. Loop a fresh `simplify-code` subagent on the implementation `plan.md` describes. Follow **Simplify the planned implementation**.
 
 If the user named a path, write there. Otherwise write `plan.md` in the workspace root.
 
@@ -99,8 +99,8 @@ After `plan.md` is written, this session is the orchestrator. Loop a simplify pa
 Each iteration:
 
 1. Spawn a **fresh** subagent. Do not reuse or continue a prior simplify session.
-2. Tell it to follow `simplify-code` with the implementation described in `plan.md` as the target. Same skill, same rules: preserve behavior, leave it alone when nothing is worthwhile, earn every edit. Map behavior to **Done when** and the user's goal. The file to change is `plan.md`. Do not invent a second simplify protocol, look-for list, or stop condition.
-3. If that subagent says the plan is already simple enough (`simplify-code`'s do-nothing outcome), stop.
+2. Tell it to follow `simplify-code` and nothing else about how to simplify. Name the target: the implementation described in `plan.md`. The file to change is `plan.md`. Behavior is **Done when** and the user's goal. **Not doing** stays out. Do not add "leave it alone," "do nothing is valid," "earn every edit," or "already simple enough." Do not add a look-for list, a harder bar, or a second protocol. `simplify-code` is the standard.
+3. When it returns, stop if it left the plan unchanged. That is `simplify-code`'s do-nothing outcome. Do not ask for that outcome in the prompt.
 4. If it rewrites the plan, inspect. Keep the prior `plan.md` until you accept. Accept and loop again. Reject only when the rewrite is not desirable: it drops **Done when**, does something in **Not doing**, or turns steps into chores. That stop is rare. On reject, restore the previous `plan.md` and stop.
 
 ## Examples
