@@ -1,4 +1,4 @@
 interface:
   display_name: "Reviewing Tests Antagonistically"
-  short_description: "Mutate production, report green specs, and name tests to delete"
-  default_prompt: "Attack these tests. Mutate the production seams they claim to cover and report every named example that stays green. Also name examples to delete when they are redundant, copy-locked, or more expensive to keep than the defect they catch."
+  short_description: "Mutate production, fix green specs, and delete tests that should go"
+  default_prompt: "Attack these tests. Mutate the production seams they claim to cover, fix every named example that stays green, and delete or trim examples that are redundant, copy-locked, or more expensive to keep than the defect they catch. Leave the edits unstaged."

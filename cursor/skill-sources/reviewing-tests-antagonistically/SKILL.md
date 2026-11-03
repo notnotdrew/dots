@@ -1,14 +1,14 @@
 ---
 name: reviewing-tests-antagonistically
-description: Attacks new or changed tests by mutating production code, fixtures, and clocks to see whether the named examples still pass, and flags examples to delete when they are redundant, copy-locked, or more expensive to keep than the defect they catch. Use when the user asks for an antagonistic test review, mutation-style test review, coverage-theater check, which tests to remove, or whether specs would stay green if the implementation were deleted.
+description: Attacks new or changed tests by mutating production code, fixtures, and clocks to see whether the named examples still pass, then deletes or trims examples that are redundant, copy-locked, or more expensive to keep than the defect they catch. Leaves those edits unstaged. Use when the user asks for an antagonistic test review, mutation-style test review, coverage-theater check, which tests to remove, or whether specs would stay green if the implementation were deleted.
 disable-model-invocation: true
 ---
 
 # Reviewing Tests Antagonistically
 
-Treat the tests as the accused. Your job is to make the production behavior wrong — or stop it from running — and report every named example that stays green. Then walk the same examples for deletion: redundant, useless, copy-locked, or more expensive to keep than the defect they catch.
+Treat the tests as the accused. Your job is to make the production behavior wrong — or stop it from running — and fix every named example that stays green. Then walk the same examples for deletion: redundant, useless, copy-locked, or more expensive to keep than the defect they catch.
 
-This is a **review** skill. Do not rewrite production or test code unless the user asks for fixes.
+Apply those fixes in the working tree. Leave them unstaged. Stage or commit only when asked.
 
 Prefer this over `reviewing-test-design` when the question is "do these tests actually catch a defect?" or "which of these tests should go?" Prefer `reviewing-test-design` when the question is a Farley score. Prefer `review-code` when tests are one slice of a broader change review.
 
@@ -19,7 +19,7 @@ Prefer this over `reviewing-test-design` when the question is "do these tests ac
 3. Load [attacks](references/attacks.md) and run the cheapest attack that could falsify the claim.
 4. Prefer a real mutation plus the relevant spec files. Label inspection-only findings as inspection-only.
 5. Walk every new or changed example for deletion, including ones the mutation turned red. Load the removal tells in [attacks](references/attacks.md).
-6. Report survivors and removals. A survivor says what you broke, which examples still passed, why they are vacuous, the shipping risk, and the smallest fix. A removal names the example, the cost of keeping it, and the defect class that disappears.
+6. Apply the fixes in the working tree and leave them unstaged. A survivor gets the smallest change that makes this mutation fail in this example. A removal is deleted, or narrowed until the tell is gone.
 
 If no target is given, ask which spec files, diff, or PR to attack.
 
@@ -51,7 +51,7 @@ Run the attack when the repo can run the relevant examples. Do not mutate the us
 
 If you cannot run tests, walk the same attacks on paper: factory assignment vs callback guard, clock coincidence, stubbed collaborator returning the asserted default. Mark the finding `inspection-only`. Do not pretend you ran a suite.
 
-Never leave a mutation in the tree.
+Never leave a mutation in the tree. The fixes are separate: write them in the real working tree and leave them unstaged.
 
 ## Workflow
 
@@ -108,9 +108,9 @@ The four are the usual shapes. For a shape not listed, use the same test: name t
 
 Cite `path:line`. If the example is the only pin of a real branch, boundary, security check, or reported bug, keep it and narrow the assertion. "Feels redundant" without a sibling that already fails is not a removal.
 
-### 6. Recommend the smallest honest test
+### 6. Apply the smallest honest fix
 
-The fix is the change that makes **this** mutation fail in **this** example, without turning the spec into a second implementation. When a removal tell applies, the fix is to delete the example, or to narrow it until the tell is gone.
+Apply the change that makes **this** mutation fail in **this** example, without turning the spec into a second implementation. When a removal tell applies, delete the example, or narrow it until the tell is gone. Leave the edits unstaged.
 
 Good fixes: stop pre-assigning the field in the example; stub the boundary and return a distinctive value; pick a clock where the zones disagree; assert `with` on the payload that would be wrong; delete the extra example when a sibling already pins the defect; assert status, role, or error class instead of the sentence.
 
@@ -137,7 +137,7 @@ Bad fixes: add a second mirror assertion; stub until the example is a transcript
 - **Still green:** …
 - **Why vacuous:** …
 - **Ships as:** <the wrong production outcome a maintainer could merge>
-- **Fix:** <smallest change that makes this mutation fail>
+- **Changed:** <the edit now in the working tree>
 - **Verification:** ran | inspection-only
 
 ### Genuine coverage
@@ -151,12 +151,12 @@ Bad fixes: add a second mirror assertion; stub until the example is a transcript
 - **Already covered by:** `spec/…:line` or none
 - **Cost:** <what a maintainer pays to keep it>
 - **Lost if deleted:** <defect class, or none>
-- **Action:** delete | assert the behavior instead of the text | keep one of N
+- **Changed:** <the edit now in the working tree>
 ```
 
 An example that fails its mutation and also matches a removal tell goes under Drop or trim, not Genuine coverage.
 
-Omit empty sections. If every attack failed the named examples and nothing should be deleted, say so in one paragraph and stop.
+Omit empty sections. The report describes work already done. If every attack failed the named examples and nothing was worth changing, say so in one paragraph and stop.
 
 ## Guidelines
 
@@ -165,7 +165,7 @@ Do:
 - mutate one seam at a time
 - prefer distinctive values (137, a timezone that disagrees with UTC, a non-v4 generator) over booleans
 - notice when the only real coverage is incidental and say what happens if that other path is deleted
-- recommend deleting an example that is redundant, copy-locked, or more expensive to keep than the defect it catches, even when a mutation turns it red
+- delete an example that is redundant, copy-locked, or more expensive to keep than the defect it catches, even when a mutation turns it red
 - allow a test that is a regression for a reported bug to stay, even if inelegant
 - keep the only example that pins a real branch, boundary, or security check; narrow a copy lock instead of dropping that check
 - prefer `create` over `build_stubbed` when arguing a Rails spec should exercise callbacks, unless persistence is genuinely expensive or blocked
@@ -175,7 +175,7 @@ Don't:
 - score Farley properties here
 - treat coverage percentage as evidence
 - file "add more tests" without a surviving mutation or a missing negative path you actually tried
-- require a surviving mutation before recommending a deletion
+- require a surviving mutation before deleting an example
 - file a removal you cannot anchor to a sibling, a repeated string, a setup block, or library behavior
 - delete the only pin of a real branch because the assertion is worded awkwardly; change the assertion
 - rewrite the author's sociable-test intent into a mock transcript if a fixture/builder would make the mutation fail
