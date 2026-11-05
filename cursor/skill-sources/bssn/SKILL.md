@@ -65,45 +65,25 @@ Review source code. Skip generated files, lockfiles, and binary assets. Docs onl
 
 ## Output
 
-Use this shape. Keep each bullet one thought plus an anchor.
+Use this shape, and nothing else:
 
 ```markdown
-## now
+Judgement:
+✅ Best: why
+✅ Simple: why
+✅ System: why
+❌ Now: why
 
-[one or two sentences: what this must do today, and the real constraints]
+Suggestion:
 
-## verdict
-
-[BSSN / not BSSN / sketch that should stay a sketch / robust core that is under-built]
-[one line: the missing word, or “all four hold”]
-
-## for now
-
-- `path:line` — [future that was coded]. actual now: [what is really here]. smaller: [specific solution, or “leave it”].
-
-## simple
-
-- `path:line` — [extra complexity]. can delete?: [yes/no and what still works].
-
-## best
-
-- `path:line` — [over-invest or under-invest]. appropriate bar: [sketch / core]. habitability: [what makes change hard or easy].
-
-## recommendation
-
-[keep / slim toward today / raise the bar on this path / do not pave the left-hand trail]
-[one line: smallest move that restores BSSN, or “nothing to take away”]
+what to do, with `path:line` where it helps
 ```
 
-Omit a section if empty. Do not pad. Do not recommend the general case “just in case.”
+- One line per word, in this order: Best, Simple, System, Now. ✅ means it holds. ❌ means it fails. Say why in a few plain words.
+- Suggestion is the smallest move that restores the BSSN. Plain sentences, short. If all four hold, write “Nothing to take away.”
+- Each finding is said once. Mention taste only inside the line it belongs to.
 
-Severity, in the bullet if needed:
-
-| word | mean |
-|---|---|
-| **blocks BSSN** | speculation, unearned complexity, or a quality hole that will make the next honest change expensive |
-| **wrong bar** | real mismatch of sketch vs core; fix before more work piles on |
-| **taste** | say once; do not pile |
+Plain words. Short sentences. No headings beyond these two labels. Do not pad. Do not recommend a more general design “just in case.”
 
 ## Relationship to other skills
 
@@ -116,26 +96,16 @@ Severity, in the bullet if needed:
 
 **Input:** “BSSN this: we need to serialize nine trading message types, and the change adds a pluggable JSON library plus a mapper SPI for future formats”
 
-**Output (shape):**
+**Output:**
 
 ```markdown
-## now
+Judgement:
+✅ Best: the nine types are plain and easy to read.
+❌ Simple: a JSON library and its dependencies for nine pairs of one-line methods.
+✅ System: it works end to end, nothing half-built.
+❌ Now: a factory and a mapper SPI for formats that are not here.
 
-nine known message types, Java, in-process, no second format in use.
+Suggestion:
 
-## verdict
-
-not BSSN. missing **for Now** and **Simple**. **Best** is fine on the tests; the design spends it on a future that is not here.
-
-## for now
-
-- `wire/JsonCodecFactory.java:18` — **blocks BSSN**. factory + SPI for “future formats.” actual now: nine types, JSON only. smaller: `toJson` / `fromJson` on each type.
-
-## simple
-
-- `pom.xml:41` — JSON library plus transitive deps for what is nine pairs of one-line methods. delete the library and the nine types still marshal.
-
-## recommendation
-
-slim toward today. nine explicit codecs, tests on those nine, no format SPI. a tenth type is an obvious copy, not a reason to invent a framework.
+Use nine explicit codecs. Put `toJson` and `fromJson` on each type, and drop the factory at `wire/JsonCodecFactory.java:18` and the SPI. Drop `pom.xml:41` if nothing else needs it. A tenth type is a copy, not a reason for a framework.
 ```

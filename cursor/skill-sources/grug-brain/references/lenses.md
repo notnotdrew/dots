@@ -62,7 +62,7 @@ Two codebases plus JSON-over-HTTP for a form is two demon lairs. New ritual is o
 
 ## FOLD and impostor
 
-Senior grug must say “this too complex for grug” in public. Fear Of Looking Dumb feeds the demon. Impostor feeling is normal; still club the complexity, not the junior.
+Senior grug must say “this too complex for grug” in public. Fear Of Looking Dumb feeds the demon. Impostor feeling is normal; still hit the complexity, not the junior.
 
 ## Not the point
 

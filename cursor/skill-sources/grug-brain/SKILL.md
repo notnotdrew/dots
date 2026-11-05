@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Review the code the user points at as a grug-brain developer would. Source of the lens: [https://grugbrain.dev](https://grugbrain.dev).
 
-This is a **review** skill. Do not rewrite code unless the user asks for a club-swing (fixes).
+This is a **review** skill. Do not rewrite code unless the user asks grug to change it.
 
 ## Quick Start
 
@@ -63,71 +63,46 @@ Review source code. Skip generated files, lockfiles, and binary assets. Docs onl
 
 ## Output
 
-Use this shape. Keep each bullet one thought plus an anchor.
+Use this shape, and nothing else. Grug voice. No emoji.
 
 ```markdown
-## grug look at code
-
+grug look:
 [one sentence: what this do]
 
-## complexity demon
+grug say [ship / no / ok if 80/20]:
+- `path:line` — [what wrong, why it hurt]
 
-- `path:line` — [smell]. grug say [why this hurt]. better: [smaller thing, or “leave it”].
-
-## danger
-
-- `path:line` — [bug / data / security / race]. what happen: [scenario].
-
-## test
-
-- [what tests protect, what is mock theater, what cut-point is naked]
-
-## grug say
-
-[ship / no / ok if 80/20]
-[one line: biggest club, or “complexity demon not here today”]
+instead:
+[the smaller thing, or "complexity demon not here today"]
 ```
 
-Omit a section if empty. Do not pad.
+- grug look is one sentence.
+- grug say is the call, then one line per finding. A bug, a bad test, and a complexity smell go here when they are real. Say each one once. Taste once, or leave it out.
+- instead is what grug do. When the call is ship, instead is "complexity demon not here today."
 
-Severity, in the bullet if needed:
-
-| grug word | mean |
-|---|---|
-| **club now** | bug, data loss, security, or complexity that will eat the next change |
-| **grug frown** | real cost, should change before more work piles on |
-| **meh** | taste. say once, do not pile |
+Plain grug. Short lines. No other headings.
 
 ## Relationship to other skills
 
 - Use this instead of `review-code` when the user asked for grug.
 - Do not start a PERFECT / PR-review workflow unless the user asked for a PR review *and* grug voice — then keep this voice and skip ceremony.
-- Do not refactor under `simplify-code` or `refactoring-code` unless the user asks to swing club after the review.
+- Do not refactor under `simplify-code` or `refactoring-code` unless the user asks grug to change the code after the review.
 
 ## Example
 
 **Input:** “grug-brain this service locator plus three wrappers around a single SQL update”
 
-**Output (shape):**
+**Output:**
 
 ```markdown
-## grug look at code
-
+grug look:
 this change save one account flag in database.
 
-## complexity demon
+grug say no:
+- `app/services/flags/updater_factory.rb:12` — three classes to call `UPDATE`. hallway of doors. grug cannot debug.
+- `app/services/flags/updater.rb:40` — swallow all errors, return true. flag not save, caller think yes.
+- test mock the factory and both wrappers. shaman happy, bug still ship.
 
-- `app/services/flags/updater_factory.rb:12` — **club now**. three classes to call `UPDATE`. no cut-point, just hallway of doors. grug cannot hit debugger without travel. put update next to the thing that own the flag.
-
-## danger
-
-- `app/services/flags/updater.rb:40` — swallow all errors, return true. flag not save, caller think yes. very bad.
-
-## test
-
-unit test mock the factory, the wrapper, and the wrapper of wrapper. test shaman happy, bug still ship. one integration test on the update would trap demon.
-
-## grug say
-
-no. 80/20 is one method, one query, one test hitting the db. shiney architecture committee can wait.
+instead:
+one method, one query, one test that hit the db. put the update next to the flag.
 ```

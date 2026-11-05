@@ -60,45 +60,88 @@ This skill does not hunt complexity in general, judge familiarity as a virtue, o
 4. **Construct vs artifact.** Familiar source can still complect. A longer, less familiar shape can be one fold. Judge the design that runs.
 5. **The split.** What would you draw apart so each part is one fold? Prefer the move that deletes the braid. A wrapper that hides it is another easy choice.
 6. **Size it.** Same outcome, fewer things changing together. If the split replaces the construct or is a different project, it is not the miss.
-7. **Say it.** Easy, simple, or no braid. After sizing, the split is either the miss or left easy. Leave it easy when the split would change behavior for other callers, or the construct is a fence you cannot justify moving.
+7. **Say it.** Write the output below. Leave it easy when the split would change behavior for other callers, or the construct is a fence you cannot justify moving.
 
 ## Output
 
-```markdown
-## braid
-
-[what this change braids together, or what it draws apart]
-
-## verdict
-
-[easy / simple / no braid]
-[one sentence: what this change did to the braid]
-
-## the miss
-
-- `path:line` — [the braid]. separate: [the split]. that removes: [what no longer has to change together, or what callers stop knowing].
-```
-
-Omit **the miss** when the verdict is simple or no braid.
-
-When the easy choice should stay, replace **the miss** with:
+Use this shape, and nothing else:
 
 ```markdown
-## leave it easy
+Judgement:
+❌ Simple: why
+✅ Easy: why
 
-[the split you considered, and what it would break or how much larger it is]
+Suggestion:
+
+what to draw apart, with `path:line` where it helps
 ```
 
-Keep each bullet one thought plus an anchor. Do not invent a braid to fill the section.
+- Two lines, Simple then Easy. ✅ means that word holds. ❌ means it does not. Say why in a few plain words.
+- Simple holds when the thing is one fold. Easy holds when it is near the caller. ✅ Easy is not praise. The miss is ❌ Simple.
+- Suggestion is the split, in plain sentences. When both hold, write “Nothing to take away.”
+- When the split would change behavior for other callers, or the construct is a fence you cannot move, start the suggestion with “Leave it.”
+- When you cannot name two folds, skip the two lines. Judgement is “No braid.” Suggestion is “Nothing to take away.”
+- Say each finding once.
+
+Plain words. Short sentences. No other headings. Do not invent a braid to fill the suggestion.
 
 ## Examples
 
-**Easy.** A save callback both persists the order and decides whether to email. Familiar place. The decision and the effect are one fold. Separate: a function from the order value to a boolean, and a sender the caller composes. The callback stops knowing the rule.
+**Easy.** The save callback persists the order and decides whether to email.
 
-**Easy that stays.** Every write must stamp `updated_at`, and the framework already does that in one place. Pulling it out means every writer remembers. The braid is the construct. Leave it easy.
+```markdown
+Judgement:
+❌ Simple: the callback decides whether to email and sends it
+✅ Easy: it sits in the save callback the caller already has
 
-**Simple.** The diff pulls the email rule out as a function of the order, and the callback only sends when that function says so. Verdict: simple.
+Suggestion:
 
-**Still easy.** The diff adds `OrderMailerPolicy` that loads the user, reads the clock, and queries the last email. New name, same braid of decision, time, and I/O. Separate the rule (order in, boolean out) from the reads.
+Take the decision out as a function from the order to a boolean. The callback only saves. The caller sends when that function says so.
+```
 
-**Familiar and simple.** A short function of values, one job, called by the caller. Short because it is one fold. Verdict: simple.
+**Easy that stays.** Every write stamps `updated_at` in the one place the framework already does.
+
+```markdown
+Judgement:
+❌ Simple: the stamp is braided into the write
+✅ Easy: one place already does it for every writer
+
+Suggestion:
+
+Leave it. Pulling the stamp out means every writer has to remember.
+```
+
+**Simple.** The email rule is a function of the order. The callback only sends.
+
+```markdown
+Judgement:
+✅ Simple: the rule is a function of the order, and the callback only sends
+✅ Easy: the caller already has that callback
+
+Suggestion:
+
+Nothing to take away.
+```
+
+**Still easy.** `OrderMailerPolicy` loads the user, reads the clock, and queries the last email.
+
+```markdown
+Judgement:
+❌ Simple: the policy decides, and it also loads, reads the clock, and queries
+✅ Easy: a new type is a familiar place to put that
+
+Suggestion:
+
+A function from the order to a boolean. Do the reads outside it and pass in what the rule needs.
+```
+
+**No braid.** A rename, or a local patch on an older mess.
+
+```markdown
+Judgement:
+No braid.
+
+Suggestion:
+
+Nothing to take away.
+```

@@ -61,43 +61,82 @@ This skill does not hunt complexity in general, judge the simplest system for no
 2. **The tangle.** What was already hard, and which existing code forces the special case. Anchor the forcing code, not only the new lines.
 3. **One level up.** What change at that forcing point would make this patch unnecessary? Prefer the move that deletes the new code.
 4. **Size it.** Same outcome, less machinery, or the same machinery left easier to change. If the untangle is a different project, it is not the obvious miss.
-5. **Say it.** Knot, untangle, or no tangle. "Leave the knot" is allowed when the higher-level move would change behavior for other callers, or the forcing code is a fence you cannot justify moving.
+5. **Say it.** Write the output below. "Leave the knot" is allowed when the higher-level move would change behavior for other callers, or the forcing code is a fence you cannot justify moving.
 
 ## Output
 
-```markdown
-## tangle
-
-[what was already hard, and the code that forces the special case]
-
-## verdict
-
-[knot / untangle / no tangle]
-[one sentence: what this change did to the tangle]
-
-## the miss
-
-- `path:line` — [the knot]. untangle: [the higher-level change]. that removes: [what goes away, or what callers stop knowing].
-```
-
-Omit **the miss** when the verdict is untangle or no tangle.
-
-When the knot should stay, replace **the miss** with:
+Use this shape, and nothing else:
 
 ```markdown
-## leave the knot
+Judgement:
+❌ Knot: why, including the tangle that was already there
 
-[the higher-level move you considered, and what it would break or how much larger it is]
+Suggestion:
+
+the higher-level move, with `path:line` where it helps
 ```
 
-Keep each bullet one thought plus an anchor. Do not invent a miss to fill the section.
+- One line. ✅ Untangle or ❌ Knot. Say why in a few plain words, and name the tangle that forced the special case.
+- Suggestion is the move that makes the knot unnecessary. Plain sentences, short. When the verdict is untangle, write “Nothing to take away.”
+- When the higher-level move would change behavior for other callers, or the forcing code is a fence you cannot move, the line still says ❌ Knot, and the suggestion starts with “Leave it.”
+- When nothing older is forcing a special case, skip the mark. Judgement is “No tangle.” Suggestion is “Nothing to untangle.”
+- Say each finding once.
+
+Plain words. Short sentences. No other headings. Do not invent a knot to fill the suggestion.
 
 ## Examples
 
-**Knot.** A page loads a collection, then each card queries its own association. The diff preloads inside the card partial. The collection query is the tangle. Untangle: include the association on that query. The partial stops knowing how to load.
+**Knot.** A page loads a collection, then each card queries its own association. The diff preloads inside the card partial.
 
-**Knot that stays.** One admin path must not send mail, so the form gains `skip_notifications:`. Changing the default would mail every other caller. The flag is the seam. Leave the knot.
+```markdown
+Judgement:
+❌ Knot: the card partial preloads its association. The collection query never included it.
 
-**Untangle.** The diff deletes the per-card preload and includes the association where the collection is loaded. Verdict: untangle.
+Suggestion:
 
-**Still a knot.** The diff adds a wrapper so one caller can ignore a bad method. The method is still bad for everyone else. Untangle: change the method.
+Include the association on the collection query. Delete the preload. The partial stops knowing how to load.
+```
+
+**Knot that stays.** One admin path must not send mail, so the form gains `skip_notifications:`.
+
+```markdown
+Judgement:
+❌ Knot: the form takes skip_notifications so this path does not send mail. Every other caller still mails by default.
+
+Suggestion:
+
+Leave it. Changing the default would mail every other caller.
+```
+
+**Untangle.** The diff deletes the per-card preload and includes the association where the collection is loaded.
+
+```markdown
+Judgement:
+✅ Untangle: the association is included where the collection is loaded, and the per-card preload is gone.
+
+Suggestion:
+
+Nothing to take away.
+```
+
+**Still a knot.** The diff adds a wrapper so one caller can ignore a bad method.
+
+```markdown
+Judgement:
+❌ Knot: a wrapper lets one caller skip a bad method. The method is still bad for everyone else.
+
+Suggestion:
+
+Change the method. The wrapper goes away.
+```
+
+**No tangle.** A new feature, and nothing older forces a special case.
+
+```markdown
+Judgement:
+No tangle.
+
+Suggestion:
+
+Nothing to untangle.
+```
