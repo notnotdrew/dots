@@ -5,17 +5,17 @@
 #   prrr                        Home picker: start a new review, or open a local one
 #   prrr list                   Print one TSV row per review, no terminal needed
 #   prrr start <number|url>     Start (or re-run) a review for that PR
-#   prrr start --requested      Start a review for every PR requesting your review
+#   prrr start --requested      Start a review for every PR that requested you
 #   prrr --clean [number|url]   Remove local artifacts/worktrunks for closed/merged
 #                               PRs, or local reviews older than 14 days
 #   prrr <number|url>           Pick an artifact for that PR review
 #
 # list columns are status, owner/repo, number, title, url. status is "new" for
-# a PR requesting your review with no local review, "rerun" for one you have
+# a PR that requested you with no local review, "rerun" for one you have
 # reviewed locally that still requests you, and "local" for the rest.
 #
 # Home picker:
-#   +        open PR requesting your review, not reviewed locally yet
+#   +        open PR that requested you, not reviewed locally yet
 #   *        local review whose PR still requests your review
 #   enter    start the review (+ rows) or browse artifacts (local rows)
 #   ctrl-n   start/re-run a review for the highlighted row, or for a typed
@@ -399,13 +399,13 @@ latest_epoch_checkout_path() {
   printf '%s\n' "$path"
 }
 
-# Print "owner/repo<TAB>number<TAB>title<TAB>url" for open PRs requesting your review.
-# Soft-fails so the picker still works when gh is missing, logged out, or offline.
+# Print "owner/repo<TAB>number<TAB>title<TAB>url" for open PRs that requested you
+# personally. `--review-requested=@me` also matches a team you belong to.
 list_review_requested_prs() {
   command -v gh >/dev/null 2>&1 || return 0
 
   gh search prs \
-    --review-requested=@me \
+    user-review-requested:@me \
     --state=open \
     --sort=updated \
     --order=desc \
@@ -860,10 +860,10 @@ start_one_requested() {
   (start_review_from_url "$url" >&2 && printf '%s' "${launch_action:-started}")
 }
 
-# Start a review for every open PR that requests your review.
+# Start a review for every open PR that requested you personally.
 # A same-head ready review no-ops in the checkout resolver. A review already
 # running on this head is left alone. A new PR, or one whose head has moved,
-# still starts.
+# still starts. Team-only requests are not started.
 start_requested_reviews() {
   local status repo number title url action
   local started=0 unchanged=0 running=0 failed=0

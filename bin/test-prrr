@@ -100,6 +100,7 @@ bin="$tmpdir/bin"
 art="$tmpdir/artifacts"
 dev="$tmpdir/dev"
 log="$tmpdir/herdr.log"
+ghlog="$tmpdir/gh.log"
 err="$tmpdir/err"
 out="$tmpdir/out"
 snap="$tmpdir/snapshot.json"
@@ -115,6 +116,7 @@ last_status=0
 
 mkdir -p "$bin" "$art" "$dev/acme/widgets" "$checkout" "$onhead" "$oldhead"
 : >"$log"
+: >"$ghlog"
 
 git init --quiet "$dev/acme/widgets"
 git -C "$dev/acme/widgets" remote add origin git@github.com:acme/widgets.git
@@ -129,18 +131,26 @@ oldhead="$(CDPATH= cd "$oldhead" && pwd -P)"
 checkout="$(CDPATH= cd "$checkout" && pwd -P)"
 onhead_sha="$(git -C "$onhead" rev-parse HEAD)"
 
-cat >"$bin/gh" <<'EOF'
+cat >"$bin/gh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-case "${1:-}" in
+printf '%s\\n' "\$*" >>"$ghlog"
+case "\${1:-}" in
   search)
-    printf '%s\n' "acme/widgets	7	Example PR	https://github.com/acme/widgets/pull/7"
+    # --review-requested=@me also matches team requests. Only the user-only
+    # qualifier should start a review; a team-only hit must stay out.
+    if printf '%s' "\$*" | grep -F -q -- 'user-review-requested:@me'; then
+      printf '%s\\n' "acme/widgets	7	Example PR	https://github.com/acme/widgets/pull/7"
+    else
+      printf '%s\\n' "acme/widgets	7	Example PR	https://github.com/acme/widgets/pull/7"
+      printf '%s\\n' "acme/widgets	8	Team PR	https://github.com/acme/widgets/pull/8"
+    fi
     ;;
   pr)
-    printf '%s\n' "Example PR"
+    printf '%s\\n' "Example PR"
     ;;
   *)
-    printf 'unexpected gh %s\n' "$*" >&2
+    printf 'unexpected gh %s\\n' "\$*" >&2
     exit 1
     ;;
 esac
@@ -240,6 +250,7 @@ reset_artifacts() {
 run_prrr() {
   local status=0
   : >"$log"
+  : >"$ghlog"
   PRRR_ARTIFACTS_ROOT="$art" \
     PRRR_DEV_ROOT="$dev" \
     PRRR_RESOLVE_CHECKOUT="$bin/resolve-review-checkout" \
@@ -312,6 +323,20 @@ assert_eq 'new review exits 0' 0 "$last_status"
 assert_eq 'new review starts' \
   '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
   "$(summary_line)"
+if grep -F -q -- 'user-review-requested:@me' "$ghlog"; then
+  printf 'ok  %s\n' 'search is user-only'
+else
+  printf 'not ok  %s\nmissing user-review-requested:@me in:\n%s\n' \
+    'search is user-only' "$(cat "$ghlog")"
+  failures=1
+fi
+if grep -E -q -- '--review-requested(@|=)' "$ghlog"; then
+  printf 'not ok  %s\nfound team-inclusive search in:\n%s\n' \
+    'search is not team-inclusive' "$(cat "$ghlog")"
+  failures=1
+else
+  printf 'ok  %s\n' 'search is not team-inclusive'
+fi
 assert_logged 'new review opens a workspace' 'worktree open'
 assert_logged 'new review does not take focus' '--no-focus'
 assert_not_logged 'new review adds no extra tab' 'tab create'
