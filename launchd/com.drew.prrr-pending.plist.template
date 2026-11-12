@@ -20,9 +20,9 @@
 		<string>/bin/bash</string>
 		<string>@SCRIPT@</string>
 	</array>
-	<!-- Every 30 minutes (1800s). Leaves a PR alone while a review of its current head is already running, and no-ops when that head is already reviewed. -->
+	<!-- Every 5 minutes (300s). Starts a PR only when it has no local review yet, and not while a review of that PR is already running. -->
 	<key>StartInterval</key>
-	<integer>1800</integer>
+	<integer>300</integer>
 	<key>StandardOutPath</key>
 	<string>@HOME@/Library/Logs/prrr-pending.out.log</string>
 	<key>StandardErrorPath</key>

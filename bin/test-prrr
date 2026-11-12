@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Fixture tests for `prrr start --requested`: leave an in-flight review alone,
-# still no-op a same head, and start when the PR is new or the head has moved.
-# Quick mode is checked by sourcing prrr: alt-q wiring, and --mode quick on the
-# pane command without --full-rebuild.
+# Fixture tests for `prrr start --requested`: start only a PR with no local
+# review yet, leave an in-flight review alone, and leave a local series alone
+# even when the head has moved. Quick mode is checked by sourcing prrr: alt-q
+# wiring, and --mode quick on the pane command without --full-rebuild.
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -343,6 +343,20 @@ assert_not_logged 'new review adds no extra tab' 'tab create'
 assert_not_logged 'new review passes no mode' '--mode'
 assert_not_logged 'new review passes no full rebuild' '--full-rebuild'
 
+# A local series already exists: --requested does not start another epoch.
+reset_artifacts
+mkdir -p "$art/acme--widgets/pr-7"
+write_snapshot
+write_resolve review "$checkout" "$head_b"
+run_prrr start --requested
+assert_eq 'already reviewed exits 0' 0 "$last_status"
+assert_eq 'already reviewed is left alone' \
+  '1 requested, 0 started, 1 already current, 0 in progress, 0 failed' \
+  "$(summary_line)"
+assert_not_logged 'already reviewed opens nothing' 'worktree open'
+assert_not_logged 'already reviewed adds no tab' 'tab create'
+assert_not_logged 'already reviewed runs no pane' 'pane run'
+
 # Same head already reviewed: resolver no-op, no workspace touched.
 reset_artifacts
 write_snapshot
@@ -394,19 +408,21 @@ assert_eq 'pane on this commit is left alone' \
   "$(summary_line)"
 assert_not_logged 'pane on this commit adds no tab' 'tab create'
 
-# Head moved out from under the open workspace: start one new tab, still unfocused.
+# Head moved out from under the open workspace: that review is still going.
 reset_artifacts
 write_snapshot "$oldhead"
 write_resolve review "$tmpdir/new-checkout" "$head_b"
 run_prrr start --requested
 assert_eq 'moved head exits 0' 0 "$last_status"
-assert_eq 'moved head starts' \
-  '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
+assert_eq 'moved head is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
   "$(summary_line)"
-assert_logged 'moved head opens a tab' 'tab create'
-assert_logged 'moved head does not take focus' '--no-focus'
-assert_not_logged 'moved head does not open a second workspace' 'worktree open'
-assert_eq 'moved head is not left alone' '' "$(leave_line)"
+assert_eq 'moved head says why' \
+  'prrr: leave acme/widgets#7 alone; a review is already running' \
+  "$(leave_line)"
+assert_not_logged 'moved head adds no tab' 'tab create'
+assert_not_logged 'moved head opens no workspace' 'worktree open'
+assert_not_logged 'moved head runs no pane' 'pane run'
 
 # A labelled workspace with nothing in it is not a review of this head.
 reset_artifacts
@@ -429,16 +445,16 @@ assert_eq 'work dir for this head is left alone' \
   "$(summary_line)"
 assert_not_logged 'work dir for this head opens nothing' 'worktree open'
 
-# Work dir for the previous head does not block the moved head.
+# Work dir for a previous head is still this PR's in-flight review.
 reset_artifacts
 write_snapshot
 write_brief "$art/acme--widgets/.pr-7.work.previous" "$head_a"
 write_resolve review "$checkout" "$head_b"
 run_prrr start --requested
-assert_eq 'work dir for the previous head still starts' \
-  '1 requested, 1 started, 0 already current, 0 in progress, 0 failed' \
+assert_eq 'work dir for the previous head is left alone' \
+  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
   "$(summary_line)"
-assert_logged 'previous-head work dir still opens a workspace' 'worktree open'
+assert_not_logged 'previous-head work dir opens nothing' 'worktree open'
 
 # Work dir that has not recorded a head yet is still in progress.
 reset_artifacts
@@ -451,7 +467,7 @@ assert_eq 'unheaded work dir is left alone' \
   "$(summary_line)"
 assert_not_logged 'unheaded work dir opens nothing' 'worktree open'
 
-# Publish marker is an in-progress review even with no workspace.
+# A series in the middle of publish already has a local review directory.
 reset_artifacts
 write_snapshot
 mkdir -p "$art/acme--widgets/pr-7"
@@ -471,7 +487,7 @@ printf '%s\n' 'StagingDirectory: /tmp/staging' >"$art/acme--widgets/pr-7/.publis
 write_resolve review "$checkout" "$head_b"
 run_prrr start --requested
 assert_eq 'publish marker is left alone' \
-  '1 requested, 0 started, 0 already current, 1 in progress, 0 failed' \
+  '1 requested, 0 started, 1 already current, 0 in progress, 0 failed' \
   "$(summary_line)"
 assert_not_logged 'publish marker opens nothing' 'worktree open'
 assert_not_logged 'publish marker adds no tab' 'tab create'
