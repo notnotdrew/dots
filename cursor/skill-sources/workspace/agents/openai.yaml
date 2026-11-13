@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workspace"
+  short_description: "Open a Herdr workspace and send the task to a cursor agent"
+  default_prompt: ""
