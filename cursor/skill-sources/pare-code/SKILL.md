@@ -44,6 +44,7 @@ Touch untouched code only where the deletion cannot land without its caller.
 - Inputs, outputs, side effects, and errors, in the same circumstances.
 - A name that is the only place a domain idea lives.
 - A comment that holds a why, a contract, or a trap the code cannot show.
+- In TypeScript, a return type on an export or other edit boundary is a contract, not a restatement.
 - A seam that keeps two ideas from sharing a place.
 - Tests that specify what callers observe. Rewrite a test only when its subject was structure you removed and that behavior is still specified.
 

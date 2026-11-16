@@ -30,6 +30,7 @@ Default scope:
 - Prefer explicit code over dense cleverness.
 - Avoid nested ternaries when plain control flow is clearer.
 - Remove speculative abstractions that solve future problems only.
+- In TypeScript, extracting a helper is not a simplify. It adds types. Leave duplication unless the name is the only place a domain idea lives.
 
 ## Workflow
 
@@ -47,7 +48,7 @@ Look for:
 - helpers or abstractions used only once
 - generic naming that obscures intent
 - conditionals or branching that can be flattened safely
-- repeated logic where one local extraction would clarify the code
+- repeated logic where one local extraction would clarify the code. In TypeScript, skip this unless the name is a domain idea the inline code cannot show
 
 ### 3. Clean comments
 
