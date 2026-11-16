@@ -42,7 +42,7 @@ A module is responsible to one user or stakeholder, not "one thing." Instantiati
 
 Holds the feature, and why the author chose it from the set that was available.
 
-Empty: the everyday subset. Orthogonal features are fine. A line that requires recalling the standard is the miss.
+Empty: name the extra fact this feature adds on this path, then drop the feature or make that fact local. Familiarity of the feature is not the miss. Orthogonal features are fine.
 
 ## Custom mappings
 

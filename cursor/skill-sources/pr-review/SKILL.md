@@ -140,5 +140,5 @@ Keep Linear, PR metadata, Git history, and the reviewed checkout read-only. Do n
 - Do not expand into unrelated refactoring requests.
 - Skip generated files, lockfiles, binary assets, and prose-only files as primary review targets unless changed behavior depends on them.
 - Focused reviewers load only stack skills named in their handoff; preserve unmatched-language limitations as coverage gaps.
-- Prefer specific bug reports to vague discomfort.
+- Prefer specific bug reports to vague discomfort. A Form or Clarity look-for is not a finding until you can point at a miss.
 - Preserve unexecuted, unavailable, pending, skipped, and failing checks as explicit evidence or coverage gaps.

@@ -10,9 +10,9 @@ disable-model-invocation: true
 
 1. Read the target test files fully before looking at the implementation.
 2. Load [anti-patterns](references/anti-patterns.md) always; load the other references conditionally.
-3. Score each of the eight properties 1-10 with specific evidence from the code.
+3. Score each of the eight properties 1-10. Point at a miss with `file:line`, or score 10.
 4. Run `scripts/farley-score.sh` to compute the weighted score.
-5. Report prioritized, actionable recommendations.
+5. Report prioritized recommendations, or none.
 
 If no target is given, ask which test files to review.
 
@@ -34,34 +34,42 @@ Prefer `review-code` when the tests are only one part of a broader change review
 
 ## The Eight Properties
 
-Score each property on a 1-10 scale against the test file or suite.
+Score each property on a 1-10 scale against the test file or suite. A property holds at 10 until you can point at its miss. A feeling is not a miss.
 
 ### 1. Understandable (U)
 
-- 10: tests read like specifications; behavior is clear without reading implementation
-- 7-9: clear with minor ambiguities
-- 4-6: requires code inspection to understand purpose
-- 1-3: cryptic; leans on implementation details
+Holds unless a reader must open production at `path:line` to know what the example claims (the name does not match the claim). If you cannot point, score 10.
+
+- 10: holds; you cannot point at an example whose name does not match its claim
+- 7-9: a few examples need production at `path:line` because name ≠ claim
+- 4-6: several examples need production at `path:line`
+- 1-3: most examples need production at `path:line`
 
 ### 2. Maintainable (M)
 
-- 10: proper abstractions; implementation changes rarely break tests
-- 7-9: good separation of concerns; occasional brittleness
-- 4-6: some coupling to implementation
-- 1-3: tightly coupled; breaks on minor changes
+Holds unless a harmless rename or extract of production fails this example. Quote the assertion that pins layout. If you cannot point, score 10.
+
+- 10: holds; you cannot name a harmless rename or extract that fails an example
+- 7-9: a few examples pin production layout
+- 4-6: several examples pin layout
+- 1-3: most examples pin layout; a rename or extract would fail widely
 
 ### 3. Repeatable (R)
 
+Point at a named path. "Rarely" or "occasional" is not a miss.
+
 - 10: deterministic; same result every time, anywhere
-- 7-9: rarely flaky; minimal environmental dependencies
-- 4-6: occasional flakiness; timing or state dependencies
-- 1-3: frequently inconsistent; relies on external state or timing
+- 7-9: a named path has a small environment or timing dependency
+- 4-6: a named path flakes, or depends on timing or leftover state
+- 1-3: frequently inconsistent; named paths rely on external state or timing
 
 ### 4. Atomic (A)
 
+Point at a named path. "Sometimes" is not a miss.
+
 - 10: fully isolated; no shared state; parallelizable
-- 7-9: mostly isolated; minor inter-test dependencies
-- 4-6: some shared state; order sometimes matters
+- 7-9: mostly isolated; a named path has an inter-test dependency
+- 4-6: named shared state; order matters for a named path
 - 1-3: heavy interdependencies; requires a specific order
 
 ### 5. Necessary (N)
@@ -82,24 +90,30 @@ A test asserting `result.field == "literal that appears verbatim in the source u
 
 ### 6. Granular (G)
 
-- 10: each test asserts one thing; failures pinpoint the exact issue
-- 7-9: focused; occasional multiple assertions with clear purpose
-- 4-6: covers multiple behaviors; diagnosis takes effort
-- 1-3: sprawling; failures require investigation
+Holds unless a failure does not name which claim broke (several unrelated asserts, one example). If you cannot point, score 10.
+
+- 10: holds; a failure names which claim broke
+- 7-9: one example; a failure does not name which claim broke
+- 4-6: several examples mix unrelated asserts; a failure does not name which claim broke
+- 1-3: most examples mix unrelated asserts; failures do not name the claim
 
 ### 7. Fast (F)
 
-- 10: milliseconds per test; the suite runs quickly
-- 7-9: quick; minor optimization opportunities
-- 4-6: some slow tests; the suite takes noticeable time
-- 1-3: slow enough to disrupt development flow
+Holds unless a measured run is slow, or I/O or sleep you can point at. "Noticeable" and "disrupts flow" are not misses. If you cannot point, score 10.
+
+- 10: holds; no measured slow run, no I/O or sleep you can point at
+- 7-9: named I/O or sleep; no measured slow run
+- 4-6: a measured run is slow, or named I/O or sleep on several tests
+- 1-3: a measured run shows the suite is slow; I/O or sleep on many tests
 
 ### 8. First (T)
 
-- 10: clear evidence of test-first; tests drive design
-- 7-9: likely test-first; good design influence
-- 4-6: unclear; tests feel like afterthoughts
-- 1-3: clearly written after the code; tests follow implementation structure
+Score only from git history (tests landed after the code they cover) or examples that mirror source structure at `path:line`. "Feels like afterthoughts" is not a miss. Unclear TDD is not a miss. If you cannot point, score 10.
+
+- 10: holds; no test-after git history, no example that mirrors source structure at `path:line`
+- 7-9: git history shows a few tests landed after the code they cover
+- 4-6: git history shows tests landed after, or examples mirror source structure at `path:line`
+- 1-3: examples follow source structure at `path:line`; git history shows they were written after
 
 ## The Farley Score
 
@@ -121,14 +135,16 @@ Farley Score = (U*1.5 + M*1.5 + R*1.25 + A*1.0 + N*1.0 + G*1.0 + F*0.75 + T*1.0)
 
 Understandable and Maintainable carry 1.5x because tests-as-documentation and long-term cost dominate. Repeatable carries 1.25x because reliability drives trust. Fast carries 0.75x because speed can be optimized later.
 
-| Range | Rating | Meaning |
-|-------|--------|---------|
-| 9.0-10.0 | Exemplary | Model for the industry |
-| 7.5-8.9 | Excellent | High quality, minor improvements possible |
-| 6.0-7.4 | Good | Solid foundation, clear opportunities |
-| 4.5-5.9 | Fair | Functional but needs significant attention |
-| 3.0-4.4 | Poor | Limited value; major refactoring needed |
-| Below 3.0 | Critical | Tests may be harmful; consider rewriting |
+| Range | Rating |
+|-------|--------|
+| 9.0-10.0 | Exemplary |
+| 7.5-8.9 | Excellent |
+| 6.0-7.4 | Good |
+| 4.5-5.9 | Fair |
+| 3.0-4.4 | Poor |
+| Below 3.0 | Critical |
+
+The rating names the number. It is not a rewrite mandate. Empty Top Recommendations, or "Nothing to take away," is allowed even when the number would have been 7.
 
 ## Output Shape
 
@@ -156,9 +172,7 @@ Understandable and Maintainable carry 1.5x because tests-as-documentation and lo
 
 ### Top Recommendations
 
-1. <highest impact>
-2. <second>
-3. <third>
+1. <highest impact, or "Nothing to take away">
 ```
 
 When the review recommends removals or restructuring, add the action summary from [preservation](references/preservation.md).
@@ -169,10 +183,10 @@ Score test files individually. Do not report an aggregate across files.
 
 Do:
 
-- cite `file:line` for every score justification
+- cite `file:line` for every score justification; a feeling is not evidence
 - say what the tests do well before critiquing
-- weigh preservation value against a low score explicitly, rather than letting the number decide
-- score conservatively and say so when TDD adherence is unclear
+- weigh preservation against a low score explicitly; the number and rating do not decide removals
+- score 10 when you cannot point at that property's miss
 
 Don't:
 
@@ -180,6 +194,8 @@ Don't:
 - treat coverage percentage as evidence of quality
 - compute the Farley Score by hand
 - let a clean-looking test pass on Necessary when it asserts nothing load-bearing
+- treat a rating label as a mandate to rewrite
+- deduct First for unclear TDD, or for tests that "feel like afterthoughts"
 
 ## Related Skills
 

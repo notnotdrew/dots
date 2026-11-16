@@ -24,7 +24,7 @@ Working memory holds about **four chunks**. A chunk is one fact the reader must 
 
 **Extraneous** load is how the code is presented. That is the miss.
 
-Start by assuming the presentation costs more than four. Count what a new reader holds, not what the author already knows. Familiarity is not a light hold.
+Count named extra facts a new reader holds, not what the author already knows. If you cannot name one, “No extra hold.” Familiarity is not a light hold.
 
 ## What counts
 
@@ -35,7 +35,7 @@ Extraneous:
 - Inheritance the reader must climb. Prefer composition.
 - Shallow modules: a complex name or interface around a small job (`MetricsProviderFactoryFactory`). Too many, and the reader holds every collaboration.
 - Deep is the aim: simple interface, complex functionality, linear to read.
-- Language features beyond the everyday subset. Stick to the minimum the next reader already has.
+- A language feature the reader must hold as an extra fact on this path. Name it. Familiarity of the feature is not the miss.
 - Custom mappings (`418` means banned). Prefer self-describing values.
 - DRY that adds a dependency the reader must also hold. A little duplication is cheaper.
 - A layer whose only job is a hop. Hiding complexity is fine. Adding a jump is load.

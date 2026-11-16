@@ -5,7 +5,7 @@ description: "Use when the user asks for a code review of source changes. Do not
 
 # Review Code
 
-Practical code review focused on correctness, readability, maintainability, and catching real problems.
+Practical code review focused on correctness and catching real problems. Readability is not a finding.
 
 ## Quick Start
 
@@ -19,6 +19,7 @@ Default stance:
 - review code, not prose or generated files
 - findings first, ordered by severity
 - prefer concrete bugs and behavioral risks over theoretical purity
+- omit a finding you cannot point at
 - do not rewrite code unless the user asks for fixes
 
 ## Scope
@@ -32,11 +33,11 @@ If the changeset only contains non-code files, state that no code review is appl
 
 ## Core Principles
 
-- Readability beats cleverness.
+- Readability is not a finding. Length, nesting, "hard to read," and weak names start a candidate. They are not a miss until a caller, a test, or a complect split exists: two things of a different kind sharing a place, and a named split of existing code.
+- Maintainability holds unless you can name that split, or a piece unused by today's callers. "Excessive nesting" and "unclear payoff" are not the verdict.
 - Respect existing patterns unless they create real problems.
 - Be conservative with refactoring recommendations.
 - Distinguish must-fix issues from optional improvements.
-- Prefer evidence tied to behavior, risk, or maintenance cost.
 
 ## Review Process
 
@@ -61,13 +62,14 @@ Look for:
 
 ### 3. Check maintainability
 
-Look for:
-- excessive nesting or branching
-- mixed levels of abstraction in one function
-- weak names that hide intent
-- duplicated logic appearing three or more times
-- comments that explain what obvious code already says
-- abstractions with unclear payoff
+Nesting, names, comments, and length start a candidate. They are not the miss.
+
+Point at one of:
+- a piece unused by today's callers or tests
+- two things of a different kind sharing a place, and a named split of existing code
+- two live copies of one idea, both with callers
+
+If you cannot point, maintainability holds. Omit the finding.
 
 ### 4. Review tests as product code
 
@@ -82,7 +84,7 @@ Load [test-quality.md](references/test-quality.md) when test quality is central 
 ## Severity
 
 - `Critical`: likely bug, security issue, data loss risk, or severe regression
-- `Important`: significant clarity, maintainability, or test-value problem
+- `Important`: a test-value problem, or a pointed unused-by-callers / complect-split / two-live-copies miss. Do not use Important for clarity or maintainability unless that miss exists; otherwise Suggestion or omit.
 - `Suggestion`: worthwhile improvement but not required before merge
 
 ## Output
@@ -107,7 +109,7 @@ Use this for missing context, ambiguous requirements, or places where the behavi
 
 ### Brief Summary
 
-One short paragraph on overall quality and merge risk.
+One short paragraph on merge risk: name the must-stay path that can silent-drop, swallow an error, or ship a security hole, or say none is pointed. Must-stay is a test, a production caller, or the user said this path has to hold.
 
 If there are no findings, say so explicitly and mention any residual testing or context gaps.
 
@@ -132,4 +134,4 @@ If the user explicitly asks for delegation or parallel review:
 
 ## Bottom Line
 
-Every finding should have a clear benefit that outweighs the churn of changing the code. When in doubt, prefer stability and clarity over style preference.
+Every finding needs a miss you can point at, or omit it.

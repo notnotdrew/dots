@@ -2,6 +2,8 @@
 
 Use this lens for React and TypeScript code. Emphasize pragmatic UI design, behavioral testing, and avoiding premature abstractions.
 
+Simple and straightforward are not findings. Flag extra flexibility or cleverness only when today's callers do not use it, or two kinds share a place and you can name the split.
+
 ## Core Principles
 
 - Prefer simple components over flexible component frameworks.

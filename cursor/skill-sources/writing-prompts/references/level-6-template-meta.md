@@ -5,7 +5,7 @@ A prompt that creates other prompts in a specified format.
 Use this level when:
 
 - you need prompt creation to scale
-- the team should produce prompts with a consistent structure
+- prompts should share a consistent structure
 - a repeatable prompt template already exists
 
 Example:
@@ -42,17 +42,12 @@ argument-hint: [<arg1>] [<arg2>]
 # <prompt name>
 
 <purpose>
-
-## Variables
-## Instructions
-## Workflow
-## Report
 ```
 ````
 
 The differentiator at this level is the template itself. Be explicit about:
 
-- the exact sections to generate
+- the exact sections to generate (only those that earn their place)
 - placeholder syntax
 - which parts should be derived from the user's request
 

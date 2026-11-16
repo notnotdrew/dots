@@ -23,13 +23,13 @@ This is a review. Do not rewrite code unless the user asks to untangle it.
 
 ## The question
 
-A **tangle** is structure that was already hard to change before this diff. The mess is older than the patch.
+A **tangle** holds only if you can point at existing forcing code (`path:line`) that every other path still lives with. The mess is older than the patch.
 
 A **knot** isolates one symptom inside that tangle. The symptom goes away. The reason for the tangle stays, and now something depends on the knot, so the tangle is harder to undo.
 
-**Untangling** removes the reason the knot would be needed. Same outcome, and the next change does not have to know about the special case. Less code is a clue. A cleaner seam counts even when the line count is similar.
+**Untangling** removes the reason the knot would be needed. Same outcome, and the next caller no longer has to know the special case. Less code is a clue. Line count and “looks cleaner” are clues, not the verdict.
 
-Start by assuming the approach added a knot. Look one level up from the lines that were edited: the method, query, type, or caller that forced this special case. That is where the obvious miss usually is.
+Look one level up from the lines that were edited: the method, query, type, or caller that forced this special case. If you cannot name that forcing code, there is no tangle.
 
 ## What counts
 
@@ -58,9 +58,9 @@ This skill does not hunt complexity in general, judge the simplest system for no
 ## Process
 
 1. **The job.** One sentence: what problem this change solves for a caller or user. Not the technique.
-2. **The tangle.** What was already hard, and which existing code forces the special case. Anchor the forcing code, not only the new lines.
+2. **The tangle.** Point at existing forcing code (`path:line`) that every other path still lives with. Anchor the forcing code, not only the new lines. If you cannot name it, there is no tangle.
 3. **One level up.** What change at that forcing point would make this patch unnecessary? Prefer the move that deletes the new code.
-4. **Size it.** Same outcome, less machinery, or the same machinery left easier to change. If the untangle is a different project, it is not the obvious miss.
+4. **Size it.** Same outcome, less machinery, or the next caller no longer has to know the special case. If the untangle is a different project, it is not the obvious miss.
 5. **Say it.** Write the output below. "Leave the knot" is allowed when the higher-level move would change behavior for other callers, or the forcing code is a fence you cannot justify moving.
 
 ## Output

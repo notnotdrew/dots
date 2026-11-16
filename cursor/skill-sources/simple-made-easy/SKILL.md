@@ -25,7 +25,7 @@ This is a review. Do not rewrite code unless the user asks to separate it.
 
 ## The question
 
-**Complect** means to braid together. Complexity is that braid. Two things that change for different reasons, or that a reader must hold at once, sharing a place. They are different kinds of thing: value and now, policy and mechanism, walk and work, decision and effect, load and decide and write. If you cannot name two, there is no braid.
+**Complect** means to braid together. Complexity is that braid. Two things that change for different reasons, sharing a place. They are different kinds of thing: value and now, policy and mechanism, walk and work, decision and effect, load and decide and write. If you cannot name two, there is no braid.
 
 **Simple** means one job. One role, not mixed with another. Objective. About the artifact.
 

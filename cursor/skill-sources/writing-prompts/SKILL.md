@@ -7,15 +7,11 @@ description: "Use when the user says write a prompt, create a command, or automa
 
 ## Overview
 
-The prompt is the fundamental unit of automation. A good prompt becomes a durable multiplier for you, your team, and the agents that will execute it later.
+The prompt is the fundamental unit of automation.
 
-Design every prompt for three audiences:
+Write for the caller the request names. Add teammates or agents only if the request names them.
 
-1. You, who may need to understand or revise it months later
-2. Your teammates, who may need to adopt or extend it
-3. Your agents, which need clear instructions and stable structure
-
-Consistency beats complexity. Reuse the same format unless a real constraint forces something different.
+Reuse the same format unless a named constraint forces something different.
 
 ## Quick Start
 
@@ -45,9 +41,10 @@ Strong trigger signals:
 
 - start at the lowest level that solves the problem
 - most prompts are Level 2 to Level 4
-- if the user says "simple" or "quick", bias toward Level 1 or Level 2
-- each section must earn its place
-- optimize for a prompt a teammate can understand in 30 seconds
+- a section holds only if deleting it would change behavior on an input the user named; omit it otherwise
+- write for the caller the request names; add teammates or agents only if named
+- "simple" or "quick" is Easy, not Simple — not a reason to pick a level; if a lower level still does the named inputs, use that
+- stop when every remaining section has a named job
 
 ## The Seven Levels
 
@@ -93,8 +90,8 @@ Sections are modular. Use only what the prompt actually needs.
 
 Defaults:
 
-- always include a title and purpose
-- include workflow for Level 2 and above
+- always include a title and a purpose that states the named job
+- add workflow when the named job has ordered steps
 - add variables when inputs change between runs
 - add instructions when guardrails prevent mistakes
 - add report when output format matters
@@ -102,7 +99,7 @@ Defaults:
 
 ## Input -> Workflow -> Output
 
-Most strong prompts follow this shape:
+When the named job has inputs, ordered steps, and a required output, use this shape:
 
 ```text
 INPUT
@@ -119,7 +116,7 @@ OUTPUT
 - artifacts created
 ```
 
-Input and output help humans scan the prompt quickly. Workflow is where the real execution logic lives.
+Input and output make the prompt scannable. Workflow is where the real execution logic lives.
 
 ## Prompt Type Guidance
 
@@ -131,21 +128,20 @@ System or developer prompts:
 
 Task or workflow prompts:
 
-- use the full section toolkit
-- bias toward explicit workflow and report sections
+- add a section only when the named job needs it
 - treat them as reusable operating procedures
 
 ## Workflow
 
-1. Identify the level.
-2. Choose the minimum set of sections.
-3. Write the workflow in clear numbered steps.
+1. Identify the lowest level that still does the named job.
+2. Keep only sections whose deletion would change behavior on a named input.
+3. Write numbered workflow steps when the named job has ordered work.
 4. Add examples or constraints only where ambiguity remains.
 5. Test with representative inputs and tighten the prompt if behavior drifts.
 
 ## Output Format
 
-When writing a reusable prompt, default to a simple markdown structure like this unless the target environment requires a different format:
+When writing a reusable prompt, default to title and purpose unless the target environment requires a different format. Add a heading only when deleting it would change behavior on an input the user named.
 
 ```markdown
 ---
@@ -157,14 +153,9 @@ allowed-tools: <if the target system supports tool restrictions>
 # <Prompt Name>
 
 <Purpose: 1-2 sentences>
-
-## Variables
-## Instructions
-## Workflow
-## Report
 ```
 
-State the level used and why. If a simpler level would work, say so.
+State the lowest level that still does the named job, and why a lower one would fail a named input.
 
 ## Common Mistakes
 

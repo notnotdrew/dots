@@ -52,7 +52,12 @@ If they dumped enough, proceed.
 
 ## Judgment
 
-Plan toward the **best simple system for now**: the smallest habitable system that does today’s job. Do not sequence speculative architecture, extra seams, or “we might need this later.”
+Each word holds unless you can point at a miss on `plan.md`. A story, a feeling, or a future caller is not a miss. Empty “this is the plan” is allowed.
+
+- **Now** holds unless you can point at a step, seam, later job, or extra section the user did not name and the repo’s callers and tests do not have. Do not sequence speculative architecture, extra seams, or “we might need this later.”
+- **Simple** holds unless you can delete a step (or split two decisions sharing a step) and still reach **Done when**. Length is not a miss until a candidate passes that test.
+- **Best** holds unless a must-stay path is silent-dropped, swallowed, or the same decision is sequenced twice.
+- **System** holds unless a step is a shell or TODO that does not move **Done when**.
 
 Write in plain human prose. Do not write the plan in grug voice.
 
@@ -65,7 +70,7 @@ Each step is one isolated decision that could land as a commit (or a small PR) a
 - Too small: a chore you would not name in a commit message (`add types`, then `add function`, then `add test`).
 - Too big: a reviewer would say this is three decisions, or the log would hide a beat (domain object, job, trigger bundled as “the feature”).
 - Sequence by dependency of decisions. Layers are fine when the layer *is* the beat.
-- After each step the system is still habitable: working, or at least not more broken in a way later steps must unwind.
+- After each step **System** holds: working, not a shell later steps must unwind.
 
 If a step hides two decisions, split it. If two adjacent steps are the same decision, merge them.
 

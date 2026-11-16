@@ -9,9 +9,10 @@ Apply each principle in strict priority order. Earlier principles dominate later
 Highest priority. If the code does not solve the task, the review has little value.
 
 How to evaluate:
-1. Understand the task from the PR description, linked ticket, or diff context.
-2. Form a rough baseline for how you would solve it.
-3. Compare the implementation against the task across the whole PR, including changed behavior and its directly related boundaries.
+1. Understand the named task from the PR description, linked ticket, or diff context.
+2. Compare the implementation to that task and today's callers across the whole PR, including changed behavior and its directly related boundaries.
+
+"I would have done X" is not a miss.
 
 Purpose is a PR-global judgment. Derive it from the consolidated intent, final coverage, and implementation as a whole; never infer a Purpose pass or finding from one file or one focused reviewer's scope.
 
@@ -72,21 +73,18 @@ Report:
 
 ## 4. Form
 
-Medium priority. Evaluate design quality with an emphasis on cohesion and coupling.
+Medium priority. Cohesion and coupling, only when you can point at a miss.
 
-Look for:
-- functions or modules doing multiple unrelated jobs
-- layering violations
-- unnecessary duplication
-- premature abstraction
-- dependencies that make future changes harder than needed
+Form holds unless you can point at one of:
+- two live copies of one domain idea, both with callers
+- a seam unused by current callers
+- two kinds sharing a place, and a named split of existing code
 
-Form findings need clear arguments:
-- what design cost exists now
-- what change pressure will make it worse
-- what alternative would improve the situation
+A future caller or later change pressure is not a miss.
 
-If the code is acceptable and there is no shared project convention pushing another direction, defer to the author.
+Form findings need a clear argument for the miss and what alternative would improve the situation.
+
+If you cannot point at a miss, and there is no shared project convention pushing another direction, defer to the author.
 
 ## 5. Evidence
 
@@ -113,17 +111,17 @@ Report:
 
 ## 6. Clarity
 
-Lower priority. Code should communicate intent without forcing line-by-line decoding.
+Lower priority. Advisory. Do not rewrite the PR for style.
 
-Look for:
+Look-fors start a hunt; they are not the miss:
 - vague naming
-- overly long functions
+- long functions
 - deep nesting
 - mixed abstraction levels
 - comments that repeat obvious code
 - awkward file organization
 
-Keep clarity feedback proportional. Do not rewrite the PR for stylistic preferences.
+Clarity holds unless a name, comment, or nesting forces wrong behavior, a missed caller, or a delete that still meets the named task.
 
 ## 7. Taste
 

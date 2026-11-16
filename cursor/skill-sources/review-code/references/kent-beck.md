@@ -10,11 +10,13 @@ Review code through a Kent Beck lens: simplicity, fast feedback, testability, an
 - Is the code communicating intent clearly through names and structure?
 - Is any abstraction speculative rather than earned?
 
+"Simplest that could work" is a piece unused by today's callers, or two things of a different kind sharing a place and a named split of existing code. "I'd write a smaller version" without that miss is not a finding. "Communicating intent clearly" is not a miss until you can point at one of those. The one issue in the output is that miss, not a smaller rewrite you would rather have written.
+
 ## What To Look For
 
-- complexity that could be removed without losing clarity
+- a piece unused by today's callers, or a complect split you can name — not complexity you could rewrite smaller
 - duplication that suggests a real abstraction
-- functions doing more than one thing
+- functions doing more than one thing when you can name two kinds sharing a place
 - dependencies that make testing harder than necessary
 - long plans or broad rewrites without feedback checkpoints
 
