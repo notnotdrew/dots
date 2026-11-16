@@ -1,4 +1,4 @@
 interface:
   display_name: "BSSN"
   short_description: "Review code as the best simple system for now"
-  default_prompt: "Review this code as a Best Simple System for Now. Name today's needs, then judge Best, Simple, System, and for Now. Do not rewrite unless asked."
+  default_prompt: "Review this code as a Best Simple System for Now. Name today's job from callers or tests in the named code, then pass or fail Best, Simple, System, and for Now by pointing at a miss. If you cannot point at a miss, that word holds. Do not rewrite unless asked."

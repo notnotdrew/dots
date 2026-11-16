@@ -2,6 +2,8 @@
 
 Use these when a finding needs a sharper call. Do not dump this file into the review.
 
+The pass/fail tests live in `SKILL.md`. This file is North’s language. Do not treat CUPID, habitable, or idiomatic as verdicts.
+
 Source: [Best Simple System for Now](https://dannorth.net/blog/best-simple-system-for-now/).
 
 ## The missing middle
@@ -34,7 +36,9 @@ The right way is contextual. Underinvest in core paths (stability risk) and over
 
 Ward Cunningham’s “simplest thing that could possibly work” is a tiny step that moves understanding, not a Platonic minimum. Writing organizes thought.
 
-**CUPID** (joyful / habitable code) is the quality bar for Best:
+CUPID is North’s language for habitable code. It is not a scorecard. Best’s pass/fail is in `SKILL.md`: silent-drop, swallowed error, or security hole on a must-stay path, and two live copies of the same idea.
+
+**CUPID** (joyful / habitable code):
 
 - **Composable** — plays nice; minimal dependencies
 - **Unix philosophy** — one obvious, comprehensive job
