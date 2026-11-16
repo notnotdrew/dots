@@ -52,7 +52,7 @@ awk '
         sub(/^[[:space:]]*/, "", value)
         keys[key]++
         values[key] = value
-        if (key != "name" && key != "description") {
+        if (key != "name" && key != "description" && key != "disable-model-invocation") {
             print "check-skill-package: unexpected top-level frontmatter key: " key > "/dev/stderr"
             invalid = 1
         }

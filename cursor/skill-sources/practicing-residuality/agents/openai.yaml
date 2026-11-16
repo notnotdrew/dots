@@ -1,4 +1,0 @@
-interface:
-  display_name: "Practicing Residuality"
-  short_description: "Train a naive design against random stressors"
-  default_prompt: "naive design, random stressors, adapt, then test held-back stressors; return the design and the explanation"

@@ -895,11 +895,11 @@ implement_with_agent() {
   fi
   prompt+=$'\n\n'"Implement the plan at ${PLAN_PATH}."
   prompt+=$'\n\n'"Make the smallest change that addresses this. Smallest means smallest blast radius, not the smallest diff. If the work is a defect inside unused or otherwise dead code, delete that code instead of patching it when the deletion is still a thin PR. If deletion is too large, stop and say so — do not nibble the internals. Stop when it is done, or when it turns out to be too large for one sitting."
-  prompt+=$'\n\n'"Commit on the current branch. Write the message with the writing-git-commits skill: an imperative subject under 72 characters, and a body only when a reader needs context the diff cannot give them."
+  prompt+=$'\n\n'"Commit on the current branch. Write the message with the commits skill: an imperative subject under 72 characters, and a body only when a reader needs context the diff cannot give them."
   prompt+=$'\n\n'"Then write two files for the pull request:"
   prompt+=$'\n'"- ${PR_DRAFT_DIR}/title.txt — one line, plain English, no ticket ids or prefixes"
   prompt+=$'\n'"- ${PR_DRAFT_DIR}/body.md — why this change was made, including any issue or error links from the context above. Follow the repository's pull request template when it has one."
-  prompt+=$'\n\n'"Both files are ignored by git, so they stay out of the commit. Review them with the writing-for-humans skill: short sentences, plain words, no filler. Say why the change was made and leave the technical detail to the code."
+  prompt+=$'\n\n'"Both files are ignored by git, so they stay out of the commit. Review them with the for-humans skill: short sentences, plain words, no filler. Say why the change was made and leave the technical detail to the code."
   prompt+=$'\n\n'"Write as the engineer making the change. Never mention this prompt, the tooling that started it, automation, or agents in the commit message, the title, or the body."
   prompt+=$'\n\n'"Do not push and do not open a pull request."
   prompt+=$(append_repo_guidance_block "$guidance")
@@ -1217,7 +1217,7 @@ fix_with_agent() {
   local prompt
 
   prompt="Fix only verified Class: blocking findings for draft PR ${pr_url} (${blocker_count} blocker(s)). Do not re-review. Never use --yolo, --force, or --trust."
-  prompt+=$'\n\n'"Commit with the writing-git-commits skill. Write as the engineer making the change: never mention this prompt, tooling, automation, or agents in the message."
+  prompt+=$'\n\n'"Commit with the commits skill. Write as the engineer making the change: never mention this prompt, tooling, automation, or agents in the message."
   prompt+=$'\n\n'"Do not push and do not open a pull request."
   prompt+=$(append_repo_guidance_block "$(load_repo_guidance "${repo_path}/.inchworm.yml")")
   (

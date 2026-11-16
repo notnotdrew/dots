@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactor Code"
+  short_description: "Make OO code cheaper to change (Ruby-first)"
+  default_prompt: "Use refactor-code to find what makes this code expensive to change and apply the smallest behavior-preserving refactoring that helps"

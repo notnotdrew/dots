@@ -1,6 +1,7 @@
 ---
 name: pr-review
 description: "Reviews and updates GitHub pull requests using PERFECT: Purpose, Edge Cases, Reliability, Form, Evidence, Clarity, Taste. Use for Standard reviews by default, explicitly requested Deep or Quick reviews, or follow-up review updates."
+disable-model-invocation: true
 ---
 
 # PR Review
@@ -115,7 +116,7 @@ Coordinator loads on Standard, Deep, and incremental routes:
 - [pending-github-review.md](references/pending-github-review.md) after successful artifact publication
 - [context-brief.md](templates/context-brief.md), [findings-ledger.md](templates/findings-ledger.md), and [perfect-review.md](templates/perfect-review.md) when writing staging
 
-Gatherer loads [context-gathering.md](references/context-gathering.md) and [language-skill-mapping.md](references/language-skill-mapping.md) for path matching only. Focused reviewers load only the stack skills named in their handoff. Pending-review readability agents load `use-conversational-language` for reviewer-comment wording only.
+Gatherer loads [context-gathering.md](references/context-gathering.md) and [language-skill-mapping.md](references/language-skill-mapping.md) for path matching only. Focused reviewers load only the stack skills named in their handoff. Pending-review readability agents load `conversational-language` for reviewer-comment wording only.
 
 Validate the staged artifact directory with [validate-review-artifacts](scripts/validate-review-artifacts) before publication.
 

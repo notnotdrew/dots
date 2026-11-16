@@ -54,7 +54,7 @@ Do not pull a nested cleanup under an unresolved "remove this API / check usage 
 
 You are the slow scout. Use the `pup` CLI against Datadog APM to find slow resources or endpoints with a clear, bounded optimization. Emit `source: slow`.
 
-Follow `using-pup-cli`. Call the installed `pup` only. Do not read credentials from the keychain, `security`, or token files. If `pup` is not authenticated, ask Drew to reauth.
+Follow `pup-cli`. Call the installed `pup` only. Do not read credentials from the keychain, `security`, or token files. If `pup` is not authenticated, ask Drew to reauth.
 
 Inspect the installed `pup` command help before choosing commands. Use a short, explicit time window and narrow service/environment filters. Aggregate APM resources first, then inspect only a few representative traces. Prefer a few candidates supported by stable latency or volume evidence over a long list of isolated slow traces.
 

@@ -20,7 +20,7 @@ The date suffix does real work: it keeps a rerun on its own branch, and it is ho
 
 ## Commits
 
-The implementer commits with the **writing-git-commits** skill and stops. The
+The implementer commits with the **commits** skill and stops. The
 shell commits leftover edits under the find's subject and body, and keeps
 `.inchworm/` out of that commit. A message that names the runner is rewritten
 as one commit before anything is pushed. If that replacement still names the
@@ -32,7 +32,7 @@ of prompts, agents, automation, orchestration, or the scheduling tool.
 ## Pull requests
 
 The implementer writes `.inchworm/pr/title.txt` and `.inchworm/pr/body.md` with
-the **writing-for-humans** skill, then stops. It does not open the pull request.
+the **for-humans** skill, then stops. It does not open the pull request.
 The shell uses those files when they are present and clean, and falls back to
 the find when a file is absent. It opens the draft itself and appends the footer
 before `gh pr create`. The body ends with the footer above. That line is the

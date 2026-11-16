@@ -11,4 +11,4 @@ The description says why, in one or two plain sentences. Add a high-level view o
 
 A performance claim includes numbers a subagent measured. An error that prompted the change includes its link. A step someone still has to take gets one sentence. A visible change includes a screenshot.
 
-`writing-pull-requests` has the full guidance.
+`pull-requests` has the full guidance.

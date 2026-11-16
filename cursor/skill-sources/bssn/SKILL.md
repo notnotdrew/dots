@@ -101,10 +101,10 @@ Plain words. Short sentences. No headings beyond these two labels. Do not pad. D
 - Use this instead of `grug-brain` when the user asked for BSSN / Dan North / bison — not caveman voice.
 - Use this instead of `review-code` when the question is “is this the best simple system for now?” rather than a general defect hunt.
 - `simple-made-easy` when they asked only what is complected. If you cannot name a split that still meets the named now, Simple holds. An unbraided must-stay path can still fail Best.
-- `paring-code` when they asked to delete until the next deletion fails. This skill reports; that one edits.
+- `pare-code` when they asked to delete until the next deletion fails. This skill reports; that one edits.
 - `cognitive-load` when they asked what a reader has to hold. A one-fold thing can still overflow working memory.
 - Do not start a PERFECT / PR-review workflow unless the user asked for a PR review *and* BSSN — then keep this framing and skip ceremony.
-- Do not refactor under `simplify-code` or `refactoring-code` unless the user asks to move the code toward BSSN after the review.
+- Do not refactor under `simplify-code` or `refactor-code` unless the user asks to move the code toward BSSN after the review.
 
 ## Examples
 

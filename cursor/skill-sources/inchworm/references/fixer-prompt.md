@@ -21,7 +21,7 @@ Advisory findings and non-verified dispositions stay for the human. `none` / adv
 - **No** second pick (day already stamped)
 - Work in the existing implement worktree
 - Do not resolve a blocker by widening shared retry, discard, notify, or error classification; leave it residual (see [shared-seam](shared-seam.md))
-- Commit with the **writing-git-commits** skill, naming no tooling (see [authored-output](authored-output.md))
+- Commit with the **commits** skill, naming no tooling (see [authored-output](authored-output.md))
 - The agent does **not** push and does **not** open a PR — the coordinator owns the history and the remote
 - Honor optional **Repo guidance** from `.inchworm.yml` when the coordinator injects it
 - Never pass `--yolo`, `--force`, or `--trust`

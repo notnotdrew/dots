@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Instructions"
+  short_description: "Restructure bloated agent docs into a root plus guidelines"
+  default_prompt: "Use agent-instructions to reorganize these agent instruction files into a concise root file plus linked guidelines"

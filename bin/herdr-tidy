@@ -16,7 +16,7 @@ REPO_ROOT=/Users/drew/dots
 BRANCH_PREFIX=drew/tidy-herdr-
 ITEM=tidy
 PROJECT=Herdr
-TASK='Tidy Herdr: follow the starting-herdr-work skill for the workspace itself, then improve the Herdr setup in this checkout. Prefer small, local changes.'
+TASK='Tidy Herdr: follow the herdr-work skill for the workspace itself, then improve the Herdr setup in this checkout. Prefer small, local changes.'
 
 die() {
   printf '\nerror: %s\n' "$1" >&2

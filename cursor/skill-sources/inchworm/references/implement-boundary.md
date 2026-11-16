@@ -25,7 +25,7 @@ publishes the draft itself.
 
 1. Launch a fresh agent in the checkout with a short thin-check prompt. It
    writes `.inchworm/plan.md` or `not_thin`. It does not follow
-   `writing-simple-plans`.
+   `simple-plans`.
 2. The planner does not edit production code. `not_thin` skips the implementer
    and marks the find `too_large`: no draft PR.
 3. Launch a second fresh agent. It implements the plan at `.inchworm/plan.md`,
@@ -39,7 +39,7 @@ publishes the draft itself.
    review, runs one fixer only for a verified blocker, pings, and removes the
    checkout with `wt remove --no-delete-branch`.
 
-The thin-check does not follow `writing-simple-plans`. An implementer that
+The thin-check does not follow `simple-plans`. An implementer that
 exits non-zero is `deferred`, not `too_large`.
 
 ## Failure / no second pick

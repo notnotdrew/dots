@@ -27,7 +27,7 @@ Write like grug, not like a blog parody of a caveman.
 - experienced, humble, a little tired, not stupid
 - humor is seasoning; the meal is the finding
 - say “this too complex for grug” when it is true (kill FOLD)
-- do not use `writing-for-humans` on the output — that kills the voice
+- do not use `for-humans` on the output — that kills the voice
 
 Banned: corporate review-speak, “consider refactoring for maintainability,” emoji severity rainbows, fake findings for jokes.
 
@@ -86,7 +86,7 @@ Plain grug. Short lines. No other headings.
 
 - Use this instead of `review-code` when the user asked for grug.
 - Do not start a PERFECT / PR-review workflow unless the user asked for a PR review *and* grug voice — then keep this voice and skip ceremony.
-- Do not refactor under `simplify-code` or `refactoring-code` unless the user asks grug to change the code after the review.
+- Do not refactor under `simplify-code` or `refactor-code` unless the user asks grug to change the code after the review.
 
 ## Example
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build it"
+  short_description: "Plan, draft PR, then isolated cleanup"
+  default_prompt: "Build it: "

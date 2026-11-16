@@ -86,7 +86,7 @@ them.
 Launch one fresh readability agent per confirmed candidate, all in one
 concurrent batch. Each sees only its own comment's `DraftClaim`,
 `PreExisting`, `Anchor`, and `Evidence`, not the verifier's chain of thought or
-other comments. It loads `use-conversational-language` (reviewer-comment rules) and
+other comments. It loads `conversational-language` (reviewer-comment rules) and
 rewrites for humans:
 
 - plain, simple, clear;

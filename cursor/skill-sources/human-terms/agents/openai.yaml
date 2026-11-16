@@ -1,0 +1,4 @@
+interface:
+  display_name: "Human Terms"
+  short_description: "Rewrite findings into decision-ready human briefs"
+  default_prompt: "Use $human-terms to rewrite these findings for humans. Pick or invent a shape per issue (request comment, six-field, timeline, or whatever lands); do not force one template."

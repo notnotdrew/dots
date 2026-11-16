@@ -1,7 +1,7 @@
 # Implementer prompt
 
 Live runs: a short thin-check prompt writes `.inchworm/plan.md` or `not_thin`.
-It does not follow `writing-simple-plans`. `not_thin` skips the implementer and
+It does not follow `simple-plans`. `not_thin` skips the implementer and
 marks the find `too_large`; there is no draft PR.
 The implementer then implements that plan, commits, writes the PR title and
 body files, and stops. The shell appends the footer, pushes, and opens the
@@ -23,9 +23,9 @@ The **implementer** works only on the selected plan, inside the coordinator-crea
 - Implement the plan at `.inchworm/plan.md`. Make the smallest change that addresses it **and preserves every other caller's semantics** — smallest means smallest blast radius, not smallest diff
 - If retry, discard, notify, or error classification already lives in a shared module, report `too_large` unless the patch stays next to the code that already owns that policy. If you cannot tell who else would inherit a different retry, fail, or report meaning, that is `too_large` (see [shared-seam](shared-seam.md))
 - If the selected find is a defect, lint, or leftover inside unused or otherwise dead code, delete that code instead of patching it when the deletion is still a thin PR. If deletion is too large, or the find is a leftover write inside a block comments already mark undocumented, temporary, or "maybe remove," report `too_large`. A nibble does not make the real deletion easier.
-- Commit on this branch with the **writing-git-commits** skill; stop when done or clearly too large for one day
+- Commit on this branch with the **commits** skill; stop when done or clearly too large for one day
 - Write `.inchworm/pr/title.txt` and `.inchworm/pr/body.md` for the coordinator (gitignored, so they stay out of the commit)
-- Review that copy with the **writing-for-humans** skill, and follow the repo's PR template when it has one
+- Review that copy with the **for-humans** skill, and follow the repo's PR template when it has one
 
 ## Do not
 

@@ -10,10 +10,10 @@ skill files named in their handoff.
 
 | File Pattern | Skill(s) | Why |
 |---|---|---|
-| `.rb`, `.rake`, `.gemspec`, `.ru`, `.erb`, `.haml`, `.slim`, `Gemfile`, `Rakefile`, `Guardfile`, `Capfile` | `developing-ruby` | Ruby runtime, Rails persistence, jobs, migrations, views, and test semantics |
-| `.ts`, `.tsx`, `.js`, `.jsx` | `developing-typescript` | TypeScript, React, and JS runtime patterns |
-| `.test.ts`, `.test.tsx`, `.spec.ts`, `.spec.tsx` | `developing-typescript`, `testing-react-with-vitest` | Test quality, RTL, Vitest |
-| `.sh`, `.bash`, `Makefile` | `developing-bash` | Shell safety and portability |
+| `.rb`, `.rake`, `.gemspec`, `.ru`, `.erb`, `.haml`, `.slim`, `Gemfile`, `Rakefile`, `Guardfile`, `Capfile` | `ruby` | Ruby runtime, Rails persistence, jobs, migrations, views, and test semantics |
+| `.ts`, `.tsx`, `.js`, `.jsx` | `typescript` | TypeScript, React, and JS runtime patterns |
+| `.test.ts`, `.test.tsx`, `.spec.ts`, `.spec.tsx` | `typescript` | Test quality, RTL, Vitest |
+| `.sh`, `.bash`, `Makefile` | `bash` | Shell safety and portability |
 
 Detection rules:
 1. Collect changed file paths from `gh pr view --json files --jq '.files[].path'`.

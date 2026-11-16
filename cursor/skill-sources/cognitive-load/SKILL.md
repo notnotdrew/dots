@@ -93,7 +93,7 @@ Plain words. Short sentences. No other headings. Do not invent a chunk to fill t
 - `simple-made-easy` when the question is braid versus one fold. A one-fold thing can still overflow working memory. A light hold can still be complected.
 - `grug-brain` when they asked for grug. Keep that voice; do not run this output shape.
 - `simplify-code` when they asked to simplify. That pass may delete; this lens may add a named local.
-- `paring-code` when they asked to pare. Do not treat a load-emptying name as a label to strip unless they asked to pare.
+- `pare-code` when they asked to pare. Do not treat a load-emptying name as a label to strip unless they asked to pare.
 - `knot-or-untangle` when the question is a local patch versus the tangle that forced it.
 
 ## Examples

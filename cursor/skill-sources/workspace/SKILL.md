@@ -17,7 +17,7 @@ Requires `HERDR_ENV=1`. If unset, say you are not inside Herdr and stop.
 
 ## Steps
 
-1. Follow `starting-herdr-work` through setup only: parent repo, item/project/branch, find-or-create worktree, `$note`, confirm. Always `--no-focus` and `--path`. Stop before "continue the requested work in that checkout". If the whole prompt is already a command that does the job (for example `prrr`), dispatch it and stop. No workspace.
+1. Follow `herdr-work` through setup only: parent repo, item/project/branch, find-or-create worktree, `$note`, confirm. Always `--no-focus` and `--path`. Stop before "continue the requested work in that checkout". If the whole prompt is already a command that does the job (for example `prrr`), dispatch it and stop. No workspace.
 
 2. Start a cursor agent in the new space's root pane. Target that agent by name, or by the root pane id if the pane already hosts one. Never omit the target, and never use this pane.
    - Before start, write `{trustedAt, workspacePath}` JSON to `~/.cursor/projects/<slug>/.workspace-trusted` if missing. Slug is `${checkout#/}` with `/` and `.` turned into `-`. Without it, the trust dialog reports idle and swallows the first prompt.

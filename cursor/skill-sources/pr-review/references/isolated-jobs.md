@@ -53,7 +53,7 @@ skill bodies.
 | Focused reviewer | the stack skill files in `MatchedStackSkills`; the paths and commands in `EvidenceRequirements` | inherit |
 | Synthesis reviewer | `references/finding-synthesis.md`; `references/perfect-principles.md`; the working brief; the candidate records; the checkout paths named in its packet | inherit |
 | Comment verifier | files under `ReviewDirectory`; the smallest command or test there that tests the claim | `cursor-grok-4.6-high-fast` |
-| Comment readability | the `use-conversational-language` `SKILL.md`, reviewer-comment rules only | `cursor-grok-4.6-high-fast` |
+| Comment readability | the `conversational-language` `SKILL.md`, reviewer-comment rules only | `cursor-grok-4.6-high-fast` |
 
 ## Models
 
@@ -216,7 +216,7 @@ DraftClaim: <from the verifier>
 PreExisting: <yes|no|unknown>
 Anchor: <path:line>
 Evidence: <from the verifier>
-MayOpen: <absolute path of the use-conversational-language SKILL.md>, reviewer-comment rules only
+MayOpen: <absolute path of the conversational-language SKILL.md>, reviewer-comment rules only
 Return: <CommentReadabilityResult shape, pasted>
 ```
 

@@ -1,6 +1,7 @@
 ---
 name: thinking-patterns
 description: "Use when the user asks to think through a problem, compare options, calculate, verify, or synthesize. Do not use for ordinary planning or implementation."
+disable-model-invocation: true
 ---
 
 # Thinking Patterns

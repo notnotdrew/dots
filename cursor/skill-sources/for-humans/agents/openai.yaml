@@ -1,0 +1,4 @@
+interface:
+  display_name: "For Humans"
+  short_description: "Rewrite drafts into concise human prose"
+  default_prompt: "Use $for-humans to rewrite this draft into concise, scannable prose for human readers"

@@ -46,7 +46,7 @@ Ask the discriminator question: would deleting this test let any real bug go und
 
 Keep a mirror test only when both hold: the contract is consumed by a system outside this codebase, and no higher-level test already pins it. If the test was added as a regression for a real reported bug, keep it regardless.
 
-For the full catalog, including the excuses that do not survive scrutiny, see [anti-patterns](../../reviewing-test-design/references/anti-patterns.md).
+For the full catalog, including the excuses that do not survive scrutiny, see [anti-patterns](../../test-design/references/anti-patterns.md).
 
 ## Preserve High-Value Tests
 
