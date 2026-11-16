@@ -1,4 +1,4 @@
 interface:
   display_name: "Practicing Residuality"
-  short_description: "Write one design against held-back stressors"
-  default_prompt: "Use practicing residuality on this problem or proposal and return the design and the explanation"
+  short_description: "Train a naive design against random stressors"
+  default_prompt: "naive design, random stressors, adapt, then test held-back stressors; return the design and the explanation"
