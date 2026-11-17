@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revise history"
+  short_description: "Reshape branch commits to dependency order without changing the diff"
+  default_prompt: ""
