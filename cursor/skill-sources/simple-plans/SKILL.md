@@ -67,6 +67,7 @@ Each step is one isolated decision that could land as a commit (or a small PR) a
 
 - Too small: a chore you would not name in a commit message (`add types`, then `add function`, then `add test`).
 - Too big: a reviewer would say this is three decisions, or the log would hide a beat (domain object, job, trigger bundled as “the feature”).
+- A behavior change and the tests that cover it are the same decision. Do not sequence "make the change" then "add tests." Covering the change is part of doing the step, not a listed follow-up. Split only when tests pin today's behavior so a later step can change structure without changing those tests.
 - Sequence by dependency of decisions. Layers are fine when the layer *is* the beat.
 - After each step **System** holds: working, not a shell later steps must unwind.
 
@@ -128,7 +129,6 @@ Each iteration:
 
 ## Steps
 1. Stop reading the billing overview through the 60s in-process cache so the page uses the account record that upgrade just wrote.
-2. Prove the upgrade-then-overview path: after plan changes, the next overview render shows the new plan.
 ```
 
 **Input:** “plan.md for extracting session checks out of legacy, no behavior change”
@@ -149,8 +149,8 @@ Each iteration:
 
 ## Steps
 1. Pin current allow/deny with characterization tests around the gatekeeper path so the move cannot silently change who gets in.
-2. Move session validation into `auth` and point `legacy` at it, leaving public signatures alone.
-3. Cut `auth` → `legacy` imports and confirm the existing suite still passes.
+2. Move session validation into `auth` and point `legacy` at it, leaving public signatures and allow/deny alone.
+3. Cut `auth` → `legacy` imports.
 ```
 
 ## Guidelines
